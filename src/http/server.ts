@@ -1,20 +1,33 @@
-import Fastify from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import type { PrismaClient } from "@prisma/client";
 
 import { env } from "../config/env";
 import { logger } from "../common/logger";
 import type { AppServices } from "../app/services";
 
-export const buildHttpServer = (services: AppServices, prisma: PrismaClient) => {
-  const server = Fastify({
-    logger: false
-  });
-
+/**
+ * Creates a minimal HTTP server with /health and starts listening immediately.
+ * Use this at the start of bootstrap so health checks succeed while heavy init runs.
+ */
+export async function createAndStartHealthServer(): Promise<FastifyInstance> {
+  const server = Fastify({ logger: false });
   server.get("/health", async () => ({
     ok: true,
     timestamp: new Date().toISOString()
   }));
+  await server.listen({ port: env.HTTP_PORT, host: "0.0.0.0" });
+  logger.info({ port: env.HTTP_PORT }, "HTTP server started (health only)");
+  return server;
+}
 
+/**
+ * Registers the payment webhook route on an existing server.
+ */
+export function addPaymentWebhookRoute(
+  server: FastifyInstance,
+  services: AppServices,
+  prisma: PrismaClient
+): void {
   server.post<{
     Body: {
       referenceCode: string;
@@ -46,15 +59,4 @@ export const buildHttpServer = (services: AppServices, prisma: PrismaClient) => 
 
     return { ok: true };
   });
-
-  return {
-    server,
-    async start() {
-      await server.listen({
-        port: env.HTTP_PORT,
-        host: "0.0.0.0"
-      });
-      logger.info({ port: env.HTTP_PORT }, "HTTP server started");
-    }
-  };
-};
+}

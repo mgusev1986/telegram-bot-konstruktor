@@ -2,7 +2,7 @@ import { env } from "./config/env";
 import { logger } from "./common/logger";
 import { prisma } from "./infrastructure/prisma";
 import { bullConnection, redis } from "./infrastructure/redis";
-import { buildHttpServer } from "./http/server";
+import { createAndStartHealthServer, addPaymentWebhookRoute } from "./http/server";
 import { startWorkers } from "./modules/jobs/workers";
 import { encryptTelegramBotToken, hashTelegramBotToken } from "./common/telegram-token-encryption";
 import { randomBytes } from "node:crypto";
@@ -112,6 +112,8 @@ const bootstrap = async (): Promise<void> => {
   };
 
   await assertUserRoleEnumHasAlphaOwner();
+
+  const httpServer = await createAndStartHealthServer();
 
   const hasEnvBot = Boolean(env.BOT_TOKEN?.trim() && env.BOT_USERNAME?.trim());
 
@@ -307,9 +309,8 @@ const bootstrap = async (): Promise<void> => {
     runtimeManager
   });
 
-  const http = buildHttpServer(services, prisma);
-  await registerBackofficeRoutes(http.server, prisma, runtimeManager);
-  await http.start();
+  addPaymentWebhookRoute(httpServer, services, prisma);
+  await registerBackofficeRoutes(httpServer, prisma, runtimeManager);
 
   logger.info(
     {
@@ -326,6 +327,7 @@ const bootstrap = async (): Promise<void> => {
     logger.info({ signal }, "Shutting down");
     await runtimeManager.stopAll(signal);
     await worker.close();
+    await httpServer.close();
     await prisma.$disconnect();
     await redis.quit();
     process.exit(0);
