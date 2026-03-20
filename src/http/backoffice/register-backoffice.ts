@@ -275,6 +275,9 @@ export function renderDashboardBody(params: DashboardParams): string {
   const audienceLink = canViewAudience
     ? `<a href="/backoffice/audience" style="text-decoration:none"><button class="secondary" type="button">Аудитория</button></a>`
     : "";
+  const databaseLink = canViewAudience
+    ? `<a href="/backoffice/database" style="text-decoration:none"><button class="secondary" type="button">База данных</button></a>`
+    : "";
   const successBanner =
     createdBot && createdBotId
       ? `<div class="success" role="status"><strong>Бот успешно создан</strong>: ${escapeHtml(createdBot.name)}${createdBot.telegramBotUsername ? ` (@${escapeHtml(createdBot.telegramBotUsername)})` : ""}. <a href="/backoffice/bots/${escapeHtml(createdBot.id)}/settings">Настройки</a> · <a href="${createdBot.telegramBotUsername ? `https://t.me/${createdBot.telegramBotUsername}` : "#"}" target="_blank">Открыть в Telegram</a></div>`
@@ -288,6 +291,7 @@ export function renderDashboardBody(params: DashboardParams): string {
           </div>
           <div class="row" style="flex:0 0 auto; gap:8px">
             ${audienceLink}
+            ${databaseLink}
             <a href="/backoffice/logout" style="text-decoration:none"><button class="secondary" type="button">Logout</button></a>
           </div>
         </div>
@@ -673,6 +677,150 @@ export async function registerBackofficeRoutes(
         <div class="row" style="margin-top:12px; justify-content:space-between">
           <span class="small">Страница ${page} из ${totalPages || 1} · Всего: ${total}</span>
           <span>${prevLink} ${nextLink ? ` · ${nextLink}` : ""}</span>
+        </div>`
+      )
+    );
+  });
+
+  server.get("/backoffice/database", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const backofficeUser = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true, email: true }
+    });
+    const role = backofficeUser?.role ?? "ADMIN";
+    const email = backofficeUser?.email ?? "";
+    if (!canViewGlobalUserDirectory(role, email)) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const bots = await prisma.botInstance.findMany({
+      where: { isArchived: false },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, telegramBotUsername: true, status: true }
+    });
+
+    type BotStats = {
+      users: number;
+      broadcasts: number;
+      dripCampaigns: number;
+      payments: number;
+      paidPayments: number;
+      templates: number;
+      menuItems: number;
+    };
+
+    const statsByBot: Array<{ botId: string; botName: string; username: string | null; stats: BotStats }> = [];
+
+    for (const bot of bots) {
+      const [users, broadcasts, dripCampaigns, payments, paidPayments, templates, menuItems] = await Promise.all([
+        prisma.user.count({ where: { botInstanceId: bot.id } }),
+        prisma.broadcast.count({ where: { botInstanceId: bot.id } }),
+        prisma.dripCampaign.count({ where: { botInstanceId: bot.id } }),
+        prisma.payment.count({ where: { botInstanceId: bot.id } }),
+        prisma.payment.count({ where: { botInstanceId: bot.id, status: "PAID" } }),
+        prisma.presentationTemplate.count({ where: { botInstanceId: bot.id, isActive: true } }),
+        prisma.menuItem.count({
+          where: {
+            template: { botInstanceId: bot.id }
+          }
+        })
+      ]);
+      statsByBot.push({
+        botId: bot.id,
+        botName: bot.name,
+        username: bot.telegramBotUsername,
+        stats: {
+          users,
+          broadcasts,
+          dripCampaigns,
+          payments,
+          paidPayments,
+          templates,
+          menuItems
+        }
+      });
+    }
+
+    const tableRows = statsByBot
+      .map(
+        (row) => `
+    <tr>
+      <td style="padding:10px 12px"><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}">${escapeHtml(row.botName)}</a></td>
+      <td style="padding:10px 12px"><span class="small">@${escapeHtml(row.username ?? "—")}</span></td>
+      <td style="padding:10px 12px; text-align:right"><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}">${row.stats.users}</a></td>
+      <td style="padding:10px 12px; text-align:right">${row.stats.broadcasts}</td>
+      <td style="padding:10px 12px; text-align:right">${row.stats.dripCampaigns}</td>
+      <td style="padding:10px 12px; text-align:right">${row.stats.payments}</td>
+      <td style="padding:10px 12px; text-align:right">${row.stats.paidPayments}</td>
+      <td style="padding:10px 12px; text-align:right">${row.stats.templates}</td>
+      <td style="padding:10px 12px; text-align:right">${row.stats.menuItems}</td>
+    </tr>`
+      )
+      .join("");
+
+    const totals = statsByBot.reduce(
+      (acc, row) => ({
+        users: acc.users + row.stats.users,
+        broadcasts: acc.broadcasts + row.stats.broadcasts,
+        dripCampaigns: acc.dripCampaigns + row.stats.dripCampaigns,
+        payments: acc.payments + row.stats.payments,
+        paidPayments: acc.paidPayments + row.stats.paidPayments,
+        templates: acc.templates + row.stats.templates,
+        menuItems: acc.menuItems + row.stats.menuItems
+      }),
+      { users: 0, broadcasts: 0, dripCampaigns: 0, payments: 0, paidPayments: 0, templates: 0, menuItems: 0 }
+    );
+
+    const totalsRow =
+      statsByBot.length > 1
+        ? `
+    <tr style="border-top:2px solid rgba(255,255,255,0.2); font-weight:600">
+      <td style="padding:10px 12px" colspan="2">Всего</td>
+      <td style="padding:10px 12px; text-align:right">${totals.users}</td>
+      <td style="padding:10px 12px; text-align:right">${totals.broadcasts}</td>
+      <td style="padding:10px 12px; text-align:right">${totals.dripCampaigns}</td>
+      <td style="padding:10px 12px; text-align:right">${totals.payments}</td>
+      <td style="padding:10px 12px; text-align:right">${totals.paidPayments}</td>
+      <td style="padding:10px 12px; text-align:right">${totals.templates}</td>
+      <td style="padding:10px 12px; text-align:right">${totals.menuItems}</td>
+    </tr>`
+        : "";
+
+    return reply.type("text/html").send(
+      renderPage(
+        "База данных по ботам",
+        `<div class="row" style="justify-content:space-between; align-items:center">
+          <div>
+            <h2 style="margin:0">База данных</h2>
+            <div class="small" style="margin-top:4px">Статистика по каждому боту</div>
+          </div>
+          <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">← На dashboard</button></a>
+        </div>
+        <div class="table-wrap" style="overflow-x:auto; margin-top:20px">
+          <table style="width:100%; border-collapse:collapse">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Бот</th>
+                <th style="text-align:left; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Username</th>
+                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Пользователи</th>
+                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Рассылки</th>
+                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Drip</th>
+                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Платежи</th>
+                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Оплачено</th>
+                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Шаблоны</th>
+                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Пункты меню</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows || "<tr><td colspan='9' class='small'>Нет ботов</td></tr>"}${totalsRow}
+            </tbody>
+          </table>
+        </div>
+        <div class="small" style="margin-top:12px; color:#94a3b8">
+          Клик по числу пользователей — переход к списку аудитории с фильтром по боту.
         </div>`
       )
     );

@@ -3,9 +3,17 @@
 Один snapshot проекта для переноса контекста в новый чат или онбординга разработчика. Обновляйте этот файл после крупных изменений.
 
 ### Last checkpoint
-Дата: 2026-03-19
-Снапшот: `snapshot-2026-03-19_15-33-51.tar.gz`
-Автотесты: `npm test` (pass: 29 files, 106 tests), `npm run lint:types` (pass)
+Дата: 2026-03-20
+Снапшот: `snapshot-2026-03-20_20-40-51.tar.gz`
+Сборка: `npm run build` (pass), `npm run lint:types` (pass)
+Деплой: Hetzner VPS (77.42.79.54), Docker Compose
+
+### Checkpoint notes (2026-03-20) — деплой и bootstrap
+- **Деплой на Hetzner VPS:** проект развёрнут через `scripts/hetzner-setup.sh`, `docker-compose.prod.yml`. Репозиторий: github.com/mgusev1986/telegram-bot-konstruktor.
+- **Ранний старт HTTP-сервера:** `startHttpServer()` вызывается сразу после `registerBackofficeRoutes()`, до запуска ботов. Раньше `listen()` был в конце bootstrap — при зависании Telegram API `/health` не отвечал, контейнер перезапускался.
+- **Ленивый payment webhook:** `addPaymentWebhookRoute(server, getServices, prisma)` принимает геттер; webhook возвращает 503 до готовности сервисов. Все роуты регистрируются до `listen()` без ошибки Fastify "Root plugin has already booted".
+- **Путь точки входа:** `node dist/src/index.js` (исправлено с `dist/index.js`).
+- **Seed InactivityReminderRule:** исправлен Prisma `WhereUniqueInput` в seed-demo-structure.ts.
 
 ### Checkpoint notes (2026-03-19)
 - Упрощен UX language-version editor: убрана кнопка `💾 Сохранить в черновик` из post-edit/preview flow; после edit-action показывается только `👁 Предпросмотр версии`, `✅ Опубликовать`, `↩️ Назад`, `🗂 В главное меню`.
@@ -300,6 +308,25 @@ npm run lint:types           # tsc --noEmit
 
 Требуется `.env`: DATABASE_URL, REDIS_URL, BOT_TOKEN, SUPER_ADMIN_TELEGRAM_ID, BOT_USERNAME и др. (см. .env.example).
 
+### Деплой на Hetzner VPS
+
+```bash
+# На сервере (первый раз)
+git clone https://github.com/mgusev1986/telegram-bot-konstruktor.git /opt/telegram-bot-konstruktor
+cd /opt/telegram-bot-konstruktor
+cp .env.production.example .env
+nano .env   # заполнить DATABASE_URL, REDIS_URL, BOT_TOKEN, SUPER_ADMIN_TELEGRAM_ID и др.
+sudo bash scripts/hetzner-setup.sh
+
+# Обновление после git push
+cd /opt/telegram-bot-konstruktor
+git pull
+docker compose -f docker-compose.prod.yml build --no-cache bot
+docker compose -f docker-compose.prod.yml up -d --force-recreate
+```
+
+Проверка: `curl http://localhost:3000/health` или `http://77.42.79.54:3000/health`.
+
 ---
 
 ## 14. Manual testing checklist
@@ -328,6 +355,6 @@ npm run lint:types           # tsc --noEmit
 
 **Ключевые файлы:** `src/bot/register-bot.ts` (хендлеры, sendRootWithWelcome, sendMenuPage), `src/bot/keyboards.ts` (вертикальные кнопки, callback_data), `src/modules/menu/menu.service.ts` (контент, дети, createMenuItem), `src/modules/menu/navigation-audit.ts` (граф, валидация). Тесты: `tests/navigation-audit.test.ts`, `tests/navigation-integrity.test.ts`, `tests/keyboards.test.ts`. Демо-данные: `npm run prisma:seed-demo`.
 
-**Известная проблема:** «Назад» в редакторе главной страницы иногда ведёт на пустой экран — убедиться, что page_edit:back для root всегда вызывает sendRootWithWelcome.
+**Деплой:** Hetzner VPS 77.42.79.54, Docker Compose. HTTP-сервер стартует до запуска ботов — `/health` отвечает сразу. Репозиторий: github.com/mgusev1986/telegram-bot-konstruktor.
 
 **Полный контекст:** см. HANDOFF.md в корне проекта.
