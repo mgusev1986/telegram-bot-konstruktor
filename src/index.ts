@@ -2,7 +2,7 @@ import { env } from "./config/env";
 import { logger } from "./common/logger";
 import { prisma } from "./infrastructure/prisma";
 import { bullConnection, redis } from "./infrastructure/redis";
-import { createAndStartHealthServer, addPaymentWebhookRoute } from "./http/server";
+import { createHealthServer, startHttpServer, addPaymentWebhookRoute } from "./http/server";
 import { startWorkers } from "./modules/jobs/workers";
 import { encryptTelegramBotToken, hashTelegramBotToken } from "./common/telegram-token-encryption";
 import { randomBytes } from "node:crypto";
@@ -113,7 +113,7 @@ const bootstrap = async (): Promise<void> => {
 
   await assertUserRoleEnumHasAlphaOwner();
 
-  const httpServer = await createAndStartHealthServer();
+  const httpServer = createHealthServer();
 
   const hasEnvBot = Boolean(env.BOT_TOKEN?.trim() && env.BOT_USERNAME?.trim());
 
@@ -257,6 +257,7 @@ const bootstrap = async (): Promise<void> => {
   const runtimeManager = new BotRuntimeManager(prisma, redis, bullConnection);
 
   await registerBackofficeRoutes(httpServer, prisma, runtimeManager);
+  logger.info("Backoffice routes registered");
 
   // Load all active, non-archived bots and start each with per-bot error isolation.
   const activeBots = await prisma.botInstance.findMany({
@@ -312,6 +313,8 @@ const bootstrap = async (): Promise<void> => {
   });
 
   addPaymentWebhookRoute(httpServer, services, prisma);
+
+  await startHttpServer(httpServer);
 
   logger.info(
     {

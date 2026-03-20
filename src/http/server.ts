@@ -6,18 +6,25 @@ import { logger } from "../common/logger";
 import type { AppServices } from "../app/services";
 
 /**
- * Creates a minimal HTTP server with /health and starts listening immediately.
- * Use this at the start of bootstrap so health checks succeed while heavy init runs.
+ * Creates HTTP server with /health route. Does NOT call listen() — all routes
+ * (backoffice, webhooks) must be registered before listen() to avoid Fastify
+ * "Root plugin has already booted" error.
  */
-export async function createAndStartHealthServer(): Promise<FastifyInstance> {
+export function createHealthServer(): FastifyInstance {
   const server = Fastify({ logger: false });
   server.get("/health", async () => ({
     ok: true,
     timestamp: new Date().toISOString()
   }));
-  await server.listen({ port: env.HTTP_PORT, host: "0.0.0.0" });
-  logger.info({ port: env.HTTP_PORT }, "HTTP server started (health only)");
   return server;
+}
+
+/**
+ * Starts listening on the given server. Call after all routes are registered.
+ */
+export async function startHttpServer(server: FastifyInstance): Promise<void> {
+  await server.listen({ port: env.HTTP_PORT, host: "0.0.0.0" });
+  logger.info({ port: env.HTTP_PORT }, "HTTP server started");
 }
 
 /**
