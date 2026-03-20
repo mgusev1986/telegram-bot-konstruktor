@@ -313,26 +313,27 @@ async function main(): Promise<void> {
   const softTemplate = INACTIVITY_REMINDER_TEMPLATES_RU.find((t) => t.key === "soft_4")!;
   const softTemplateRow = await prisma.reminderTemplate.findUnique({ where: { key: softTemplate.key } });
   if (softTemplateRow) {
-    await prisma.inactivityReminderRule.upsert({
-      where: { triggerPageId: idAboutProduct },
-      update: {
-        templateId: softTemplateRow.id,
-        targetMenuItemId: idProduct1,
-        delayMinutes: 45,
-        ctaLabel: softTemplateRow.defaultCtaLabel,
-        ctaTargetType: "NEXT_PAGE",
-        isActive: true
-      },
-      create: {
-        templateId: softTemplateRow.id,
-        triggerPageId: idAboutProduct,
-        targetMenuItemId: idProduct1,
-        delayMinutes: 45,
-        ctaLabel: softTemplateRow.defaultCtaLabel,
-        ctaTargetType: "NEXT_PAGE",
-        isActive: true
-      }
+    const existingRule = await prisma.inactivityReminderRule.findFirst({
+      where: { triggerPageId: idAboutProduct, templateId: softTemplateRow.id }
     });
+    const data = {
+      templateId: softTemplateRow.id,
+      targetMenuItemId: idProduct1,
+      delayMinutes: 45,
+      ctaLabel: softTemplateRow.defaultCtaLabel,
+      ctaTargetType: "NEXT_PAGE" as const,
+      isActive: true
+    };
+    if (existingRule) {
+      await prisma.inactivityReminderRule.update({
+        where: { id: existingRule.id },
+        data
+      });
+    } else {
+      await prisma.inactivityReminderRule.create({
+        data: { ...data, triggerPageId: idAboutProduct }
+      });
+    }
   }
 
   console.log("Creating test drip campaign...");
