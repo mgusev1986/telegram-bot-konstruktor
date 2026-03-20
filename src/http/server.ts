@@ -29,10 +29,12 @@ export async function startHttpServer(server: FastifyInstance): Promise<void> {
 
 /**
  * Registers the payment webhook route on an existing server.
+ * Accepts a getter so the route can be registered before services are ready.
+ * Returns 503 until services are available.
  */
 export function addPaymentWebhookRoute(
   server: FastifyInstance,
-  services: AppServices,
+  getServices: () => AppServices | null,
   prisma: PrismaClient
 ): void {
   server.post<{
@@ -42,6 +44,12 @@ export function addPaymentWebhookRoute(
       externalTxId?: string;
     };
   }>("/webhooks/payments/crypto", async (request, reply) => {
+    const services = getServices();
+    if (!services) {
+      reply.code(503);
+      return { ok: false, error: "Services not ready" };
+    }
+
     // Payment confirmation should be executed by the global creator ALPHA_OWNER.
     const owner = await prisma.user.findFirst({
       where: {

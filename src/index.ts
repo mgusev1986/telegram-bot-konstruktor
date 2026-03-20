@@ -3,6 +3,7 @@ import { logger } from "./common/logger";
 import { prisma } from "./infrastructure/prisma";
 import { bullConnection, redis } from "./infrastructure/redis";
 import { createHealthServer, startHttpServer, addPaymentWebhookRoute } from "./http/server";
+import type { AppServices } from "./app/services";
 import { startWorkers } from "./modules/jobs/workers";
 import { encryptTelegramBotToken, hashTelegramBotToken } from "./common/telegram-token-encryption";
 import { randomBytes } from "node:crypto";
@@ -114,6 +115,11 @@ const bootstrap = async (): Promise<void> => {
   await assertUserRoleEnumHasAlphaOwner();
 
   const httpServer = createHealthServer();
+
+  // Payment webhook uses lazy getter so it can be registered before bots start.
+  // Returns 503 until services are ready.
+  let servicesRef: AppServices | null = null;
+  addPaymentWebhookRoute(httpServer, () => servicesRef, prisma);
 
   const hasEnvBot = Boolean(env.BOT_TOKEN?.trim() && env.BOT_USERNAME?.trim());
 
@@ -259,6 +265,8 @@ const bootstrap = async (): Promise<void> => {
   await registerBackofficeRoutes(httpServer, prisma, runtimeManager);
   logger.info("Backoffice routes registered");
 
+  await startHttpServer(httpServer);
+
   // Load all active, non-archived bots and start each with per-bot error isolation.
   const activeBots = await prisma.botInstance.findMany({
     where: { status: "ACTIVE", isArchived: false },
@@ -300,21 +308,17 @@ const bootstrap = async (): Promise<void> => {
     );
   }
 
-  const services = primaryRuntime.services;
+  servicesRef = primaryRuntime.services;
 
-  await services.payments.ensureDemoProducts();
-  await services.scheduler.recoverPendingJobs();
+  await servicesRef.payments.ensureDemoProducts();
+  await servicesRef.scheduler.recoverPendingJobs();
 
   const worker = startWorkers({
     prisma,
     connection: bullConnection,
-    scheduler: services.scheduler,
+    scheduler: servicesRef.scheduler,
     runtimeManager
   });
-
-  addPaymentWebhookRoute(httpServer, services, prisma);
-
-  await startHttpServer(httpServer);
 
   logger.info(
     {
