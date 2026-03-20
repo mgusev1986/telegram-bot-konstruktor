@@ -1,0 +1,52 @@
+# Blueprint для Telegram Bot Konstruktor
+# https://docs.render.com/blueprint-spec
+
+databases:
+  - name: telegram-bot-db
+    databaseName: telegram_bot_konstruktor
+    plan: free
+
+services:
+  - type: keyvalue
+    name: telegram-bot-redis
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: allow-all
+    plan: free
+
+  - type: web
+    name: telegram-bot-konstruktor
+    runtime: docker
+    region: frankfurt
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: telegram-bot-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: telegram-bot-redis
+          property: connectionString
+      - key: SUPER_ADMIN_TELEGRAM_ID
+        sync: false
+      - key: BOT_TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      - key: BACKOFFICE_JWT_SECRET
+        generateValue: true
+      - key: BACKOFFICE_ADMIN_EMAIL
+        sync: false
+      - key: BACKOFFICE_ADMIN_PASSWORD
+        sync: false
+      - key: NODE_ENV
+        value: production
+      - key: TRANSLATION_PROVIDER
+        value: cerebras
+      - key: CEREBRAS_API_KEY
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: BOT_USERNAME
+        sync: false

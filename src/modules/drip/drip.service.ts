@@ -1,0 +1,327 @@
+import type { DripTriggerType, MediaType, PrismaClient } from "@prisma/client";
+import type { Telegram } from "telegraf";
+
+import { sendRichMessage } from "../../common/media";
+import { renderPageContent } from "../../common/page-content-render";
+import type { AuditService } from "../audit/audit.service";
+import type { I18nService } from "../i18n/i18n.service";
+import type { SchedulerService } from "../jobs/scheduler.service";
+
+export interface DripStepInput {
+  languageCode: string;
+  delayValue: number;
+  delayUnit: "MINUTES" | "HOURS" | "DAYS";
+  text?: string;
+  mediaType?: MediaType;
+  mediaFileId?: string | null;
+  externalUrl?: string | null;
+}
+
+export interface CreateDripCampaignInput {
+  actorUserId: string;
+  title: string;
+  triggerType: DripTriggerType;
+  steps: DripStepInput[];
+}
+
+export class DripService {
+  private telegram: Telegram | null = null;
+
+  public constructor(
+    private readonly prisma: PrismaClient,
+    private readonly scheduler: SchedulerService,
+    private readonly i18n: I18nService,
+    private readonly audit: AuditService,
+    private readonly botInstanceId?: string
+  ) {}
+
+  public setTelegram(telegram: Telegram): void {
+    this.telegram = telegram;
+  }
+
+  public async createCampaign(input: CreateDripCampaignInput) {
+    const campaign = await this.prisma.dripCampaign.create({
+      data: {
+        title: input.title,
+        triggerType: input.triggerType,
+        createdByUserId: input.actorUserId,
+        botInstanceId: this.botInstanceId ?? undefined,
+        steps: {
+          create: input.steps.map((step, index) => ({
+            stepOrder: index + 1,
+            delayValue: step.delayValue,
+            delayUnit: step.delayUnit,
+            localizations: {
+              create: {
+                languageCode: step.languageCode,
+                text: step.text ?? "",
+                mediaType: step.mediaType ?? "NONE",
+                mediaFileId: step.mediaFileId ?? undefined,
+                externalUrl: step.externalUrl ?? undefined
+              }
+            }
+          }))
+        }
+      }
+    });
+
+    await this.audit.log(input.actorUserId, "create_drip_campaign", "drip_campaign", campaign.id, {
+      triggerType: input.triggerType,
+      steps: input.steps.length
+    });
+
+    return campaign;
+  }
+
+  public async listCampaigns(createdByUserId: string) {
+    return await this.prisma.dripCampaign.findMany({
+      where: { createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) },
+      orderBy: { createdAt: "desc" },
+      include: {
+        steps: {
+          orderBy: { stepOrder: "asc" },
+          include: { localizations: true }
+        }
+      }
+    });
+  }
+
+  public async getCampaign(createdByUserId: string, campaignId: string) {
+    return await this.prisma.dripCampaign.findFirst({
+      where: { id: campaignId, createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) },
+      include: {
+        steps: {
+          orderBy: { stepOrder: "asc" },
+          include: { localizations: true }
+        }
+      }
+    });
+  }
+
+  public async toggleCampaignActive(createdByUserId: string, campaignId: string): Promise<boolean | null> {
+    const found = await this.prisma.dripCampaign.findFirst({
+      where: { id: campaignId, createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) },
+      select: { isActive: true }
+    });
+    if (!found) return null;
+    const updated = await this.prisma.dripCampaign.update({
+      where: { id: campaignId },
+      data: { isActive: !found.isActive },
+      select: { isActive: true }
+    });
+    await this.audit.log(createdByUserId, "toggle_drip_campaign", "drip_campaign", campaignId, { isActive: updated.isActive });
+    return updated.isActive;
+  }
+
+  public async deleteCampaign(createdByUserId: string, campaignId: string): Promise<boolean> {
+    const found = await this.prisma.dripCampaign.findFirst({
+      where: { id: campaignId, createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) },
+      select: { id: true }
+    });
+    if (!found) return false;
+    await this.prisma.dripCampaign.delete({ where: { id: campaignId } });
+    await this.audit.log(createdByUserId, "delete_drip_campaign", "drip_campaign", campaignId, {});
+    return true;
+  }
+
+  public async appendStep(
+    createdByUserId: string,
+    campaignId: string,
+    input: DripStepInput
+  ) {
+    const campaign = await this.prisma.dripCampaign.findFirst({
+      where: { id: campaignId, createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) },
+      include: { steps: true }
+    });
+    if (!campaign) return null;
+    const nextOrder = (campaign.steps.reduce((m, s) => Math.max(m, s.stepOrder), 0) ?? 0) + 1;
+    const step = await this.prisma.dripStep.create({
+      data: {
+        campaignId,
+        stepOrder: nextOrder,
+        delayValue: input.delayValue,
+        delayUnit: input.delayUnit as any,
+        localizations: {
+          create: {
+            languageCode: input.languageCode,
+            text: input.text ?? "",
+            mediaType: input.mediaType ?? "NONE",
+            mediaFileId: input.mediaFileId ?? undefined,
+            externalUrl: input.externalUrl ?? undefined
+          }
+        }
+      },
+      include: { localizations: true }
+    });
+    await this.audit.log(createdByUserId, "append_drip_step", "drip_step", step.id, { campaignId, stepOrder: nextOrder });
+    return step;
+  }
+
+  public async deleteStep(createdByUserId: string, campaignId: string, stepId: string): Promise<boolean> {
+    const campaign = await this.prisma.dripCampaign.findFirst({
+      where: { id: campaignId, createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) },
+      select: { id: true }
+    });
+    if (!campaign) return false;
+    const found = await this.prisma.dripStep.findFirst({ where: { id: stepId, campaignId }, select: { id: true } });
+    if (!found) return false;
+    await this.prisma.dripStep.delete({ where: { id: stepId } });
+    await this.audit.log(createdByUserId, "delete_drip_step", "drip_step", stepId, { campaignId });
+    return true;
+  }
+
+  public async deleteStepById(createdByUserId: string, stepId: string): Promise<{ ok: boolean; campaignId?: string }> {
+    const step = await this.prisma.dripStep.findFirst({
+      where: {
+        id: stepId,
+        campaign: { createdByUserId }
+      },
+      select: { id: true, campaignId: true }
+    });
+    if (!step) return { ok: false };
+    await this.prisma.dripStep.delete({ where: { id: stepId } });
+    await this.audit.log(createdByUserId, "delete_drip_step", "drip_step", stepId, { campaignId: step.campaignId });
+    return { ok: true, campaignId: step.campaignId };
+  }
+
+  public async enrollUser(userId: string, triggerType: DripTriggerType): Promise<void> {
+    const campaigns = await this.prisma.dripCampaign.findMany({
+      where: {
+        isActive: true,
+        triggerType,
+        ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {})
+      },
+      include: {
+        steps: {
+          orderBy: {
+            stepOrder: "asc"
+          }
+        }
+      }
+    });
+
+    for (const campaign of campaigns) {
+      const firstStep = campaign.steps[0];
+
+      if (!firstStep) {
+        continue;
+      }
+
+      const nextRunAt = this.calculateNextRun(new Date(), firstStep.delayValue, firstStep.delayUnit);
+      const progress = await this.prisma.userDripProgress.upsert({
+        where: {
+          userId_campaignId: {
+            userId,
+            campaignId: campaign.id
+          }
+        },
+        update: {
+          currentStep: 1,
+          status: "ACTIVE",
+          nextRunAt
+        },
+        create: {
+          userId,
+          campaignId: campaign.id,
+          botInstanceId: this.botInstanceId ?? undefined,
+          currentStep: 1,
+          nextRunAt
+        }
+      });
+
+      await this.scheduler.schedule(
+        "SEND_DRIP_STEP",
+        { progressId: progress.id },
+        nextRunAt,
+        `drip:${progress.id}:${progress.currentStep}`
+      );
+    }
+  }
+
+  public async processProgress(progressId: string): Promise<void> {
+    const progress = await this.prisma.userDripProgress.findUniqueOrThrow({
+      where: { id: progressId },
+      include: {
+        user: true,
+        campaign: {
+          include: {
+            steps: {
+              include: {
+                localizations: true
+              },
+              orderBy: {
+                stepOrder: "asc"
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (progress.status !== "ACTIVE") {
+      return;
+    }
+
+    const step = progress.campaign.steps.find((item) => item.stepOrder === progress.currentStep);
+
+    if (!step) {
+      await this.prisma.userDripProgress.update({
+        where: { id: progress.id },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date()
+        }
+      });
+      return;
+    }
+
+    const localization = this.i18n.pickLocalized(step.localizations, progress.user.selectedLanguage) ?? step.localizations[0];
+
+    if (this.telegram && localization) {
+      await sendRichMessage(this.telegram, progress.user.telegramUserId, {
+        text: renderPageContent(localization.text, progress.user),
+        mediaType: localization.mediaType,
+        mediaFileId: localization.mediaFileId,
+        externalUrl: localization.externalUrl
+      });
+    }
+
+    const nextStep = progress.campaign.steps.find((item) => item.stepOrder === progress.currentStep + 1);
+
+    if (!nextStep) {
+      await this.prisma.userDripProgress.update({
+        where: { id: progress.id },
+        data: {
+          currentStep: progress.currentStep,
+          status: "COMPLETED",
+          completedAt: new Date(),
+          nextRunAt: null
+        }
+      });
+      return;
+    }
+
+    const nextRunAt = this.calculateNextRun(new Date(), nextStep.delayValue, nextStep.delayUnit);
+    await this.prisma.userDripProgress.update({
+      where: { id: progress.id },
+      data: {
+        currentStep: nextStep.stepOrder,
+        nextRunAt
+      }
+    });
+
+    await this.scheduler.schedule(
+      "SEND_DRIP_STEP",
+      { progressId: progress.id },
+      nextRunAt,
+      `drip:${progress.id}:${nextStep.stepOrder}`
+    );
+  }
+
+  private calculateNextRun(base: Date, delayValue: number, delayUnit: "MINUTES" | "HOURS" | "DAYS"): Date {
+    const multiplier =
+      delayUnit === "MINUTES" ? 60 * 1000 : delayUnit === "HOURS" ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+
+    return new Date(base.getTime() + delayValue * multiplier);
+  }
+}

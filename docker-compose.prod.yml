@@ -1,0 +1,49 @@
+# Production: Hetzner VPS
+# Без Ollama (используем Cerebras). Postgres и Redis только внутри Docker-сети.
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: telegram_bot_konstruktor
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Не открываем порт наружу — только для bot-сервиса
+    networks:
+      - botnet
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - botnet
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "3000:3000"
+    networks:
+      - botnet
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  botnet:
+    driver: bridge

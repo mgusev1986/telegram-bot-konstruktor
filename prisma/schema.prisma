@@ -1,0 +1,1162 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ALPHA_OWNER
+  OWNER
+  ADMIN
+  USER
+}
+
+enum BackofficeUserRole {
+  ALPHA_OWNER
+  OWNER
+  ADMIN
+}
+
+// Bot-scoped roles assigned to Telegram users.
+// Global ALPHA_OWNER remains stored in User.role and is never managed via this flow.
+enum BotScopedRole {
+  OWNER
+  ADMIN
+}
+
+enum BotRoleAssignmentStatus {
+  PENDING
+  ACTIVE
+  REVOKED
+}
+
+enum BotInstanceStatus {
+  DRAFT
+  ACTIVE
+  DISABLED
+  INVALID_TOKEN
+}
+
+enum UserLifecycleStatus {
+  NEW
+  INTERESTED
+  ACTIVE
+  PAID
+  PARTNER
+  LEADER
+  INACTIVE
+}
+
+enum MenuItemType {
+  TEXT
+  PHOTO
+  VIDEO
+  DOCUMENT
+  LINK
+  SUBMENU
+  SECTION_LINK
+}
+
+enum VisibilityMode {
+  SHOW
+  HIDE
+  LOCK
+}
+
+enum MediaType {
+  NONE
+  PHOTO
+  VIDEO
+  DOCUMENT
+  LINK
+  VOICE
+  VIDEO_NOTE
+}
+
+// Status of a localization layer (language version) for a template.
+// NOTE: This enum/table already exists in DB via migrations; keep schema in sync.
+enum LocalizationLayerStatus {
+  DRAFT
+  PUBLISHED
+}
+
+model TelegramMediaAsset {
+  id           String    @id @default(uuid())
+  channelId    BigInt    @map("channel_id")
+  messageId    Int       @map("message_id")
+  mediaType    MediaType @map("media_type")
+  fileId       String    @map("file_id")
+  fileUniqueId String?   @map("file_unique_id")
+  caption      String    @default("")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([channelId, messageId])
+  @@index([channelId, createdAt])
+  @@index([mediaType, createdAt])
+  @@map("telegram_media_assets")
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum BroadcastRecipientStatus {
+  PENDING
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum AudienceType {
+  ALL_USERS
+  OWN_FIRST_LINE
+  OWN_STRUCTURE
+  SPECIFIC_LEVEL
+  LANGUAGE
+  ROLE
+  TAGS
+  PAYMENT_STATUS
+  ACTIVITY
+  CUSTOM
+}
+
+enum DripTriggerType {
+  ON_REGISTRATION
+  ON_PAYMENT
+  ON_TAG_ASSIGNED
+  ON_EVENT
+}
+
+enum DelayUnit {
+  MINUTES
+  HOURS
+  DAYS
+}
+
+enum DripProgressStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum JobType {
+  SEND_BROADCAST
+  SEND_BROADCAST_BATCH
+  SEND_DRIP_STEP
+  SEND_NOTIFICATION
+  PROCESS_PAYMENT_EXPIRY
+  SEND_INACTIVITY_REMINDER
+  GENERATE_LANGUAGE_VERSION_AI
+}
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ProductType {
+  SECTION
+  COURSE
+  SUBSCRIPTION
+  MEDIA
+  FUNNEL
+}
+
+enum BillingType {
+  ONE_TIME
+  RECURRING
+  TEMPORARY
+}
+
+enum PaymentProvider {
+  CRYPTO
+  MANUAL
+}
+
+enum PaymentNetwork {
+  USDT_TRC20
+  USDT_BEP20
+  TON
+  OTHER
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  EXPIRED
+  REFUNDED
+  CANCELLED
+}
+
+enum AccessType {
+  LIFETIME
+  TEMPORARY
+  SUBSCRIPTION
+}
+
+enum AccessStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+enum AccessRuleType {
+  FREE
+  PRODUCT_PURCHASE
+  REFERRAL_COUNT
+  MLM_LEVEL
+  SEGMENT
+  LANGUAGE
+  PREVIOUS_PROGRESS
+  CONTACT_SHARED
+  REGISTERED_DAYS
+  HAS_TAG
+  NOT_HAS_TAG
+  USER_STATUS
+}
+
+enum ContentProgressStatus {
+  VIEWED
+  COMPLETED
+}
+
+enum AbEntityType {
+  WELCOME
+  MENU_ITEM
+  OFFER
+  BROADCAST
+  DRIP
+  PRICE
+}
+
+enum AbStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  PAUSED
+}
+
+enum NotificationType {
+  FIRST_LINE_REGISTRATION
+  GLOBAL_REGISTRATION
+  PAYMENT_CONFIRMED
+  PAYMENT_REQUESTED
+  ACCESS_GRANTED
+  ACCESS_EXPIRING
+  BADGE_AWARDED
+  NEXT_STEP
+  SYSTEM_ALERT
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+model User {
+  id                     String                @id @default(uuid())
+  telegramUserId         BigInt                @map("telegram_user_id")
+  botInstanceId          String?               @map("bot_instance_id")
+  username               String?
+  firstName              String                 @default("") @map("first_name")
+  lastName               String                 @default("") @map("last_name")
+  fullName               String                 @default("") @map("full_name")
+  phone                  String?
+  role                   UserRole               @default(USER)
+  referralCode           String                 @unique @map("referral_code")
+  externalReferralLink  String?                @map("external_referral_link")
+  invitedByUserId        String?                @map("invited_by_user_id")
+  mentorUserId           String?                @map("mentor_user_id")
+  selectedLanguage       String                 @default("ru") @map("selected_language")
+  timeZone               String?                @map("time_zone")
+  status                 UserLifecycleStatus    @default(NEW)
+  lastContentMessageId   Int?                   @map("last_content_message_id")
+  lastSeenAt             DateTime?              @map("last_seen_at")
+  onboardingStep         Int?                   @map("onboarding_step")
+  onboardingCompletedAt  DateTime?              @map("onboarding_completed_at")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+  invitedBy           User?                 @relation("UserInviter", fields: [invitedByUserId], references: [id], onDelete: SetNull)
+  invitedUsers        User[]                @relation("UserInviter")
+  mentor              User?                 @relation("MentorUser", fields: [mentorUserId], references: [id], onDelete: SetNull)
+  mentoredUsers       User[]                @relation("MentorUser")
+  adminPermission     AdminPermission?
+  contacts            Contact[]
+  ownedTemplates      PresentationTemplate[] @relation("TemplateOwner")
+  referralStats       ReferralStatsCache?
+  referralEventsSent  ReferralEvent[]       @relation("ReferralInviter")
+  referralEventsGot   ReferralEvent[]       @relation("ReferralInvitee")
+  broadcastsCreated   Broadcast[]
+  dripCampaigns       DripCampaign[]
+  dripProgress        UserDripProgress[]
+  payments            Payment[]
+  accessRights        UserAccessRight[]
+  userTags            UserTag[]
+  notes               UserNote[]            @relation("UserNoteTarget")
+  authoredNotes       UserNote[]            @relation("UserNoteAuthor")
+  clicks              ButtonClickEvent[]
+  contentProgress     ContentProgress[]
+  abAssignments       AbTestAssignment[]
+  notifications       Notification[]
+  badges              UserBadge[]
+  adminActions        AdminActionLog[]
+  inactivityReminderStates UserInactivityReminderState[]
+
+  botInstance            BotInstance?          @relation(fields: [botInstanceId], references: [id], onDelete: SetNull)
+
+  botRoleAssignments     BotRoleAssignment[]  @relation("BotRoleAssignmentUser")
+  grantedBotRoleAssignments BotRoleAssignment[] @relation("BotRoleAssignmentGrantedBy")
+
+  @@index([invitedByUserId])
+  @@index([mentorUserId])
+  @@index([role])
+  @@index([selectedLanguage])
+  @@index([status])
+  @@unique([telegramUserId, botInstanceId])
+  @@map("users")
+}
+
+model BackofficeUser {
+  id           String             @id @default(uuid())
+  email        String             @unique
+  passwordHash String            @map("password_hash")
+  role         BackofficeUserRole @default(ADMIN)
+  createdAt    DateTime           @default(now()) @map("created_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+
+  botInstances BotInstance[]     @relation("BackofficeOwnerBotInstances")
+
+  @@map("backoffice_users")
+}
+
+model BotInstance {
+  id                     String            @id @default(uuid())
+  ownerBackofficeUserId String?           @map("owner_backoffice_user_id")
+  name                   String
+  telegramBotTokenEncrypted String        @map("telegram_bot_token_encrypted")
+  telegramBotTokenHash   String?           @unique @map("telegram_bot_token_hash")
+  telegramBotUsername   String?           @map("telegram_bot_username")
+  status                 BotInstanceStatus @default(DRAFT)
+  paidAccessEnabled     Boolean           @default(true) @map("paid_access_enabled")
+  isArchived             Boolean           @default(false) @map("is_archived")
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+
+  ownerBackofficeUser   BackofficeUser?  @relation("BackofficeOwnerBotInstances", fields: [ownerBackofficeUserId], references: [id], onDelete: Cascade)
+  presentationTemplates PresentationTemplate[]
+  users                 User[]
+  dripCampaigns        DripCampaign[]
+  userDripProgresses   UserDripProgress[]
+  broadcasts            Broadcast[]
+  payments              Payment[]
+  contentProgresses    ContentProgress[]
+
+  roleAssignments      BotRoleAssignment[] @relation("BotRoleAssignmentBotInstance")
+
+  @@index([ownerBackofficeUserId, status])
+  @@map("bot_instances")
+}
+
+model AdminPermission {
+  id                   String   @id @default(uuid())
+  userId               String   @unique @map("user_id")
+  canEditMenu          Boolean  @default(false) @map("can_edit_menu")
+  canSendBroadcasts    Boolean  @default(false) @map("can_send_broadcasts")
+  canScheduleMessages  Boolean  @default(false) @map("can_schedule_messages")
+  canManageLanguages   Boolean  @default(false) @map("can_manage_languages")
+  canManagePayments    Boolean  @default(false) @map("can_manage_payments")
+  canManageSegments    Boolean  @default(false) @map("can_manage_segments")
+  canViewGlobalStats   Boolean  @default(false) @map("can_view_global_stats")
+  canManageTemplates   Boolean  @default(false) @map("can_manage_templates")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("admin_permissions")
+}
+
+model BotRoleAssignment {
+  id                         String                   @id @default(uuid())
+  botInstanceId              String                   @map("bot_instance_id")
+  telegramUsernameRaw       String?                  @map("telegram_username_raw")
+  telegramUsernameNormalized String                 @map("telegram_username_normalized")
+  role                       BotScopedRole          @map("role")
+  status                     BotRoleAssignmentStatus @default(PENDING) @map("status")
+
+  // Linked to a real User row once the Telegram user is created/resolved in this bot context.
+  userId                     String?                  @map("user_id")
+  user                       User?                    @relation("BotRoleAssignmentUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  // Who granted the assignment (typically ALPHA_OWNER, but can also be used for auditing).
+  grantedByUserId           String?                  @map("granted_by_user_id")
+  grantedByUser             User?                    @relation("BotRoleAssignmentGrantedBy", fields: [grantedByUserId], references: [id], onDelete: SetNull)
+
+  revokedAt                  DateTime?               @map("revoked_at")
+  activatedAt                DateTime?               @map("activated_at")
+
+  createdAt                  DateTime                 @default(now()) @map("created_at")
+  updatedAt                  DateTime                 @updatedAt @map("updated_at")
+
+  botInstance                BotInstance             @relation("BotRoleAssignmentBotInstance", fields: [botInstanceId], references: [id], onDelete: Cascade)
+  // Note: inverse relation is declared on BotInstance.roleAssignments.
+
+  @@unique([botInstanceId, telegramUsernameNormalized])
+  @@index([botInstanceId, status])
+  @@index([botInstanceId, role])
+  @@map("bot_role_assignments")
+}
+
+model PresentationTemplate {
+  id                String                     @id @default(uuid())
+  title             String
+  ownerAdminId      String                     @map("owner_admin_id")
+  botInstanceId     String?                    @map("bot_instance_id")
+  baseLanguageCode  String                     @default("ru") @map("base_language_code")
+  isActive          Boolean                    @default(true) @map("is_active")
+  createdAt         DateTime                   @default(now()) @map("created_at")
+  updatedAt         DateTime                   @updatedAt @map("updated_at")
+  ownerAdmin        User                       @relation("TemplateOwner", fields: [ownerAdminId], references: [id], onDelete: Cascade)
+  botInstance       BotInstance?             @relation(fields: [botInstanceId], references: [id], onDelete: Cascade)
+  localizations     PresentationLocalization[]
+  draftLocalizations PresentationLocalizationDraft[]
+  localizationLayerStates LocalizationLayerState[]
+  menuItems         MenuItem[]
+
+  @@index([botInstanceId, isActive])
+  @@map("presentation_templates")
+}
+
+model PresentationLocalization {
+  id                  String               @id @default(uuid())
+  templateId          String               @map("template_id")
+  languageCode        String               @map("language_code")
+  welcomeText         String               @default("") @map("welcome_text")
+  welcomeMediaType    MediaType            @default(NONE) @map("welcome_media_type")
+  welcomeMediaFileId  String?              @map("welcome_media_file_id")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+  template            PresentationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, languageCode])
+  @@map("presentation_localizations")
+}
+
+/**
+ * Draft layer for welcome/root content of a language version.
+ * Published content stays in PresentationLocalization.
+ */
+model PresentationLocalizationDraft {
+  id                 String               @id @default(uuid())
+  templateId         String               @map("template_id")
+  languageCode       String               @map("language_code")
+  welcomeText        String               @default("") @map("welcome_text")
+  welcomeMediaType   MediaType            @default(NONE) @map("welcome_media_type")
+  welcomeMediaFileId String?              @map("welcome_media_file_id")
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  template           PresentationTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, languageCode])
+  @@map("presentation_localizations_draft")
+}
+
+model MenuItem {
+  id                String                 @id @default(uuid())
+  templateId        String                 @map("template_id")
+  parentId          String?                @map("parent_id")
+  key               String                 @unique
+  type              MenuItemType
+  sortOrder         Int                    @default(0) @map("sort_order")
+  isActive          Boolean                @default(true) @map("is_active")
+  visibilityMode    VisibilityMode         @default(SHOW) @map("visibility_mode")
+  accessRuleId      String?                @map("access_rule_id")
+  productId         String?                @map("product_id")
+  targetMenuItemId  String?                @map("target_menu_item_id")
+  createdAt         DateTime               @default(now()) @map("created_at")
+  updatedAt         DateTime               @updatedAt @map("updated_at")
+  template          PresentationTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  parent            MenuItem?              @relation("MenuItemTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children          MenuItem[]             @relation("MenuItemTree")
+  targetMenuItem    MenuItem?              @relation("SectionLink", fields: [targetMenuItemId], references: [id], onDelete: SetNull)
+  linkButtons       MenuItem[]             @relation("SectionLink")
+  accessRule        AccessRule?            @relation(fields: [accessRuleId], references: [id], onDelete: SetNull)
+  product           Product?               @relation(fields: [productId], references: [id], onDelete: SetNull)
+  localizations     MenuItemLocalization[]
+  draftLocalizations MenuItemLocalizationDraft[]
+  clicks            ButtonClickEvent[]
+  progress          ContentProgress[]
+
+  @@index([templateId, parentId, sortOrder])
+  @@index([accessRuleId])
+  @@index([productId])
+  @@index([targetMenuItemId])
+  @@map("menu_items")
+}
+
+/** Per-page order and visibility of content + nav buttons. menuItemId = page id ("root" or MenuItem.id). slotOrder: string[] with item ids and "__nav_back", "__nav_to_main". */
+model PageNavConfig {
+  id         String   @id @default(uuid())
+  menuItemId String   @unique @map("menu_item_id")
+  slotOrder  Json     @map("slot_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("page_nav_configs")
+}
+
+model MenuItemLocalization {
+  id           String    @id @default(uuid())
+  menuItemId   String    @map("menu_item_id")
+  languageCode String    @map("language_code")
+  title        String
+  contentText  String    @default("") @map("content_text")
+  mediaType    MediaType @default(NONE) @map("media_type")
+  mediaFileId  String?   @map("media_file_id")
+  externalUrl  String?   @map("external_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  menuItem     MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@unique([menuItemId, languageCode])
+  @@map("menu_item_localizations")
+}
+
+/**
+ * Draft layer for per-page localized content in a language version.
+ * Published content stays in MenuItemLocalization.
+ */
+model MenuItemLocalizationDraft {
+  id           String    @id @default(uuid())
+  menuItemId   String    @map("menu_item_id")
+  languageCode String    @map("language_code")
+  title        String
+  contentText  String    @default("") @map("content_text")
+  mediaType    MediaType @default(NONE) @map("media_type")
+  mediaFileId  String?   @map("media_file_id")
+  externalUrl  String?   @map("external_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  menuItem     MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@unique([menuItemId, languageCode])
+  @@map("menu_item_localizations_draft")
+}
+
+/**
+ * Per-template state of a language version (draft vs published).
+ * This table exists in DB via migrations; keep schema in sync.
+ */
+model LocalizationLayerState {
+  id               String                 @id @default(uuid())
+  templateId       String                 @map("template_id")
+  languageCode     String                 @map("language_code")
+  status           LocalizationLayerStatus @default(DRAFT)
+  createdByUserId  String?                @map("created_by_user_id")
+  lastEditedByUserId String?              @map("last_edited_by_user_id")
+  draftSavedAt     DateTime?              @map("draft_saved_at")
+  publishedAt      DateTime?              @map("published_at")
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
+
+  template         PresentationTemplate   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, languageCode])
+  @@index([templateId, status])
+  @@map("localization_layer_states")
+}
+
+model ReferralEvent {
+  id             String   @id @default(uuid())
+  inviterUserId  String   @map("inviter_user_id")
+  invitedUserId  String   @map("invited_user_id")
+  eventType      String   @map("event_type")
+  level          Int
+  createdAt      DateTime @default(now()) @map("created_at")
+  inviterUser    User     @relation("ReferralInviter", fields: [inviterUserId], references: [id], onDelete: Cascade)
+  invitedUser    User     @relation("ReferralInvitee", fields: [invitedUserId], references: [id], onDelete: Cascade)
+
+  @@index([inviterUserId, createdAt])
+  @@index([invitedUserId, createdAt])
+  @@map("referral_events")
+}
+
+model ReferralStatsCache {
+  id                  String   @id @default(uuid())
+  userId              String   @unique @map("user_id")
+  firstLineCount      Int      @default(0) @map("first_line_count")
+  totalStructureCount Int      @default(0) @map("total_structure_count")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("referral_stats_cache")
+}
+
+model Contact {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  phone      String
+  providedAt DateTime @default(now()) @map("provided_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, providedAt])
+  @@map("contacts")
+}
+
+model Broadcast {
+  id              String                  @id @default(uuid())
+  createdByUserId String                  @map("created_by_user_id")
+  botInstanceId  String?                 @map("bot_instance_id")
+  audienceType    AudienceType            @map("audience_type")
+  segmentQuery    Json                    @default("{}") @map("segment_query")
+  status          BroadcastStatus         @default(DRAFT)
+  sendAt          DateTime?               @map("send_at")
+  isScheduled     Boolean                 @default(false) @map("is_scheduled")
+  totalRecipients Int                     @default(0) @map("total_recipients")
+  processedCount  Int                     @default(0) @map("processed_count")
+  successCount    Int                     @default(0) @map("success_count")
+  failedCount     Int                     @default(0) @map("failed_count")
+  pendingCount    Int                     @default(0) @map("pending_count")
+  startedAt       DateTime?              @map("started_at")
+  finishedAt      DateTime?              @map("finished_at")
+  createdAt       DateTime                @default(now()) @map("created_at")
+  updatedAt       DateTime                @updatedAt @map("updated_at")
+  createdByUser   User                    @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  botInstance     BotInstance?           @relation(fields: [botInstanceId], references: [id], onDelete: SetNull)
+  localizations   BroadcastLocalization[]
+  recipients      BroadcastRecipient[]
+
+  @@index([status, sendAt])
+  @@map("broadcasts")
+}
+
+model BroadcastLocalization {
+  id           String    @id @default(uuid())
+  broadcastId  String    @map("broadcast_id")
+  languageCode String    @map("language_code")
+  text         String    @default("")
+  mediaType    MediaType @default(NONE) @map("media_type")
+  mediaFileId  String?   @map("media_file_id")
+  externalUrl  String?   @map("external_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  broadcast    Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, languageCode])
+  @@map("broadcast_localizations")
+}
+
+model BroadcastRecipient {
+  id           String                   @id @default(uuid())
+  broadcastId  String                   @map("broadcast_id")
+  userId       String                   @map("user_id")
+  status       BroadcastRecipientStatus @default(PENDING)
+  sentAt       DateTime?                @map("sent_at")
+  errorMessage String?                  @map("error_message")
+  broadcast    Broadcast                @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, userId])
+  @@index([status])
+  @@map("broadcast_recipients")
+}
+
+model DripCampaign {
+  id              String               @id @default(uuid())
+  title           String
+  isActive        Boolean              @default(true) @map("is_active")
+  triggerType     DripTriggerType      @map("trigger_type")
+  createdByUserId String               @map("created_by_user_id")
+  botInstanceId  String?              @map("bot_instance_id")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+  createdByUser   User                 @relation(fields: [createdByUserId], references: [id], onDelete: Cascade)
+  botInstance     BotInstance?        @relation(fields: [botInstanceId], references: [id], onDelete: SetNull)
+  steps           DripStep[]
+  userProgress    UserDripProgress[]
+
+  @@index([isActive, triggerType])
+  @@map("drip_campaigns")
+}
+
+model DripStep {
+  id         String                 @id @default(uuid())
+  campaignId String                 @map("campaign_id")
+  stepOrder  Int                    @map("step_order")
+  delayValue Int                    @map("delay_value")
+  delayUnit  DelayUnit              @map("delay_unit")
+  createdAt  DateTime               @default(now()) @map("created_at")
+  campaign   DripCampaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  localizations DripStepLocalization[]
+
+  @@unique([campaignId, stepOrder])
+  @@map("drip_steps")
+}
+
+model DripStepLocalization {
+  id           String    @id @default(uuid())
+  dripStepId   String    @map("drip_step_id")
+  languageCode String    @map("language_code")
+  text         String    @default("")
+  mediaType    MediaType @default(NONE) @map("media_type")
+  mediaFileId  String?   @map("media_file_id")
+  externalUrl  String?   @map("external_url")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  dripStep     DripStep  @relation(fields: [dripStepId], references: [id], onDelete: Cascade)
+
+  @@unique([dripStepId, languageCode])
+  @@map("drip_step_localizations")
+}
+
+model UserDripProgress {
+  id           String             @id @default(uuid())
+  userId       String             @map("user_id")
+  campaignId   String             @map("campaign_id")
+  botInstanceId String?          @map("bot_instance_id")
+  currentStep  Int                @default(0) @map("current_step")
+  nextRunAt    DateTime?          @map("next_run_at")
+  status       DripProgressStatus @default(ACTIVE)
+  startedAt    DateTime           @default(now()) @map("started_at")
+  completedAt  DateTime?          @map("completed_at")
+  updatedAt    DateTime           @updatedAt @map("updated_at")
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaign     DripCampaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  botInstance  BotInstance?       @relation(fields: [botInstanceId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, campaignId])
+  @@index([status, nextRunAt])
+  @@map("user_drip_progress")
+}
+
+model ScheduledJob {
+  id             String     @id @default(uuid())
+  jobType        JobType    @map("job_type")
+  payloadJson    Json       @map("payload_json")
+  status         JobStatus  @default(PENDING)
+  runAt          DateTime   @map("run_at")
+  lockedAt       DateTime?  @map("locked_at")
+  processedAt    DateTime?  @map("processed_at")
+  errorMessage   String?    @map("error_message")
+  retryCount     Int        @default(0) @map("retry_count")
+  idempotencyKey String     @unique @map("idempotency_key")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  @@index([status, runAt])
+  @@map("scheduled_jobs")
+}
+
+enum LanguageGenerationTaskStatus {
+  PENDING
+  RUNNING
+  DONE
+  FAILED
+}
+
+enum LanguageGenerationTaskItemType {
+  PRESENTATION
+  MENU_ITEM
+}
+
+enum LanguageGenerationTaskItemStatus {
+  PENDING
+  DONE
+  FAILED
+}
+
+model LanguageGenerationTask {
+  id                 String                        @id @default(uuid())
+  templateId         String                        @map("template_id")
+  startedByUserId   String                        @map("started_by_user_id")
+  sourceLanguageCode String                       @map("source_language_code")
+  targetLanguageCode String                       @map("target_language_code")
+  status             LanguageGenerationTaskStatus  @default(PENDING)
+  totalItems         Int                           @map("total_items")
+  completedItems     Int                           @default(0) @map("completed_items")
+  progressPercent    Int                           @default(0) @map("progress_percent")
+  errorMessage       String?                      @map("error_message")
+
+  startedAt          DateTime?                    @map("started_at")
+  finishedAt         DateTime?                    @map("finished_at")
+  createdAt          DateTime                      @default(now()) @map("created_at")
+  updatedAt          DateTime                      @updatedAt @map("updated_at")
+
+  items              LanguageGenerationTaskItem[]
+
+  @@index([templateId, targetLanguageCode])
+  @@index([status, startedAt])
+  @@map("language_generation_tasks")
+}
+
+model LanguageGenerationTaskItem {
+  id           String                           @id @default(uuid())
+  taskId       String                           @map("task_id")
+  entityType   LanguageGenerationTaskItemType  @map("entity_type")
+  entityId     String                           @map("entity_id")
+  status       LanguageGenerationTaskItemStatus @default(PENDING)
+  errorMessage String?                          @map("error_message")
+
+  createdAt    DateTime                         @default(now()) @map("created_at")
+  updatedAt    DateTime                         @updatedAt @map("updated_at")
+
+  task         LanguageGenerationTask           @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, entityType, entityId])
+  @@index([taskId, status])
+  @@map("language_generation_task_items")
+}
+
+model Product {
+  id            String                @id @default(uuid())
+  code          String                @unique
+  type          ProductType
+  price         Decimal               @db.Decimal(18, 8)
+  currency      String
+  billingType   BillingType           @map("billing_type")
+  durationDays  Int?                  @map("duration_days")
+  isActive      Boolean               @default(true) @map("is_active")
+  createdAt     DateTime              @default(now()) @map("created_at")
+  updatedAt     DateTime              @updatedAt @map("updated_at")
+  localizations ProductLocalization[]
+  menuItems     MenuItem[]
+  payments      Payment[]
+  accessRights  UserAccessRight[]
+
+  @@index([isActive])
+  @@map("products")
+}
+
+model ProductLocalization {
+  id            String   @id @default(uuid())
+  productId     String   @map("product_id")
+  languageCode  String   @map("language_code")
+  title         String
+  description   String   @default("")
+  payButtonText String   @default("") @map("pay_button_text")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  product       Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, languageCode])
+  @@map("product_localizations")
+}
+
+model Payment {
+  id            String          @id @default(uuid())
+  userId        String          @map("user_id")
+  productId     String          @map("product_id")
+  botInstanceId String?         @map("bot_instance_id")
+  provider      PaymentProvider
+  network       PaymentNetwork
+  walletAddress String          @map("wallet_address")
+  amount        Decimal         @db.Decimal(18, 8)
+  currency      String
+  status        PaymentStatus   @default(UNPAID)
+  referenceCode String          @unique @map("reference_code")
+  externalTxId  String?         @map("external_tx_id")
+  paidAt        DateTime?       @map("paid_at")
+  expiresAt     DateTime?       @map("expires_at")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product       Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  botInstance   BotInstance?   @relation(fields: [botInstanceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([productId, status])
+  @@map("payments")
+}
+
+model UserAccessRight {
+  id          String       @id @default(uuid())
+  userId      String       @map("user_id")
+  productId   String       @map("product_id")
+  accessType  AccessType   @map("access_type")
+  activeFrom  DateTime     @map("active_from")
+  activeUntil DateTime?    @map("active_until")
+  status      AccessStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, activeUntil])
+  @@map("user_access_rights")
+}
+
+model AccessRule {
+  id         String         @id @default(uuid())
+  code       String         @unique
+  ruleType   AccessRuleType @map("rule_type")
+  configJson Json           @map("config_json")
+  isActive   Boolean        @default(true) @map("is_active")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  menuItems  MenuItem[]
+
+  @@index([isActive])
+  @@map("access_rules")
+}
+
+model Tag {
+  id         String    @id @default(uuid())
+  code       String    @unique
+  name       String
+  color      String?
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  userTags   UserTag[]
+
+  @@map("tags")
+}
+
+model UserTag {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  tagId            String   @map("tag_id")
+  assignedByUserId String?  @map("assigned_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tag              Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tagId])
+  @@index([assignedByUserId])
+  @@map("user_tags")
+}
+
+model UserNote {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  authorUserId String   @map("author_user_id")
+  noteText     String   @map("note_text")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  user         User     @relation("UserNoteTarget", fields: [userId], references: [id], onDelete: Cascade)
+  author       User     @relation("UserNoteAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("user_notes")
+}
+
+model ButtonClickEvent {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  menuItemId   String   @map("menu_item_id")
+  languageCode String   @map("language_code")
+  createdAt    DateTime @default(now()) @map("created_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  menuItem     MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+
+  @@index([menuItemId, createdAt])
+  @@index([userId, createdAt])
+  @@map("button_click_events")
+}
+
+model ContentProgress {
+  id          String                @id @default(uuid())
+  userId      String                @map("user_id")
+  menuItemId  String                @map("menu_item_id")
+  botInstanceId String?           @map("bot_instance_id")
+  status      ContentProgressStatus
+  viewedAt    DateTime?             @map("viewed_at")
+  completedAt DateTime?             @map("completed_at")
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem              @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  botInstance BotInstance?         @relation(fields: [botInstanceId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, menuItemId])
+  @@map("content_progress")
+}
+
+model AbTest {
+  id          String             @id @default(uuid())
+  code        String             @unique
+  entityType  AbEntityType       @map("entity_type")
+  status      AbStatus           @default(DRAFT)
+  createdAt   DateTime           @default(now()) @map("created_at")
+  updatedAt   DateTime           @updatedAt @map("updated_at")
+  variants    AbTestVariant[]
+  assignments AbTestAssignment[]
+
+  @@map("ab_tests")
+}
+
+model AbTestVariant {
+  id         String   @id @default(uuid())
+  abTestId   String   @map("ab_test_id")
+  variantKey String   @map("variant_key")
+  configJson Json     @map("config_json")
+  weight     Int      @default(1)
+  createdAt  DateTime @default(now()) @map("created_at")
+  abTest     AbTest   @relation(fields: [abTestId], references: [id], onDelete: Cascade)
+
+  @@unique([abTestId, variantKey])
+  @@map("ab_test_variants")
+}
+
+model AbTestAssignment {
+  id         String   @id @default(uuid())
+  abTestId   String   @map("ab_test_id")
+  userId     String   @map("user_id")
+  variantKey String   @map("variant_key")
+  assignedAt DateTime @default(now()) @map("assigned_at")
+  abTest     AbTest   @relation(fields: [abTestId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([abTestId, userId])
+  @@map("ab_test_assignments")
+}
+
+model Notification {
+  id         String             @id @default(uuid())
+  userId     String             @map("user_id")
+  type       NotificationType
+  payloadJson Json              @map("payload_json")
+  status     NotificationStatus @default(PENDING)
+  createdAt  DateTime           @default(now()) @map("created_at")
+  sentAt     DateTime?          @map("sent_at")
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, createdAt])
+  @@map("notifications")
+}
+
+model Badge {
+  id        String      @id @default(uuid())
+  code      String      @unique
+  title     String
+  createdAt DateTime    @default(now()) @map("created_at")
+  users     UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  badgeId   String   @map("badge_id")
+  awardedAt DateTime @default(now()) @map("awarded_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badge     Badge    @relation(fields: [badgeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}
+
+model AdminActionLog {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  payloadJson Json    @map("payload_json")
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("admin_action_logs")
+}
+
+enum InactivityReminderTemplateCategory {
+  SOFT
+  MOTIVATING
+  BUSINESS
+  LIGHT_HUMOR
+  HOOKING
+  CALL_TO_ACTION
+}
+
+enum InactivityReminderCtaTargetType {
+  ROOT
+  NEXT_PAGE
+}
+
+enum InactivityReminderStateStatus {
+  PENDING
+  CANCELLED
+  SENT
+  EXPIRED
+}
+
+model ReminderTemplate {
+  id              String                          @id @default(uuid())
+  key             String                          @unique
+  category       InactivityReminderTemplateCategory
+  title          String
+  text           String
+  defaultCtaLabel String                          @map("default_cta_label")
+  isActive       Boolean                         @default(true) @map("is_active")
+  sortOrder      Int                             @default(0) @map("sort_order")
+  languageCode   String                          @default("ru") @map("language_code")
+  createdAt      DateTime                        @default(now()) @map("created_at")
+  updatedAt      DateTime                        @updatedAt @map("updated_at")
+
+  rules           InactivityReminderRule[]
+
+  @@index([isActive, languageCode, category, sortOrder])
+  @@map("reminder_templates")
+}
+
+model InactivityReminderRule {
+  id             String                              @id @default(uuid())
+  templateId     String                              @map("template_id")
+  template       ReminderTemplate                   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  triggerPageId  String                              @map("trigger_page_id")
+  targetMenuItemId String                           @map("target_menu_item_id")
+  delayMinutes   Int                                @map("delay_minutes")
+  ctaLabel       String                              @map("cta_label")
+  ctaTargetType  InactivityReminderCtaTargetType     @map("cta_target_type")
+  isActive       Boolean                            @default(true) @map("is_active")
+
+  createdAt      DateTime                           @default(now()) @map("created_at")
+  updatedAt      DateTime                           @updatedAt @map("updated_at")
+
+  states         UserInactivityReminderState[]
+
+  @@index([triggerPageId])
+  @@index([isActive])
+  @@map("inactivity_reminder_rules")
+}
+
+model UserInactivityReminderState {
+  id               String                          @id @default(uuid())
+  userId           String                          @map("user_id")
+  ruleId           String                          @map("rule_id")
+
+  rule             InactivityReminderRule         @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  user             User                            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  triggerPageId   String                          @map("trigger_page_id")
+  targetMenuItemId String                          @map("target_menu_item_id")
+
+  status           InactivityReminderStateStatus  @default(PENDING)
+  scheduledFor     DateTime                      @map("scheduled_for")
+  sentAt           DateTime?                     @map("sent_at")
+  cancelledAt      DateTime?                     @map("cancelled_at")
+  schedulerJobId   String?                      @map("scheduler_job_id")
+
+  createdAt        DateTime                      @default(now()) @map("created_at")
+  updatedAt        DateTime                      @updatedAt @map("updated_at")
+
+  @@unique([userId, ruleId])
+  @@index([status, scheduledFor])
+  @@map("user_inactivity_reminder_states")
+}
