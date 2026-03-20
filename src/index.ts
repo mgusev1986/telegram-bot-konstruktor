@@ -256,6 +256,8 @@ const bootstrap = async (): Promise<void> => {
   });
   const runtimeManager = new BotRuntimeManager(prisma, redis, bullConnection);
 
+  await registerBackofficeRoutes(httpServer, prisma, runtimeManager);
+
   // Load all active, non-archived bots and start each with per-bot error isolation.
   const activeBots = await prisma.botInstance.findMany({
     where: { status: "ACTIVE", isArchived: false },
@@ -310,7 +312,6 @@ const bootstrap = async (): Promise<void> => {
   });
 
   addPaymentWebhookRoute(httpServer, services, prisma);
-  await registerBackofficeRoutes(httpServer, prisma, runtimeManager);
 
   logger.info(
     {
