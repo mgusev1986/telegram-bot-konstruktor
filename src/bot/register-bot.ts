@@ -4104,7 +4104,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
         case "system_buttons": {
           await ctx.answerCbQuery?.();
-          if (user.role !== "ALPHA_OWNER") {
+          if (resolveEffectiveRole(ctx) !== "ALPHA_OWNER") {
             await ctx.reply(services.i18n.t(user.selectedLanguage, "permission_denied"));
             return;
           }
@@ -4155,7 +4155,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
         case "toggle_sys_button": {
           await ctx.answerCbQuery?.();
-          if (user.role !== "ALPHA_OWNER") {
+          if (resolveEffectiveRole(ctx) !== "ALPHA_OWNER") {
             await ctx.reply(services.i18n.t(user.selectedLanguage, "permission_denied"));
             return;
           }

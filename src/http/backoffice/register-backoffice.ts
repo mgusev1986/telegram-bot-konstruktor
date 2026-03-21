@@ -273,6 +273,9 @@ export function renderDashboardBody(params: DashboardParams): string {
       const paidBtn = canPerform(role, "paid_access:manage", email)
         ? `<a href="/backoffice/bots/${b.id}/paid" style="text-decoration:none"><button class="secondary" type="button">Платные продукты</button></a>`
         : ``;
+      const audienceBtn = canViewAudience
+        ? `<a href="/backoffice/audience?bot=${encodeURIComponent(b.id)}" style="text-decoration:none"><button class="secondary" type="button">Аудитория</button></a>`
+        : ``;
       const createdClass = b.id === createdBotId ? " created" : "";
       const cardId = b.id === createdBotId ? ` id="bot-${b.id}"` : "";
       return `<div class="bot-card${createdClass}"${cardId}>
@@ -289,6 +292,7 @@ export function renderDashboardBody(params: DashboardParams): string {
           <div class="row" style="margin-top:12px">
             <a href="${openUrl}" target="_blank" style="text-decoration:none"><button class="secondary" type="button">Открыть</button></a>
             ${settingsBtn}
+            ${audienceBtn}
             ${paidBtn}
             ${rolesBtn}
             ${cloneBtn}
