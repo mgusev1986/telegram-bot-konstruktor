@@ -2241,16 +2241,10 @@ export async function registerBackofficeRoutes(
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
 
-    const activeTemplate = await prisma.presentationTemplate.findFirst({
-      where: { botInstanceId: bot.id, isActive: true },
-      select: { id: true }
+    const productExists = await prisma.product.findUnique({
+      where: { id: productId }
     });
-    if (!activeTemplate) return reply.code(409).send("Active template missing");
-
-    const usesProduct = await prisma.menuItem.findFirst({
-      where: { templateId: activeTemplate.id, productId }
-    });
-    if (!usesProduct) return reply.code(404).send("Product not attached to this bot");
+    if (!productExists) return reply.code(404).send("Product not found");
 
     await prisma.$transaction([
       prisma.product.update({
