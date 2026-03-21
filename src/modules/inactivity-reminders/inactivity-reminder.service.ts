@@ -333,8 +333,9 @@ export class InactivityReminderService {
   }
 
   public async getRuleById(ruleId: string) {
-    return this.prisma.inactivityReminderRule.findUnique({
-      where: { id: ruleId },
+    const where = this.ruleScopeWhere({ id: ruleId });
+    return this.prisma.inactivityReminderRule.findFirst({
+      where,
       include: { template: true }
     });
   }
@@ -348,17 +349,20 @@ export class InactivityReminderService {
   }
 
   public async setRuleActive(ruleId: string, isActive: boolean): Promise<void> {
+    const rule = await this.getRuleById(ruleId);
+    if (!rule) return;
     await this.prisma.inactivityReminderRule.update({
       where: { id: ruleId },
       data: { isActive }
     });
-
     if (!isActive) {
       await this.cancelPendingForRule(ruleId);
     }
   }
 
   public async deleteRule(ruleId: string): Promise<void> {
+    const rule = await this.getRuleById(ruleId);
+    if (!rule) return;
     await this.cancelPendingForRule(ruleId);
     await this.prisma.inactivityReminderRule.delete({ where: { id: ruleId } });
   }
