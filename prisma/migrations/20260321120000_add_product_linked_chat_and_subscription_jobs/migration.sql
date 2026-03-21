@@ -1,0 +1,8 @@
+-- AlterEnum
+ALTER TYPE "JobType" ADD VALUE 'SEND_SUBSCRIPTION_REMINDER';
+
+-- AlterEnum
+ALTER TYPE "JobType" ADD VALUE 'PROCESS_ACCESS_EXPIRY';
+
+-- AlterTable
+ALTER TABLE "products" ADD COLUMN "linked_chat_id" BIGINT;

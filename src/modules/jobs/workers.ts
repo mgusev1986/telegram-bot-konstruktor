@@ -130,6 +130,21 @@ export const startWorkers = ({
 
             break;
           }
+          case "SEND_SUBSCRIPTION_REMINDER": {
+            const accessRightId = String(payload.accessRightId ?? "");
+            const daysLeft = Number(payload.daysLeft ?? 1);
+            if (accessRightId) {
+              await runtime.services.subscriptionChannel.sendReminder(accessRightId, daysLeft);
+            }
+            break;
+          }
+          case "PROCESS_ACCESS_EXPIRY": {
+            const accessRightId = String(payload.accessRightId ?? "");
+            if (accessRightId) {
+              await runtime.services.subscriptionChannel.processExpiry(accessRightId);
+            }
+            break;
+          }
           case "GENERATE_LANGUAGE_VERSION_AI": {
             const taskId = String(payload.taskId);
             const providerOverride = typeof payload.providerOverride === "string" ? payload.providerOverride : undefined;

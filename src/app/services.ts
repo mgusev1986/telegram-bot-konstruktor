@@ -26,6 +26,7 @@ import { UserService } from "../modules/users/user.service";
 import { MediaLibraryService } from "../modules/media-library/media-library.service";
 import { InactivityReminderService } from "../modules/inactivity-reminders/inactivity-reminder.service";
 import { LanguageGenerationTaskService } from "../modules/ai/language-generation-task.service";
+import { SubscriptionChannelService } from "../modules/subscription-channel/subscription-channel.service";
 
 export interface AppServices {
   i18n: I18nService;
@@ -48,6 +49,7 @@ export interface AppServices {
   broadcasts: BroadcastService;
   drips: DripService;
   inactivityReminders: InactivityReminderService;
+  subscriptionChannel: SubscriptionChannelService;
   exports: ExportService;
   mediaLibrary: MediaLibraryService;
   languageGenerationTasks: LanguageGenerationTaskService;
@@ -79,7 +81,8 @@ export const buildServices = (
   const accessRules = new AccessRuleService(prisma, referrals);
   const crm = new CrmService(prisma);
   const scheduler = new SchedulerService(prisma, bullConnection, botInstanceId);
-  const payments = new PaymentService(prisma, notifications, audit, crm, scheduler);
+  const subscriptionChannel = new SubscriptionChannelService(prisma);
+  const payments = new PaymentService(prisma, notifications, audit, crm, scheduler, subscriptionChannel);
   const menu = new MenuService(prisma, i18n, accessRules, analytics, abTests, audit, botInstanceId, paidAccessEnabled);
   const navigation = new NavigationService(prisma);
   const cabinet = new CabinetService(prisma, referrals, payments, i18n, botUsername, botInstanceId, paidAccessEnabled);
@@ -113,6 +116,7 @@ export const buildServices = (
     broadcasts,
     drips,
     inactivityReminders,
+    subscriptionChannel,
     exports,
     mediaLibrary,
     languageGenerationTasks

@@ -1489,17 +1489,15 @@ export async function registerBackofficeRoutes(
     });
     const productIdSet = new Set(productRows.map((r) => String(r.productId)));
 
-    const products = productIdSet.size
-      ? await prisma.product.findMany({
-          where: { id: { in: Array.from(productIdSet) } },
-          include: {
-            localizations: {
-              where: { languageCode: baseLang },
-              select: { title: true, description: true, payButtonText: true }
-            }
-          }
-        })
-      : [];
+    const products = await prisma.product.findMany({
+      where: productIdSet.size ? { id: { in: Array.from(productIdSet) }, isActive: true } : { isActive: true },
+      include: {
+        localizations: {
+          where: { languageCode: baseLang },
+          select: { title: true, description: true, payButtonText: true }
+        }
+      }
+    });
 
     const productLabelById = new Map<string, string>();
     for (const p of products) {
@@ -1600,6 +1598,19 @@ export async function registerBackofficeRoutes(
                  <input name="currency" type="text" required value="USDT" />
                </div>
              </div>
+             <div style="margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:12px">
+               <div>
+                 <label>Тип: разовая или подписка</label>
+                 <select name="billingType">
+                   <option value="ONE_TIME">Разовая оплата</option>
+                   <option value="TEMPORARY">Подписка (на N дней)</option>
+                 </select>
+               </div>
+               <div>
+                 <label>Дней доступа (для подписки)</label>
+                 <input name="durationDays" type="number" min="1" placeholder="30" title="Для подписки: 30 = месяц" />
+               </div>
+             </div>
              <div style="margin-top:10px">
                <label>Description (ru)</label>
                <textarea name="descriptionRu" rows="3"></textarea>
@@ -1612,8 +1623,8 @@ export async function registerBackofficeRoutes(
                 const ruLoc = p.localizations.find((l: any) => l.languageCode === "ru") ?? p.localizations[0];
                return `<div style="margin-top:12px; padding:10px; border:1px solid rgba(255,255,255,0.12); border-radius:12px">
                 <div><b>${escapeHtml(ruLoc?.title ?? p.code)}</b> <span class="small">(${escapeHtml(p.code)})</span></div>
-                 <div class="small" style="margin-top:4px">price: <code>${escapeHtml(String(p.price))}</code> ${escapeHtml(p.currency)}</div>
-                 <div class="small" style="margin-top:4px">isActive: <code>${p.isActive ? "true" : "false"}</code></div>
+                 <div class="small" style="margin-top:4px">price: <code>${escapeHtml(String(p.price))}</code> ${escapeHtml(p.currency)} · ${p.billingType} ${p.durationDays ? `· ${p.durationDays} дн.` : ""}</div>
+                 <div class="small" style="margin-top:4px">isActive: <code>${p.isActive ? "true" : "false"}</code>${p.linkedChatId != null ? ` · канал: ${p.linkedChatId}` : ""}</div>
                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/archive" style="margin-top:8px">
                    <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Архивировать</button>
                  </form>
@@ -1637,6 +1648,23 @@ export async function registerBackofficeRoutes(
                       <label class="small">Currency</label>
                       <input name="currency" type="text" required value="${escapeHtml(p.currency ?? "USDT")}" />
                     </div>
+                  </div>
+                  <div style="margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:12px">
+                    <div>
+                      <label class="small">Тип</label>
+                      <select name="billingType">
+                        <option value="ONE_TIME" ${p.billingType === "ONE_TIME" ? "selected" : ""}>Разовая</option>
+                        <option value="TEMPORARY" ${p.billingType === "TEMPORARY" ? "selected" : ""}>Подписка</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="small">Дней (подписка)</label>
+                      <input name="durationDays" type="number" min="1" value="${p.durationDays ?? ""}" placeholder="30" />
+                    </div>
+                  </div>
+                  <div style="margin-top:10px">
+                    <label class="small">ID чата/канала (-100...)</label>
+                    <input name="linkedChatId" type="text" value="${p.linkedChatId != null ? String(p.linkedChatId) : ""}" placeholder="-1001234567890" title="Привязать канал: бот исключит при истечении подписки" />
                   </div>
                   <div style="margin-top:10px">
                     <label class="small">Description (ru)</label>
@@ -1709,6 +1737,9 @@ export async function registerBackofficeRoutes(
     const payButtonTextRu = String(body?.payButtonTextRu ?? "").trim();
     const price = String(body?.price ?? "").trim();
     const currency = String(body?.currency ?? "USDT").trim();
+    const billingType = String(body?.billingType ?? "ONE_TIME").trim() as "ONE_TIME" | "TEMPORARY";
+    const durationDaysRaw = body?.durationDays;
+    const durationDays = durationDaysRaw != null && String(durationDaysRaw).trim() !== "" ? parseInt(String(durationDaysRaw), 10) : null;
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
 
@@ -1720,8 +1751,8 @@ export async function registerBackofficeRoutes(
         type: "SECTION",
         price,
         currency,
-        billingType: "ONE_TIME",
-        durationDays: null,
+        billingType: billingType === "TEMPORARY" ? "TEMPORARY" : "ONE_TIME",
+        durationDays: billingType === "TEMPORARY" && durationDays != null && durationDays > 0 ? durationDays : null,
         isActive: true,
         localizations: {
           createMany: {
@@ -1785,6 +1816,11 @@ export async function registerBackofficeRoutes(
     const payButtonTextRu = String(body?.payButtonTextRu ?? "").trim();
     const price = String(body?.price ?? "").trim();
     const currency = String(body?.currency ?? "").trim();
+    const billingType = (String(body?.billingType ?? "ONE_TIME").trim() === "TEMPORARY" ? "TEMPORARY" : "ONE_TIME") as "ONE_TIME" | "TEMPORARY";
+    const durationDaysRaw = body?.durationDays;
+    const durationDays = durationDaysRaw != null && String(durationDaysRaw).trim() !== "" ? parseInt(String(durationDaysRaw), 10) : null;
+    const linkedChatIdRaw = String(body?.linkedChatId ?? "").trim();
+    const linkedChatId = linkedChatIdRaw ? BigInt(linkedChatIdRaw) : null;
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
 
@@ -1802,7 +1838,13 @@ export async function registerBackofficeRoutes(
     await prisma.$transaction([
       prisma.product.update({
         where: { id: productId },
-        data: { price, currency }
+        data: {
+          price,
+          currency,
+          billingType,
+          durationDays: billingType === "TEMPORARY" && durationDays != null && durationDays > 0 ? durationDays : null,
+          linkedChatId
+        }
       }),
       prisma.productLocalization.upsert({
         where: { productId_languageCode: { productId, languageCode: "ru" } },

@@ -30,7 +30,9 @@ export class SchedulerService {
       | "SEND_NOTIFICATION"
       | "PROCESS_PAYMENT_EXPIRY"
       | "SEND_INACTIVITY_REMINDER"
-      | "GENERATE_LANGUAGE_VERSION_AI",
+      | "GENERATE_LANGUAGE_VERSION_AI"
+      | "SEND_SUBSCRIPTION_REMINDER"
+      | "PROCESS_ACCESS_EXPIRY",
     payloadJson: Record<string, unknown>,
     runAt: Date,
     idempotencyKey: string

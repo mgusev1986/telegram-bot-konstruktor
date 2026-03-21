@@ -158,6 +158,8 @@ enum JobType {
   PROCESS_PAYMENT_EXPIRY
   SEND_INACTIVITY_REMINDER
   GENERATE_LANGUAGE_VERSION_AI
+  SEND_SUBSCRIPTION_REMINDER
+  PROCESS_ACCESS_EXPIRY
 }
 
 enum JobStatus {
@@ -824,20 +826,21 @@ model LanguageGenerationTaskItem {
 }
 
 model Product {
-  id            String                @id @default(uuid())
-  code          String                @unique
-  type          ProductType
-  price         Decimal               @db.Decimal(18, 8)
-  currency      String
-  billingType   BillingType           @map("billing_type")
-  durationDays  Int?                  @map("duration_days")
-  isActive      Boolean               @default(true) @map("is_active")
-  createdAt     DateTime              @default(now()) @map("created_at")
-  updatedAt     DateTime              @updatedAt @map("updated_at")
-  localizations ProductLocalization[]
-  menuItems     MenuItem[]
-  payments      Payment[]
-  accessRights  UserAccessRight[]
+  id              String                @id @default(uuid())
+  code            String                @unique
+  type            ProductType
+  price           Decimal               @db.Decimal(18, 8)
+  currency        String
+  billingType     BillingType           @map("billing_type")
+  durationDays    Int?                  @map("duration_days")
+  linkedChatId    BigInt?               @map("linked_chat_id")
+  isActive        Boolean               @default(true) @map("is_active")
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  localizations   ProductLocalization[]
+  menuItems       MenuItem[]
+  payments        Payment[]
+  accessRights    UserAccessRight[]
 
   @@index([isActive])
   @@map("products")

@@ -7,6 +7,7 @@ import type { AuditService } from "../audit/audit.service";
 import type { CrmService } from "../crm/crm.service";
 import type { SchedulerService } from "../jobs/scheduler.service";
 import type { NotificationService } from "../notifications/notification.service";
+import type { SubscriptionChannelService } from "../subscription-channel/subscription-channel.service";
 
 export class PaymentService {
   public constructor(
@@ -14,7 +15,8 @@ export class PaymentService {
     private readonly notifications: NotificationService,
     private readonly audit: AuditService,
     private readonly crm: CrmService,
-    private readonly scheduler?: SchedulerService
+    private readonly scheduler?: SchedulerService,
+    private readonly subscriptionChannel?: SubscriptionChannelService
   ) {}
 
   public async ensureDemoProducts(): Promise<void> {
@@ -147,16 +149,8 @@ export class PaymentService {
         ? new Date(Date.now() + payment.product.durationDays * 24 * 60 * 60 * 1000)
         : null;
 
-    await this.prisma.$transaction([
-      this.prisma.payment.update({
-        where: { id: payment.id },
-        data: {
-          status: "PAID",
-          paidAt: new Date(),
-          externalTxId: externalTxId ?? payment.externalTxId ?? undefined
-        }
-      }),
-      this.prisma.userAccessRight.create({
+    const accessRight = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.userAccessRight.create({
         data: {
           userId: payment.userId,
           productId: payment.productId,
@@ -164,14 +158,38 @@ export class PaymentService {
           activeFrom: new Date(),
           activeUntil
         }
-      }),
-      this.prisma.user.update({
-        where: { id: payment.userId },
+      });
+      await tx.payment.update({
+        where: { id: payment.id },
         data: {
-          status: "PAID"
+          status: "PAID",
+          paidAt: new Date(),
+          externalTxId: externalTxId ?? payment.externalTxId ?? undefined
         }
-      })
-    ]);
+      });
+      await tx.user.update({
+        where: { id: payment.userId },
+        data: { status: "PAID" }
+      });
+      return created;
+    });
+
+    if (activeUntil && this.scheduler && this.subscriptionChannel) {
+      await this.subscriptionChannel.scheduleRemindersAndExpiry(
+        accessRight.id,
+        activeUntil,
+        payment.botInstanceId ?? null,
+        this.scheduler
+      );
+    }
+
+    if (payment.product.linkedChatId && this.subscriptionChannel) {
+      await this.subscriptionChannel.onAccessGranted(
+        payment.userId,
+        payment.productId,
+        payment.user.telegramUserId
+      );
+    }
 
     await this.crm.assignTag(payment.userId, "paid", actorUserId);
     await this.audit.log(actorUserId, "confirm_payment", "payment", payment.id, {

@@ -50,6 +50,7 @@ export class BotRuntimeManager {
     services.broadcasts.setTelegram(bot.telegram);
     services.drips.setTelegram(bot.telegram);
     services.inactivityReminders.setTelegram(bot.telegram);
+    services.subscriptionChannel.setTelegram(bot.telegram);
 
     const shouldLaunch = opts?.launch ?? true;
     if (shouldLaunch && canBeLaunched) {
