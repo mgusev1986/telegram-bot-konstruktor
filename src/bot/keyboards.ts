@@ -606,7 +606,13 @@ export const buildCabinetKeyboard = (
   languageCode: string,
   i18n: I18nService,
   referralLink: string,
-  opts?: { showPayButton?: boolean; showAdminLink?: boolean; mentorUsername?: string | null; showLanguageButton?: boolean }
+  opts?: {
+    showPayButton?: boolean;
+    showAdminLink?: boolean;
+    mentorUsername?: string | null;
+    showLanguageButton?: boolean;
+    showRefundButton?: boolean;
+  }
 ) => {
   const short = (labels: { ru: string; en: string }): string => {
     const lc = (languageCode ?? "ru").toLowerCase();
@@ -640,6 +646,9 @@ export const buildCabinetKeyboard = (
       : Markup.button.callback(i18n.t(languageCode, "mentor_contact"), makeCallbackData("mentor", "open"))
   ]);
 
+  if (opts?.showRefundButton) {
+    rows.push([Markup.button.callback(i18n.t(languageCode, "refund_request_btn"), makeCallbackData("cabinet", "refund_request"))]);
+  }
   if (opts?.showAdminLink) {
     rows.push([Markup.button.callback(i18n.t(languageCode, "return_to_admin"), makeCallbackData("admin", "open"))]);
   }
@@ -661,11 +670,46 @@ export const buildPaywallKeyboard = (
   languageCode: string,
   productId: string,
   i18n: I18nService,
-  opts?: { payButtonText?: string }
+  opts?: {
+    payButtonText?: string;
+    balance?: number;
+    price?: number;
+    useBalanceFlow?: boolean;
+  }
 ) => {
-  const btnLabel = opts?.payButtonText?.trim() || i18n.t(languageCode, "pay_now");
+  const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+  const useBalanceFlow = opts?.useBalanceFlow ?? false;
+  const balance = opts?.balance ?? 0;
+  const price = opts?.price ?? 0;
+  const canPayFromBalance = useBalanceFlow && price > 0 && balance >= price;
+
+  if (canPayFromBalance) {
+    rows.push([
+      Markup.button.callback(`✅ ${i18n.t(languageCode, "pay_from_balance")}`, makeCallbackData("pay", "balance", productId))
+    ]);
+  }
+  if (useBalanceFlow) {
+    rows.push([
+      Markup.button.callback(`💳 ${i18n.t(languageCode, "top_up_balance")}`, makeCallbackData("pay", "deposit", productId))
+    ]);
+  }
+  if (!useBalanceFlow) {
+    const btnLabel = opts?.payButtonText?.trim() || i18n.t(languageCode, "pay_now");
+    rows.push([
+      Markup.button.callback(`💳 ${btnLabel} USDT (BEP20)`, makeCallbackData("pay", "network", productId, "USDT_BEP20"))
+    ]);
+  }
+  rows.push(buildNavigationRow(i18n, languageCode, { back: true, toMain: true }));
+  return Markup.inlineKeyboard(rows);
+};
+
+export const buildDepositScreenKeyboard = (
+  languageCode: string,
+  i18n: I18nService,
+  depositId: string
+) => {
   const rows = [
-    [Markup.button.callback(`💳 ${btnLabel} USDT (BEP20)`, makeCallbackData("pay", "network", productId, "USDT_BEP20"))],
+    [Markup.button.callback(i18n.t(languageCode, "check_deposit_status"), makeCallbackData("pay", "check", depositId))],
     buildNavigationRow(i18n, languageCode, { back: true, toMain: true })
   ];
   return Markup.inlineKeyboard(rows);

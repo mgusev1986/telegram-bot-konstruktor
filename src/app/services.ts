@@ -18,6 +18,7 @@ import { MenuService } from "../modules/menu/menu.service";
 import { NavigationService } from "../modules/navigation/navigation.service";
 import { NotificationService } from "../modules/notifications/notification.service";
 import { PaymentService } from "../modules/payments/payment.service";
+import { BalanceService } from "../modules/payments/balance.service";
 import { PermissionService } from "../modules/permissions/permission.service";
 import { RateLimitService } from "../modules/rate-limit/rate-limit.service";
 import { ReferralService } from "../modules/referrals/referral.service";
@@ -41,6 +42,7 @@ export interface AppServices {
   accessRules: AccessRuleService;
   crm: CrmService;
   payments: PaymentService;
+  balance: BalanceService;
   menu: MenuService;
   navigation: NavigationService;
   cabinet: CabinetService;
@@ -83,9 +85,10 @@ export const buildServices = (
   const scheduler = new SchedulerService(prisma, bullConnection, botInstanceId);
   const subscriptionChannel = new SubscriptionChannelService(prisma);
   const payments = new PaymentService(prisma, notifications, audit, crm, scheduler, subscriptionChannel);
+  const balance = new BalanceService(prisma, notifications, audit, crm, scheduler, subscriptionChannel);
   const menu = new MenuService(prisma, i18n, accessRules, analytics, abTests, audit, botInstanceId, paidAccessEnabled);
   const navigation = new NavigationService(prisma);
-  const cabinet = new CabinetService(prisma, referrals, payments, i18n, botUsername, botInstanceId, paidAccessEnabled);
+  const cabinet = new CabinetService(prisma, referrals, payments, balance, i18n, botUsername, botInstanceId, paidAccessEnabled);
   const segments = new SegmentService(prisma, referrals, botInstanceId);
   const broadcasts = new BroadcastService(prisma, segments, scheduler, i18n, audit, botInstanceId);
   const drips = new DripService(prisma, scheduler, i18n, audit, botInstanceId, cabinet);
@@ -108,6 +111,7 @@ export const buildServices = (
     accessRules,
     crm,
     payments,
+    balance,
     menu,
     navigation,
     cabinet,

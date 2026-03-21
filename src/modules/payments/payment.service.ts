@@ -296,6 +296,12 @@ export class PaymentService {
     });
   }
 
+  public async getProduct(productId: string): Promise<Product | null> {
+    return this.prisma.product.findUnique({
+      where: { id: productId }
+    });
+  }
+
   public async getAccessSummary(userId: string): Promise<{ paidStatus: boolean; activeProducts: Product[] }> {
     const rights = await this.prisma.userAccessRight.findMany({
       where: {

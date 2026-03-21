@@ -28,7 +28,7 @@ export async function startHttpServer(server: FastifyInstance): Promise<void> {
 }
 
 /**
- * Registers the payment webhook route on an existing server.
+ * Registers payment webhook routes on an existing server.
  * Accepts a getter so the route can be registered before services are ready.
  * Returns 503 until services are available.
  */
@@ -37,6 +37,39 @@ export function addPaymentWebhookRoute(
   getServices: () => AppServices | null,
   prisma: PrismaClient
 ): void {
+  // NOWPayments IPN — needs raw body for signature verification
+  server.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (req: any, body: string, done) => {
+      (req as any).rawBody = body;
+      try {
+        done(null, JSON.parse(body) as object);
+      } catch (e) {
+        done(e as Error, undefined);
+      }
+    }
+  );
+
+  server.post<{
+    Body: Record<string, unknown>;
+    RawBody?: string;
+  }>("/webhooks/payments/nowpayments", async (request, reply) => {
+    const services = getServices();
+    if (!services) {
+      reply.code(503);
+      return { ok: false, error: "Services not ready" };
+    }
+    const rawBody = (request as any).rawBody ?? JSON.stringify(request.body ?? {});
+    const sig = (request.headers["x-nowpayments-sig"] as string) ?? undefined;
+    const result = await services.balance.processNowPaymentsIpn(rawBody, sig);
+    if (!result.ok) {
+      reply.code(400);
+      return { ok: false };
+    }
+    return { ok: true, credited: result.credited, duplicate: result.duplicate };
+  });
+
   server.post<{
     Body: {
       referenceCode: string;

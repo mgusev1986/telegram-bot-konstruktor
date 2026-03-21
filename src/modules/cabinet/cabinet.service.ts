@@ -1,6 +1,7 @@
 import type { PrismaClient, User } from "@prisma/client";
 import type { I18nService } from "../i18n/i18n.service";
 import type { PaymentService } from "../payments/payment.service";
+import type { BalanceService } from "../payments/balance.service";
 import type { ReferralService } from "../referrals/referral.service";
 import { isAdminAreaUser } from "../permissions/capabilities";
 
@@ -22,6 +23,7 @@ export class CabinetService {
     private readonly prisma: PrismaClient,
     private readonly referrals: ReferralService,
     private readonly payments: PaymentService,
+    private readonly balance: BalanceService,
     private readonly i18n: I18nService,
     private readonly botUsername: string,
     private readonly botInstanceId?: string,
@@ -143,7 +145,14 @@ export class CabinetService {
       "",
       `🔗 ${this.i18n.t(lang, "cabinet_my_link")}`,
       link,
-      "",
+      ""
+    ];
+    if (this.balance.isNowPaymentsEnabled()) {
+      const bal = await this.balance.getBalance(user.id);
+      blocks.push(`💰 ${this.i18n.t(lang, "cabinet_balance")}: ${bal} USDT`);
+      blocks.push("");
+    }
+    blocks.push(
       `📈 ${this.i18n.t(lang, "first_line_count")}: ${firstLine}`,
       `👥 ${this.i18n.t(lang, "structure_count")}: ${totalStructure}`,
       "",
@@ -151,7 +160,7 @@ export class CabinetService {
       `🧑‍🏫 ${this.i18n.t(lang, "cabinet_mentor")}: ${mentorBlock}`,
       "",
       `➡️ ${this.i18n.t(lang, "cabinet_next_step")}: ${nextStepText}`
-    ];
+    );
 
     if (isAdminAreaUser(user.role)) {
       const totalUsers = await this.prisma.user.count();

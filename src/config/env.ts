@@ -30,6 +30,12 @@ const envSchema = z.object({
   PAYMENT_PROVIDER_MODE: z.enum(["crypto", "manual"]).default("crypto"),
   USDT_TRC20_WALLET: z.string().optional().default(""),
   USDT_BEP20_WALLET: z.string().optional().default(""),
+  // NOWPayments (balance-based flow)
+  NOWPAYMENTS_API_KEY: z.string().optional().default(""),
+  NOWPAYMENTS_IPN_SECRET: z.string().optional().default(""),
+  NOWPAYMENTS_BASE_URL: z.string().url().optional().default("https://api.nowpayments.io/v1"),
+  /** Full URL for IPN callbacks, e.g. https://yourdomain.com/webhooks/payments/nowpayments. Empty = disabled. */
+  NOWPAYMENTS_IPN_CALLBACK_URL: z.union([z.string().url(), z.literal("")]).optional().default(""),
   HTTP_PORT: z.coerce.number().int().positive().default(3000),
   // PORT используется Railway, Render и др. — приоритет над HTTP_PORT
   PORT: z.coerce.number().int().positive().optional(),

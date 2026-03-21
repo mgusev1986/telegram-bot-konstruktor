@@ -35,6 +35,7 @@ import {
   buildLanguageVersionPreviewConfirmKeyboard,
   buildPaymentReviewKeyboard,
   buildPaywallKeyboard,
+  buildDepositScreenKeyboard,
   buildCancelKeyboard,
   buildStaleActionKeyboard,
   buildScheduledBroadcastHubKeyboard,
@@ -612,20 +613,28 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const children = await services.menu.getMenuItemsForParent(user, content.item.id);
 
     if (content.locked) {
-      // Locked content: cancel all pending reminders to avoid "soft spam" on an unreachable step.
       await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
       setNavBeforeShow(ctx, "paywall:locked:" + content.item.id);
       const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
+      const product = content.item.product;
+      const productId = content.item.productId;
+      const price = product ? Number(product.price) : 0;
+      const useBalanceFlow = services.balance.isNowPaymentsEnabled();
+      const balance = useBalanceFlow ? await services.balance.getBalance(user.id) : 0;
+      const balanceLine = useBalanceFlow ? `\n\n${services.i18n.t(user.selectedLanguage, "balance_label")}: ${balance} USDT` : "";
       await services.navigation.replaceScreen(
         user,
         ctx.telegram,
         ctx.chat?.id ?? user.telegramUserId,
-        { text: paywallText },
-        content.item.productId
-          ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n, {
-              payButtonText: getProductPayButtonText(content.item.product as any, user.selectedLanguage)
+        { text: paywallText + balanceLine },
+        productId
+          ? buildPaywallKeyboard(user.selectedLanguage, productId, services.i18n, {
+              payButtonText: product ? getProductPayButtonText(product as any, user.selectedLanguage) : undefined,
+              balance,
+              price,
+              useBalanceFlow
             })
-          : {}
+          : Markup.inlineKeyboard([buildNavigationRow(services.i18n, user.selectedLanguage, { back: true, toMain: true })])
       );
       return;
     }
@@ -1271,7 +1280,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
               showPayButton,
               showAdminLink: isAdminRole(resolveEffectiveRole(ctx)),
               mentorUsername,
-              showLanguageButton: await shouldShowCabinetLanguageButton(user)
+              showLanguageButton: await shouldShowCabinetLanguageButton(user),
+              showRefundButton:
+                services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
             })
           );
           return;
@@ -2363,7 +2374,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
                 showPayButton,
                 showAdminLink: isAdminRole(resolveEffectiveRole(ctx)),
                 mentorUsername,
-                showLanguageButton: await shouldShowCabinetLanguageButton(user)
+                showLanguageButton: await shouldShowCabinetLanguageButton(user),
+                showRefundButton:
+                  services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
               })
             );
             return;
@@ -2469,16 +2482,25 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
           setNavBeforeShow(ctx, "paywall:locked:" + linkItem.id);
           const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
+          const product = content.item.product;
+          const productId = content.item.productId;
+          const price = product ? Number(product.price) : 0;
+          const useBalanceFlow = services.balance.isNowPaymentsEnabled();
+          const balance = useBalanceFlow ? await services.balance.getBalance(user.id) : 0;
+          const balanceLine = useBalanceFlow ? `\n\n${services.i18n.t(user.selectedLanguage, "balance_label")}: ${balance} USDT` : "";
           await services.navigation.replaceScreen(
             user,
             ctx.telegram,
             ctx.chat?.id ?? user.telegramUserId,
-            { text: paywallText },
-            content.item.productId
-              ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n, {
-                  payButtonText: getProductPayButtonText(content.item.product as any, user.selectedLanguage)
+            { text: paywallText + balanceLine },
+            productId
+              ? buildPaywallKeyboard(user.selectedLanguage, productId, services.i18n, {
+                  payButtonText: product ? getProductPayButtonText(product as any, user.selectedLanguage) : undefined,
+                  balance,
+                  price,
+                  useBalanceFlow
                 })
-              : {}
+              : Markup.inlineKeyboard([buildNavigationRow(services.i18n, user.selectedLanguage, { back: true, toMain: true })])
           );
           return;
         }
@@ -2574,21 +2596,30 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
         setNavBeforeShow(ctx, "paywall:locked:" + content.item.id);
         const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
+        const product = content.item.product;
+        const productId = content.item.productId;
+        const price = product ? Number(product.price) : 0;
+        const useBalanceFlow = services.balance.isNowPaymentsEnabled();
+        const balance = useBalanceFlow ? await services.balance.getBalance(user.id) : 0;
+        const balanceLine = useBalanceFlow ? `\n\n${services.i18n.t(user.selectedLanguage, "balance_label")}: ${balance} USDT` : "";
         await services.navigation.replaceScreen(
           user,
           ctx.telegram,
           ctx.chat?.id ?? user.telegramUserId,
-          { text: paywallText },
-          content.item.productId
-            ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n, {
-                payButtonText: getProductPayButtonText(content.item.product as any, user.selectedLanguage)
+          { text: paywallText + balanceLine },
+          productId
+            ? buildPaywallKeyboard(user.selectedLanguage, productId, services.i18n, {
+                payButtonText: product ? getProductPayButtonText(product as any, user.selectedLanguage) : undefined,
+                balance,
+                price,
+                useBalanceFlow
               })
-            : {}
+            : Markup.inlineKeyboard([buildNavigationRow(services.i18n, user.selectedLanguage, { back: true, toMain: true })])
         );
         return;
       }
 
-        await services.inactivityReminders.cancelPendingForUserExcept(user.id, content.item.id);
+      await services.inactivityReminders.cancelPendingForUserExcept(user.id, content.item.id);
       await services.menu.markViewed(user.id, content.item.id, user.selectedLanguage);
 
       if (content.item.type === "SUBMENU" || children.length > 0) {
@@ -2693,7 +2724,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           showPayButton,
           showAdminLink: isAdminRole(resolveEffectiveRole(ctx)),
           mentorUsername,
-          showLanguageButton: await shouldShowCabinetLanguageButton(user)
+          showLanguageButton: await shouldShowCabinetLanguageButton(user),
+          showRefundButton:
+            services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
         })
       );
       return;
@@ -2713,6 +2746,35 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       } catch {
         // ignore
       }
+      return;
+    }
+
+    if (scope === "cabinet" && action === "refund_request") {
+      const balance = await services.balance.getBalance(user.id);
+      const wr = await services.balance.createWithdrawalRequest(user.id, balance);
+      if (!wr) {
+        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), { show_alert: true });
+        return;
+      }
+      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "refund_request_sent"));
+      const cabinet = await services.cabinet.buildCabinet(user);
+      const link = services.cabinet.getReferralLink(user);
+      const mentorUsername = user.mentorUserId
+        ? (await services.users.findById(user.mentorUserId))?.username ?? null
+        : null;
+      await services.navigation.replaceScreen(
+        user,
+        ctx.telegram,
+        ctx.chat?.id ?? user.telegramUserId,
+        { text: cabinet },
+        buildCabinetKeyboard(user.selectedLanguage, services.i18n, link, {
+          showPayButton: await services.cabinet.shouldShowPayButton(user),
+          showAdminLink: isAdminRole(resolveEffectiveRole(ctx)),
+          mentorUsername,
+          showLanguageButton: await shouldShowCabinetLanguageButton(user),
+          showRefundButton: false
+        })
+      );
       return;
     }
 
@@ -2749,7 +2811,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           showPayButton: false,
           showAdminLink: isAdminRole(resolveEffectiveRole(ctx)),
           mentorUsername,
-          showLanguageButton: await shouldShowCabinetLanguageButton(user)
+          showLanguageButton: await shouldShowCabinetLanguageButton(user),
+          showRefundButton:
+            services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
         })
       );
       return;
@@ -2846,6 +2910,75 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       ctx.currentUser = updated;
       await ctx.reply(services.i18n.t(updated.selectedLanguage, "language_updated"));
       await sendRootWithWelcome(ctx);
+      return;
+    }
+
+    if (scope === "pay" && action === "balance" && value) {
+      const productId = value;
+      const result = await services.balance.purchaseFromBalance(user, productId);
+      if (!result.success) {
+        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), {
+          show_alert: true
+        });
+        return;
+      }
+      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "deposit_confirmed"));
+      await sendRootWithWelcome(ctx);
+      return;
+    }
+
+    if (scope === "pay" && action === "deposit" && value) {
+      const productId = value;
+      const product = await services.payments.getFirstProduct();
+      const targetProduct = productId
+        ? await services.payments.getProduct(productId)
+        : product;
+      const amount = targetProduct ? Number(targetProduct.price) : 10;
+      const intent = await services.balance.createDepositIntent(
+        user,
+        amount,
+        targetProduct?.currency ?? "USDT",
+        "USDT_BEP20"
+      );
+      if (!intent) {
+        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), { show_alert: true });
+        return;
+      }
+      const hint = services.i18n.t(user.selectedLanguage, "deposit_address_hint");
+      const text = [
+        `💳 ${services.i18n.t(user.selectedLanguage, "top_up_balance")}`,
+        ``,
+        `Адрес: \`${intent.payAddress}\``,
+        `Сумма: ${intent.payAmount} ${intent.payCurrency}`,
+        `Сеть: ${intent.network}`,
+        ``,
+        `⚠️ ${hint}`,
+        ``,
+        `Order: ${intent.orderId}`
+      ].join("\n");
+      setNavBeforeShow(ctx, "pay:deposit:" + intent.depositId);
+      await ctx.reply(text, {
+        parse_mode: "Markdown",
+        reply_markup: buildDepositScreenKeyboard(user.selectedLanguage, services.i18n, intent.depositId).reply_markup
+      });
+      return;
+    }
+
+    if (scope === "pay" && action === "check" && value) {
+      const orderId = value;
+      const status = await services.balance.checkDepositStatus(orderId);
+      if (status.credited) {
+        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "deposit_confirmed"));
+        await ctx.reply(services.i18n.t(user.selectedLanguage, "deposit_confirmed"), {
+          reply_markup: Markup.inlineKeyboard([
+            [Markup.button.callback(services.i18n.t(user.selectedLanguage, "to_main_menu"), NAV_ROOT_DATA)]
+          ]).reply_markup
+        });
+      } else {
+        await ctx.answerCbQuery(
+          services.i18n.t(user.selectedLanguage, "check_deposit_status") + ": " + status.status
+        );
+      }
       return;
     }
 

@@ -205,6 +205,149 @@ enum PaymentStatus {
   CANCELLED
 }
 
+// --- Balance-based payment flow (NOWPayments) ---
+
+enum DepositTransactionStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  DUPLICATE
+  IGNORED
+}
+
+enum ProductPurchaseStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REVERSED
+}
+
+enum WithdrawalRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELED
+}
+
+enum BalanceLedgerEntryType {
+  CREDIT
+  DEBIT
+  ADJUSTMENT
+  REFUND_RESERVE
+  REFUND_RELEASE
+  REFUND_DEBIT
+}
+
+model UserBalanceAccount {
+  id        String   @id @default(uuid())
+  userId    String   @unique @map("user_id")
+  balance   Decimal  @db.Decimal(18, 8) @default(0)
+  currency  String   @default("USDT")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerEntries BalanceLedgerEntry[]
+  deposits  DepositTransaction[]
+  purchases ProductPurchase[]
+  withdrawalRequests WithdrawalRequest[]
+
+  @@map("user_balance_accounts")
+}
+
+model BalanceLedgerEntry {
+  id            String               @id @default(uuid())
+  accountId     String               @map("account_id")
+  type          BalanceLedgerEntryType
+  amount        Decimal              @db.Decimal(18, 8)
+  balanceAfter  Decimal?             @map("balance_after") @db.Decimal(18, 8)
+  referenceType String               @map("reference_type")
+  referenceId   String               @map("reference_id")
+  metadata      Json?                @default("{}")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  account       UserBalanceAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("balance_ledger_entries")
+}
+
+model DepositTransaction {
+  id                  String                  @id @default(uuid())
+  userId              String                  @map("user_id")
+  accountId           String                  @map("account_id")
+  provider            String                  @default("nowpayments")
+  providerPaymentId   String?                 @unique @map("provider_payment_id")
+  orderId             String                  @unique @map("order_id")
+  amount              Decimal                 @db.Decimal(18, 8)
+  currency            String                  @default("USDT")
+  status              DepositTransactionStatus @default(PENDING)
+  rawPayload          Json?                   @map("raw_payload")
+  creditedAt          DateTime?               @map("credited_at")
+  ledgerEntryId       String?                 @map("ledger_entry_id")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  user                User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account             UserBalanceAccount      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([orderId])
+  @@map("deposit_transactions")
+}
+
+model ProductPurchase {
+  id             String               @id @default(uuid())
+  userId         String               @map("user_id")
+  productId      String               @map("product_id")
+  accountId      String               @map("account_id")
+  amount         Decimal              @db.Decimal(18, 8)
+  ledgerEntryId  String               @map("ledger_entry_id")
+  status         ProductPurchaseStatus @default(PENDING)
+  idempotencyKey String               @unique @map("idempotency_key")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+  user           User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product        Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  account        UserBalanceAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, productId])
+  @@map("product_purchases")
+}
+
+model WithdrawalRequest {
+  id          String                 @id @default(uuid())
+  userId      String                 @map("user_id")
+  accountId   String                 @map("account_id")
+  amount      Decimal                @db.Decimal(18, 8)
+  status      WithdrawalRequestStatus @default(PENDING)
+  requestedAt DateTime              @default(now()) @map("requested_at")
+  processedAt DateTime?             @map("processed_at")
+  metadata    Json?                  @default("{}")
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     UserBalanceAccount     @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("withdrawal_requests")
+}
+
+model ProviderEventLog {
+  id             String   @id @default(uuid())
+  provider       String   @default("nowpayments")
+  providerTxId   String   @map("provider_tx_id")
+  orderId        String?  @map("order_id")
+  rawPayload     Json     @map("raw_payload")
+  status         String   @default("received")
+  processedAt    DateTime? @map("processed_at")
+  errorMessage   String?  @map("error_message")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([provider, providerTxId])
+  @@index([provider, orderId])
+  @@map("provider_event_logs")
+}
+
 enum AccessType {
   LIFETIME
   TEMPORARY
@@ -325,6 +468,10 @@ model User {
 
   botRoleAssignments     BotRoleAssignment[]  @relation("BotRoleAssignmentUser")
   grantedBotRoleAssignments BotRoleAssignment[] @relation("BotRoleAssignmentGrantedBy")
+  balanceAccount         UserBalanceAccount?
+  depositTransactions    DepositTransaction[]
+  productPurchases       ProductPurchase[]
+  withdrawalRequests     WithdrawalRequest[]
 
   @@index([invitedByUserId])
   @@index([mentorUserId])
@@ -847,6 +994,7 @@ model Product {
   menuItems       MenuItem[]
   payments        Payment[]
   accessRights    UserAccessRight[]
+  productPurchases ProductPurchase[]
 
   @@index([isActive])
   @@map("products")
