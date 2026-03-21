@@ -1606,7 +1606,21 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
       if (action === "open" && value) {
         setNavBeforeShow(ctx, "page_edit:open:" + value);
-        await showPageEditor(value);
+        try {
+          if (value !== "root") {
+            const item = await services.menu.findMenuItemById(value);
+            if (!item) {
+              await ctx.reply(services.i18n.t(locale, "error_generic"));
+              await sendRootWithWelcome(ctx);
+              return;
+            }
+          }
+          await showPageEditor(value);
+        } catch (err) {
+          logger.error({ err, pageId: value, userId: user.id }, "showPageEditor failed");
+          await ctx.reply(services.i18n.t(locale, "error_generic"));
+          await sendRootWithWelcome(ctx);
+        }
         return;
       }
 

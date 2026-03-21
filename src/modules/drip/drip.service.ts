@@ -257,7 +257,10 @@ export class DripService {
     const step = await this.prisma.dripStep.findFirst({
       where: {
         id: stepId,
-        campaign: { createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) }
+        campaign: {
+          createdByUserId,
+          ...(this.botInstanceId ? { OR: [{ botInstanceId: this.botInstanceId }, { botInstanceId: null }] } : {})
+        }
       },
       include: { localizations: true }
     });
@@ -281,7 +284,10 @@ export class DripService {
     return this.prisma.dripStep.findFirst({
       where: {
         id: stepId,
-        campaign: { createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) }
+        campaign: {
+          createdByUserId,
+          ...(this.botInstanceId ? { OR: [{ botInstanceId: this.botInstanceId }, { botInstanceId: null }] } : {})
+        }
       },
       include: {
         campaign: true,

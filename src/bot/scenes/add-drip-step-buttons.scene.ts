@@ -88,7 +88,19 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
       phase: "menu"
     };
     ctx.wizard.state = state;
-    await showButtonsMenu(ctx, state);
+    if (state.buttons.length === 0) {
+      state.phase = "choose_type";
+      await ctx.reply(
+        "Выберите куда ведёт кнопка (системные кнопки сохраняют сетевую логику — каждый пользователь попадает к своему партнёру/наставнику):",
+        kb(ctx.services.i18n, locale, [
+          ...SYSTEM_TARGETS.map((t) => [{ text: `🔗 ${t.labelRu}`, data: makeCallbackData(PREFIX, "sys", t.kind) }]),
+          [{ text: "📂 Переход в раздел", data: makeCallbackData(PREFIX, "section") }],
+          [{ text: "📎 Своя ссылка (URL)", data: makeCallbackData(PREFIX, "url") }]
+        ])
+      );
+    } else {
+      await showButtonsMenu(ctx, state);
+    }
     return ctx.wizard.next();
   },
   async (ctx) => {

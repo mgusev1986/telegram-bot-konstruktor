@@ -255,16 +255,31 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
         const lastStep = state.draft.steps[state.draft.steps.length - 1]!;
         state.stepButtons = lastStep.buttons ? [...lastStep.buttons] : [];
         state.stepButtonsPendingLabel = undefined;
+        state.stepButtonsPendingSystemKind = undefined;
+        state.stepButtonsPendingTargetMenuItemId = undefined;
+        state.stepButtonsPendingSectionTitle = undefined;
         state.phase = "step_buttons";
-        await ctx.reply(
-          "🔗 Кнопки к письму. Добавьте URL-кнопки (например: Стать партнёром | https://...)\n\nТекущие: " +
-            (state.stepButtons.length === 0 ? "—" : state.stepButtons.map((b, i) => `${i + 1}. ${b.label}`).join(", ")),
-          dripKeyboard(i18n, locale, [
-            [{ text: "➕ Добавить кнопку", data: makeCallbackData(DRIP_PREFIX, "btn_add") }],
-            [{ text: "✅ Готово", data: makeCallbackData(DRIP_PREFIX, "btn_done") }],
-            ...(state.stepButtons.length > 0 ? [[{ text: "🗑 Удалить последнюю", data: makeCallbackData(DRIP_PREFIX, "btn_remove") }] as { text: string; data: string }[]] : [])
-          ])
-        );
+        if (state.stepButtons.length === 0) {
+          await ctx.reply(
+            "Выберите куда ведёт кнопка (системные — каждый пользователь попадёт к своему партнёру/наставнику):",
+            dripKeyboard(i18n, locale, [
+              ...DRIP_SYSTEM_TARGETS.map((t) => [{ text: `🔗 ${t.labelRu}`, data: makeCallbackData(DRIP_PREFIX, "btn_sys", t.kind) }]),
+              [{ text: "📂 Переход в раздел", data: makeCallbackData(DRIP_PREFIX, "btn_section") }],
+              [{ text: "📎 Своя ссылка (URL)", data: makeCallbackData(DRIP_PREFIX, "btn_url") }]
+            ])
+          );
+        } else {
+          const formatBtn = (b: DripStepButton, i: number) =>
+            b.type === "system" ? `${b.label} [${b.systemKind}]` : b.type === "section" ? `${b.label} [раздел]` : b.label;
+          await ctx.reply(
+            "Текущие кнопки: " + state.stepButtons.map((b, i) => `${i + 1}. ${formatBtn(b, i)}`).join(", "),
+            dripKeyboard(i18n, locale, [
+              [{ text: "➕ Добавить кнопку", data: makeCallbackData(DRIP_PREFIX, "btn_add") }],
+              [{ text: "✅ Готово", data: makeCallbackData(DRIP_PREFIX, "btn_done") }],
+              [{ text: "🗑 Удалить последнюю", data: makeCallbackData(DRIP_PREFIX, "btn_remove") }]
+            ])
+          );
+        }
       }
       return;
     }
