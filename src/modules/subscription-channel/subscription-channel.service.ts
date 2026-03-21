@@ -175,6 +175,41 @@ export class SubscriptionChannelService {
     }
   }
 
+  /**
+   * Отзывает весь платный доступ пользователя (ручное действие из бэкофиса/кабинета).
+   * Устанавливает status=REVOKED для всех активных UserAccessRight и исключает пользователя из связанных чатов/каналов.
+   */
+  async revokeAllAccessForUser(userId: string): Promise<{ revokedCount: number }> {
+    const rights = await this.prisma.userAccessRight.findMany({
+      where: { userId, status: "ACTIVE" },
+      include: { user: true, product: true }
+    });
+    if (rights.length === 0) {
+      return { revokedCount: 0 };
+    }
+
+    for (const right of rights) {
+      await this.prisma.userAccessRight.update({
+        where: { id: right.id },
+        data: { status: "REVOKED" }
+      });
+
+      const identifiers = getBanIdentifiers(right.product.linkedChats);
+      if (identifiers.length && this.telegram) {
+        const chatId = (id: string) => (id.startsWith("@") ? id : Number(id));
+        for (const ident of identifiers) {
+          try {
+            await this.telegram.banChatMember(chatId(ident), Number(right.user.telegramUserId));
+            logger.info({ userId, accessRightId: right.id, chatId: ident }, "Banned user from subscription chat (revoked)");
+          } catch (e) {
+            logger.warn({ userId, chatId: ident, err: e }, "Failed to ban user from chat on revoke");
+          }
+        }
+      }
+    }
+    return { revokedCount: rights.length };
+  }
+
   /** Возвращает ссылки для кнопок — для отображения в секции после оплаты. Для identifier-only запрашивает invite через API. */
   async resolveProductLinksForDisplay(
     linkedChats: unknown,

@@ -756,9 +756,13 @@ export const buildAdminKeyboard = (
     showOnboardingRestart?: boolean;
     canManageLanguages?: boolean;
     canManageSystemButtons?: boolean;
+    canManageUsers?: boolean;
   }
 ) => {
   const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+  if (opts?.canManageUsers) {
+    rows.push([Markup.button.callback(i18n.t(languageCode, "admin_manage_user"), makeCallbackData("admin", "manage_user"))]);
+  }
   if (opts?.showOnboardingContinue) {
     rows.push([Markup.button.callback(i18n.t(languageCode, "onboarding_continue_setup"), makeCallbackData(ONBOARDING_PREFIX, "open"))]);
   }

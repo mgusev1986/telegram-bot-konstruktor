@@ -254,4 +254,9 @@ export class UserService {
       data: { onboardingStep: null, onboardingCompletedAt: null }
     });
   }
+
+  /** Delete user completely from the bot base. Enables re-registration via referral link. */
+  public async deleteUser(userId: string): Promise<void> {
+    await this.prisma.user.delete({ where: { id: userId } });
+  }
 }

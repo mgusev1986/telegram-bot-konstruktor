@@ -377,6 +377,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       uiLanguageCode: string;
       stack: string[]; // "root" + page ids
     };
+    awaitingUserLookup?: boolean;
   };
   const getNavSession = (ctx: BotContext): NavSession => {
     const s = (ctx as unknown as { session?: NavSession }).session;
@@ -541,7 +542,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       // but production permissions are still enforced in backend guards.
       canManageLanguages: canManageLanguages(effectiveUiRole as any),
       // System buttons (incl. language) can be hidden only by ALPHA_OWNER.
-      canManageSystemButtons: effectiveUiRole === "ALPHA_OWNER"
+      canManageSystemButtons: effectiveUiRole === "ALPHA_OWNER",
+      // User management (revoke paid access, delete) only for ALPHA_OWNER.
+      canManageUsers: effectiveUiRole === "ALPHA_OWNER"
     };
   };
 
@@ -808,6 +811,56 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           await ctx.reply(services.i18n.t(locale, "action_cancelled"));
           return;
         }
+      }
+    }
+
+    // Alpha Owner: awaiting user lookup (username or Telegram ID) for manage-user flow.
+    if (
+      ctx.message &&
+      "text" in ctx.message &&
+      ctx.currentUser &&
+      resolveEffectiveRole(ctx) === "ALPHA_OWNER"
+    ) {
+      const s = (ctx as unknown as { session?: ExtendedNavSession }).session ?? ({} as ExtendedNavSession);
+      if (s.awaitingUserLookup) {
+        const text = (ctx.message as { text: string }).text.trim();
+        const normalized = text.replace(/^@/, "").trim();
+        let targetUser: import("@prisma/client").User | null = null;
+        try {
+          targetUser = await services.users.findByIdentifier(
+            /^\d+$/.test(normalized) ? normalized : `@${normalized}`
+          );
+        } catch {
+          targetUser = null;
+        }
+        (ctx as unknown as { session: ExtendedNavSession }).session = { ...s, awaitingUserLookup: false };
+        if (!targetUser || targetUser.id === ctx.currentUser.id) {
+          await ctx.reply(services.i18n.t(ctx.currentUser.selectedLanguage, "usermgmt_user_not_found"));
+          return;
+        }
+        const activeRights = await services.payments.getAccessSummary(targetUser.id);
+        const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+        if (activeRights.paidStatus) {
+          rows.push([
+            Markup.button.callback(
+              services.i18n.t(ctx.currentUser.selectedLanguage, "usermgmt_revoke_btn"),
+              makeCallbackData("usermgmt", "revoke", targetUser.id)
+            )
+          ]);
+        }
+        rows.push([
+          Markup.button.callback(
+            services.i18n.t(ctx.currentUser.selectedLanguage, "usermgmt_delete_btn"),
+            makeCallbackData("usermgmt", "delete", targetUser.id)
+          )
+        ]);
+        rows.push(buildNavigationRow(services.i18n, ctx.currentUser.selectedLanguage, { toMain: true }));
+        const label = targetUser.username ? `@${targetUser.username}` : targetUser.fullName || String(targetUser.telegramUserId);
+        await ctx.reply(
+          `${label} (ID: ${targetUser.id.slice(0, 8)})`,
+          Markup.inlineKeyboard(rows)
+        );
+        return;
       }
     }
 
@@ -3168,8 +3221,50 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       }
     }
 
+    if (scope === "usermgmt") {
+      if (resolveEffectiveRole(ctx) !== "ALPHA_OWNER") {
+        await ctx.reply(services.i18n.t(user.selectedLanguage, "permission_denied"));
+        return;
+      }
+      const targetUserId = value;
+      if (!targetUserId) return;
+      const targetUser = await services.users.findById(targetUserId);
+      if (!targetUser || targetUser.botInstanceId !== user.botInstanceId) {
+        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_user_not_found"));
+        return;
+      }
+      if (action === "revoke") {
+        await services.subscriptionChannel.revokeAllAccessForUser(targetUserId);
+        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_revoked"));
+        return;
+      }
+      if (action === "delete") {
+        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_delete_confirm"), Markup.inlineKeyboard([
+          [Markup.button.callback(services.i18n.t(user.selectedLanguage, "usermgmt_delete_confirm_btn"), makeCallbackData("usermgmt", "delete_confirm", targetUserId))],
+          [Markup.button.callback(services.i18n.t(user.selectedLanguage, "cancel_btn"), NAV_ROOT_DATA)]
+        ]));
+        return;
+      }
+      if (action === "delete_confirm") {
+        await services.users.deleteUser(targetUserId);
+        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_deleted"));
+        return;
+      }
+      return;
+    }
+
     if (scope === "admin") {
       const adminLocale = services.i18n.resolveLanguage(user.selectedLanguage);
+      if (action === "manage_user") {
+        if (resolveEffectiveRole(ctx) !== "ALPHA_OWNER") {
+          await ctx.reply(services.i18n.t(user.selectedLanguage, "permission_denied"));
+          return;
+        }
+        const s = ((ctx as unknown as { session?: ExtendedNavSession }).session ?? {}) as ExtendedNavSession;
+        (ctx as unknown as { session: ExtendedNavSession }).session = { ...s, awaitingUserLookup: true };
+        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_prompt"));
+        return;
+      }
       if (isLanguageManagementAction(action)) {
         try {
           await services.permissions.ensurePermission(user.id, "canManageLanguages");

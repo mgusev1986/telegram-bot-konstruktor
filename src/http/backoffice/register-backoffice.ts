@@ -18,6 +18,7 @@ import { PermissionService } from "../../modules/permissions/permission.service"
 import { UserService } from "../../modules/users/user.service";
 import { BotRoleAssignmentService } from "../../modules/bot-roles/bot-role-assignment.service";
 import { UserDirectoryService } from "../../modules/users/user-directory.service";
+import { SubscriptionChannelService } from "../../modules/subscription-channel/subscription-channel.service";
 import { logger } from "../../common/logger";
 import { parseLinkedChatsFromForm } from "../../common/linked-chat-parser";
 import { canPerform, canViewGlobalUserDirectory, type BackofficeAction } from "./backoffice-permissions";
@@ -121,6 +122,7 @@ function renderPage(title: string, body: string): string {
       input, textarea, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.15); color: #e5e7eb; }
       button { padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.16); background: #2563eb; color: white; cursor: pointer; }
       button.secondary { background: rgba(255,255,255,0.08); }
+      button.error { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.5); color: #fca5a5; }
       .small { font-size: 12px; color: #94a3b8; }
       .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
@@ -623,7 +625,7 @@ export async function registerBackofficeRoutes(
       .map(
         (u) => `
     <tr>
-      <td>${escapeHtml(u.id.slice(0, 8))}</td>
+      <td><a href="/backoffice/audience/user/${encodeURIComponent(u.id)}" style="color:var(--accent)">${escapeHtml(u.id.slice(0, 8))}</a></td>
       <td>${u.username ? `<a href="https://t.me/${escapeHtml(u.username)}" target="_blank">@${escapeHtml(u.username)}</a>` : "—"}</td>
       <td>${escapeHtml(String(u.telegramUserId))}</td>
       <td>${escapeHtml(u.fullName || u.firstName || "—")}</td>
@@ -843,6 +845,142 @@ export async function registerBackofficeRoutes(
       .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
       .header("Content-Disposition", `attachment; filename="${filename}"`)
       .send(buffer);
+  });
+
+  server.get("/backoffice/audience/user/:userId", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const backofficeUser = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true, email: true }
+    });
+    const role = backofficeUser?.role ?? "ADMIN";
+    const email = backofficeUser?.email ?? "";
+    if (!canViewGlobalUserDirectory(role, email)) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const userId = (req.params as { userId: string }).userId;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { botInstance: true }
+    });
+    if (!user) {
+      return reply.code(404).send("User not found");
+    }
+
+    const activeRights = await prisma.userAccessRight.findMany({
+      where: { userId, status: "ACTIVE" },
+      include: { product: { include: { localizations: true } } }
+    });
+    const hasPaidAccess = activeRights.length > 0;
+
+    const productLabels = activeRights
+      .map((r) => r.product.localizations.find((l) => l.languageCode === "ru")?.title ?? r.product.code)
+      .join(", ");
+
+    const query = req.query as Record<string, string | undefined>;
+    const revokedCount = query.revoked ? parseInt(query.revoked, 10) : undefined;
+    const successMsg = revokedCount != null && !isNaN(revokedCount)
+      ? `<div class="success">Платный доступ отозван (${revokedCount} продуктов)</div>`
+      : "";
+
+    const backLink = `/backoffice/audience${user.botInstanceId ? `?bot=${encodeURIComponent(user.botInstanceId)}` : ""}`;
+    const revokeForm = hasPaidAccess
+      ? `
+        <form method="POST" action="/backoffice/audience/user/${encodeURIComponent(userId)}/revoke-access" style="display:inline; margin-right:8px">
+          <button type="submit" class="secondary" onclick="return confirm('Отозвать платный доступ у пользователя? Он потеряет доступ к платным материалам и каналам.')">Отозвать платный доступ</button>
+        </form>`
+      : `<span class="small" style="color:#94a3b8">Платный доступ отсутствует</span>`;
+    const deleteForm = `
+        <form method="POST" action="/backoffice/audience/user/${encodeURIComponent(userId)}/delete" style="display:inline" onsubmit="return confirm('Удалить пользователя полностью? Он сможет заново зарегистрироваться по реферальной ссылке. Это действие необратимо.')">
+          <button type="submit" class="error">Полностью удалить из базы</button>
+        </form>`;
+
+    const body = `
+        <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:16px">
+          <a href="${backLink}" style="text-decoration:none"><button class="secondary" type="button">← К списку</button></a>
+        </div>
+        ${successMsg}
+        <div class="bot-card" style="max-width:600px">
+          <h3 style="margin-top:0">Пользователь</h3>
+          <p><strong>ID:</strong> ${escapeHtml(user.id)}</p>
+          <p><strong>Telegram ID:</strong> ${escapeHtml(String(user.telegramUserId))}</p>
+          <p><strong>Username:</strong> ${user.username ? `<a href="https://t.me/${escapeHtml(user.username)}" target="_blank">@${escapeHtml(user.username)}</a>` : "—"}</p>
+          <p><strong>Имя:</strong> ${escapeHtml(user.fullName || user.firstName || "—")}</p>
+          <p><strong>Бот:</strong> ${user.botInstance ? escapeHtml(user.botInstance.name) : "—"}</p>
+          <p><strong>Регистрация:</strong> ${escapeHtml(user.createdAt.toISOString().slice(0, 19))}</p>
+          <p><strong>Платный доступ:</strong> ${hasPaidAccess ? `✅ ${escapeHtml(productLabels)}` : "—"}</p>
+          <hr style="border:none; border-top:1px solid rgba(255,255,255,0.16); margin:16px 0" />
+          <h4 style="margin-top:0">Действия</h4>
+          <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
+            ${revokeForm}
+            ${deleteForm}
+          </div>
+        </div>`;
+    return reply.type("text/html").send(renderPage("Пользователь", body));
+  });
+
+  server.post("/backoffice/audience/user/:userId/revoke-access", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const backofficeUser = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true, email: true }
+    });
+    const role = backofficeUser?.role ?? "ADMIN";
+    const email = backofficeUser?.email ?? "";
+    if (!canViewGlobalUserDirectory(role, email)) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const userId = (req.params as { userId: string }).userId;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return reply.code(404).send("User not found");
+    }
+
+    const runtime = user.botInstanceId ? runtimeManager.getRuntime(user.botInstanceId) : undefined;
+    const subChannel = runtime
+      ? runtime.services.subscriptionChannel
+      : new SubscriptionChannelService(prisma);
+    const { revokedCount } = await subChannel.revokeAllAccessForUser(userId);
+    logger.info({ backofficeUserId, userId, revokedCount }, "Backoffice: revoked paid access");
+    return reply.redirect(`/backoffice/audience/user/${encodeURIComponent(userId)}?revoked=${revokedCount}`);
+  });
+
+  server.post("/backoffice/audience/user/:userId/delete", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const backofficeUser = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true, email: true }
+    });
+    const role = backofficeUser?.role ?? "ADMIN";
+    const email = backofficeUser?.email ?? "";
+    if (!canViewGlobalUserDirectory(role, email)) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const userId = (req.params as { userId: string }).userId;
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return reply.code(404).send("User not found");
+    }
+    const botInstanceId = user.botInstanceId;
+
+    await prisma.user.delete({ where: { id: userId } });
+    logger.info({ backofficeUserId, userId, telegramUserId: String(user.telegramUserId) }, "Backoffice: deleted user from bot base");
+    const redirect = botInstanceId
+      ? `/backoffice/audience?bot=${encodeURIComponent(botInstanceId)}&deleted=1`
+      : "/backoffice/audience?deleted=1";
+    return reply.redirect(redirect);
   });
 
   server.get("/backoffice/database", async (req, reply) => {
