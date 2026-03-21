@@ -111,7 +111,17 @@ sudo bash scripts/hetzner-setup.sh
 
 ---
 
-## Домен и HTTPS (опционально)
+## Домен и HTTPS (рекомендуется)
+
+### Вариант A: Cloudflare Tunnel (без Nginx, порт 3000 не открыт)
+
+См. **[docs/CLOUDFLARE_TUNNEL.md](CLOUDFLARE_TUNNEL.md)** — пошаговая инструкция.
+
+- Домен в Cloudflare, Tunnel → `https://admin.твойдомен.com`
+- Порт 3000 остаётся только на localhost
+- SSL через Cloudflare, бесплатно
+
+### Вариант B: Nginx + Certbot
 
 1. Укажи DNS: A-запись `app.твойдомен.com` → IP сервера
 2. Установи Nginx и Certbot:
@@ -127,10 +137,20 @@ certbot --nginx -d app.твойдомен.com
 
 ## Firewall (рекомендуется)
 
+**С Cloudflare Tunnel** (порт 3000 не открыт):
+
 ```bash
-ufw allow 22    # SSH
-ufw allow 80    # HTTP
-ufw allow 443   # HTTPS
-ufw allow 3000  # Или только если не используешь Nginx
+ufw allow 22/tcp   # SSH
+ufw allow 80/tcp   # опционально
+ufw allow 443/tcp  # опционально
+# 3000 не добавляем
+ufw enable
+```
+
+**Без Tunnel** (прямой доступ по IP):
+
+```bash
+ufw allow 22/tcp   # SSH
+ufw allow 3000/tcp # Backoffice
 ufw enable
 ```

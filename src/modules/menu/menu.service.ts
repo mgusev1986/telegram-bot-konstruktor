@@ -1792,8 +1792,26 @@ export class MenuService {
       const defaultEffective = [...contentIdsOrdered, ...MenuService.DEFAULT_ROOT_SYS_SLOTS_WITH_MARKER];
       if (stored == null || stored.length === 0) return defaultEffective;
 
+      const sysAndNavSlots = new Set([
+        ...MenuService.DEFAULT_ROOT_SYS_SLOTS_WITH_MARKER,
+        MenuService.NAV_SLOT_BACK,
+        MenuService.NAV_SLOT_TO_MAIN
+      ]);
+
       // Marker means the sys-slot list is explicitly managed by alpha-owner UI.
-      if (stored.includes(MenuService.SYS_SLOT_CONFIGURED_MARKER)) return stored;
+      if (stored.includes(MenuService.SYS_SLOT_CONFIGURED_MARKER)) {
+        // Merge in content IDs that exist now but are missing from stored (fixes sections disappearing).
+        // Happens when user opened "Системные кнопки" before creating sections — config saved with only sys slots.
+        const storedContentIds = stored.filter((s) => !sysAndNavSlots.has(s));
+        const validStored = storedContentIds.filter((id) => contentIdsOrdered.includes(id));
+        const missingContentIds = contentIdsOrdered.filter((id) => !stored.includes(id));
+        if (missingContentIds.length > 0 || validStored.length !== storedContentIds.length) {
+          const contentPart = [...validStored, ...missingContentIds];
+          const sysPart = stored.filter((s) => sysAndNavSlots.has(s));
+          return [...contentPart, ...sysPart];
+        }
+        return stored;
+      }
 
       // Legacy config: return custom content order, but ensure sys slots are visible by default.
       const merged = [...stored];

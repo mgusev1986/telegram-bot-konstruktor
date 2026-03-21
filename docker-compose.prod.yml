@@ -36,7 +36,8 @@ services:
       - postgres
       - redis
     ports:
-      - "3000:3000"
+      # Bind to localhost only — access via Cloudflare Tunnel (see docs/CLOUDFLARE_TUNNEL.md)
+      - "127.0.0.1:3000:3000"
     dns:
       - 8.8.8.8
       - 8.8.4.4
