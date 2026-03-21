@@ -144,4 +144,3 @@ export class BotRuntimeManager {
     return new TelegrafCtor<BotContext>(botToken);
   }
 }
-
