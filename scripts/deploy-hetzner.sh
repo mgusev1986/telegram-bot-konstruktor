@@ -45,7 +45,9 @@ echo ""
 PRE_BACKUP_CMD="cd $HETZNER_APP_DIR && (bash scripts/server-backup-rotating.sh 2>/dev/null || true)"
 
 # 3. Выполнение команд на сервере
-RUN_CMD="cd $HETZNER_APP_DIR && git pull && docker compose -f docker-compose.prod.yml build --no-cache bot && docker compose -f docker-compose.prod.yml up -d --force-recreate bot"
+# Важно: миграции запускаем ДО старта бота (через run --rm), чтобы при сбое миграции
+# бот не уходил в рестарт-луп, а мы видели ошибку в выводе деплоя
+RUN_CMD="cd $HETZNER_APP_DIR && git pull && docker compose -f docker-compose.prod.yml build --no-cache bot && docker compose -f docker-compose.prod.yml up -d postgres redis && docker compose -f docker-compose.prod.yml run --rm bot npx prisma migrate deploy && docker compose -f docker-compose.prod.yml up -d --force-recreate bot"
 
 echo "Шаг 2: Бэкап БД перед деплоем..."
 if ssh -o BatchMode=yes -o ConnectTimeout=5 "$SSH_TARGET" "echo ok" 2>/dev/null | grep -q "ok"; then
@@ -56,8 +58,6 @@ echo ""
 echo "Шаг 3: Обновление на сервере..."
 echo "  $RUN_CMD"
 echo ""
-
-MIGRATE_CMD="cd $HETZNER_APP_DIR && docker compose -f docker-compose.prod.yml exec -T bot npx prisma migrate deploy"
 
 do_ssh() {
   ssh "$@"
@@ -71,9 +71,6 @@ run_full_deploy() {
   local ssh_cmd="$1"
   $ssh_cmd "$SSH_TARGET" "$PRE_BACKUP_CMD" 2>/dev/null || true
   $ssh_cmd "$SSH_TARGET" "$RUN_CMD"
-  echo ""
-  echo "Шаг 4: Применение миграций..."
-  $ssh_cmd "$SSH_TARGET" "$MIGRATE_CMD"
 }
 
 # Проверяем, работает ли SSH по ключу
