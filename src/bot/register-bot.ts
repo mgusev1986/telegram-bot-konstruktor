@@ -1682,7 +1682,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         return;
       }
 
-      if (action === "open_content_menu" && value) {
+      if (action === "cnt" && value) {
         const pageId = value;
         const editingLangCode = extra
           ? services.i18n.normalizeLocalizationLanguageCode(String(extra))

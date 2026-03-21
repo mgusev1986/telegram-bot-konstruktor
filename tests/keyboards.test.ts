@@ -355,7 +355,7 @@ describe("Keyboards: page editor language hub", () => {
     rows.forEach((row) => expect(row.length).toBe(1));
 
     const callbacks = getAllCallbackData(kb as any);
-    expect(callbacks).toContain("page_edit:open_content_menu:root:en");
+    expect(callbacks).toContain("page_edit:cnt:root:en");
     expect(callbacks).toContain("page_edit:add_sec:root");
     expect(callbacks).toContain("page_edit:add_btn:root");
     expect(callbacks).toContain("page_edit:manage_buttons:root");

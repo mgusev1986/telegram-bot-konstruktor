@@ -427,7 +427,7 @@ export const buildPageEditorKeyboard = (
 ) => {
   const editingContentLanguageCode = opts?.editingContentLanguageCode ?? languageCode;
   const rows: ReturnType<typeof Markup.button.callback>[][] = [
-    [Markup.button.callback("✏️ " + i18n.t(languageCode, "page_edit_content"), makeCallbackData(PAGE_EDIT_PREFIX, "open_content_menu", pageId, editingContentLanguageCode))],
+    [Markup.button.callback("✏️ " + i18n.t(languageCode, "page_edit_content"), makeCallbackData(PAGE_EDIT_PREFIX, "cnt", pageId, editingContentLanguageCode))],
     [Markup.button.callback("➕ " + i18n.t(languageCode, "page_add_section"), makeCallbackData(PAGE_EDIT_PREFIX, "add_sec", pageId))],
     [Markup.button.callback("🔗 " + i18n.t(languageCode, "page_add_button"), makeCallbackData(PAGE_EDIT_PREFIX, "add_btn", pageId))],
     [Markup.button.callback("🧩 " + i18n.t(languageCode, "page_manage_buttons"), makeCallbackData(PAGE_EDIT_PREFIX, "manage_buttons", pageId))],
