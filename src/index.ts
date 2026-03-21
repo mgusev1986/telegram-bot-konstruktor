@@ -127,23 +127,39 @@ const bootstrap = async (): Promise<void> => {
     const ownerUser = await ensureSuperAdminUser();
 
     if (hasEnvBot) {
+      const tokenHash = hashTelegramBotToken(env.BOT_TOKEN!);
+      // Ищем по token hash (уникальный), а не по username — BOT_USERNAME может отличаться (с/без @)
       const existingBot = await prisma.botInstance.findFirst({
-        where: { telegramBotUsername: env.BOT_USERNAME },
+        where: { telegramBotTokenHash: tokenHash },
         orderBy: { createdAt: "desc" }
       });
 
-      const botInstance =
-        existingBot ??
-        (await prisma.botInstance.create({
-          data: {
-            ownerBackofficeUserId: null,
-            name: "Default Bot",
-            telegramBotTokenEncrypted: encryptTelegramBotToken(env.BOT_TOKEN!, env.BOT_TOKEN_ENCRYPTION_KEY),
-            telegramBotTokenHash: hashTelegramBotToken(env.BOT_TOKEN!),
-            telegramBotUsername: env.BOT_USERNAME,
-            status: "ACTIVE"
+      let botInstance = existingBot;
+      if (!botInstance) {
+        try {
+          botInstance = await prisma.botInstance.create({
+            data: {
+              ownerBackofficeUserId: null,
+              name: "Default Bot",
+              telegramBotTokenEncrypted: encryptTelegramBotToken(env.BOT_TOKEN!, env.BOT_TOKEN_ENCRYPTION_KEY),
+              telegramBotTokenHash: tokenHash,
+              telegramBotUsername: env.BOT_USERNAME,
+              status: "ACTIVE"
+            }
+          });
+        } catch (err: unknown) {
+          if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
+            const retry = await prisma.botInstance.findFirst({
+              where: { telegramBotTokenHash: tokenHash },
+              orderBy: { createdAt: "desc" }
+            });
+            if (retry) botInstance = retry;
+            else throw err;
+          } else {
+            throw err;
           }
-        }));
+        }
+      }
 
       const template = await prisma.presentationTemplate.findFirst({
         where: { botInstanceId: botInstance.id, isActive: true }
