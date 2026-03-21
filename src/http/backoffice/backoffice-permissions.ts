@@ -29,6 +29,7 @@ const OWNER_ACTIONS: BackofficeAction[] = [
   "bot_lifecycle:pause_resume",
   "bot_lifecycle:archive_delete",
   "bot_roles:manage",
+  "paid_access:manage",
   "payments:confirm_manual"
 ];
 
@@ -37,8 +38,8 @@ const ADMIN_ACTIONS: BackofficeAction[] = [
   "bot_lifecycle:pause_resume"
 ];
 
-/** Только ALPHA_OWNER: управление платным доступом (продукты, блокировка разделов). */
-const ALPHA_ONLY_ACTIONS: BackofficeAction[] = ["paid_access:manage", "global_user_directory:view"];
+/** Только ALPHA_OWNER: глобальная база пользователей. */
+const ALPHA_ONLY_ACTIONS: BackofficeAction[] = ["global_user_directory:view"];
 
 export function getBackofficeCapabilities(role: BackofficeUserRole, email?: string): BackofficeCapabilities {
   const caps = new Set<BackofficeAction>();
