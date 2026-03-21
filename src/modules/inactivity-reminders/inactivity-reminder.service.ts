@@ -21,11 +21,15 @@ export class InactivityReminderService {
   ) {}
 
   /** Build where clause for bot-scoped rule queries. Includes legacy rules (botInstanceId=null) for backward compat. */
-  private ruleScopeWhere<T extends Record<string, unknown>>(base: T): T & { OR?: Array<{ botInstanceId: string | null }> } {
+  private ruleScopeWhere<T extends Record<string, unknown>>(
+    base: T
+  ): import("@prisma/client").Prisma.InactivityReminderRuleWhereInput {
     if (this.botInstanceId != null) {
-      return { ...base, OR: [{ botInstanceId: this.botInstanceId }, { botInstanceId: null }] } as any;
+      return { ...base, OR: [{ botInstanceId: this.botInstanceId }, { botInstanceId: null }] } as unknown as import(
+        "@prisma/client"
+      ).Prisma.InactivityReminderRuleWhereInput;
     }
-    return base as any;
+    return base as unknown as import("@prisma/client").Prisma.InactivityReminderRuleWhereInput;
   }
 
   public setTelegram(telegram: Telegram): void {
@@ -294,6 +298,8 @@ export class InactivityReminderService {
     const botInstanceId = input.botInstanceId ?? this.botInstanceId;
 
     if (input.ruleId) {
+      const existing = await this.getRuleById(input.ruleId);
+      if (!existing) throw new Error("Rule not found");
       return this.prisma.inactivityReminderRule.update({
         where: { id: input.ruleId },
         data: {
@@ -351,8 +357,9 @@ export class InactivityReminderService {
   public async setRuleActive(ruleId: string, isActive: boolean): Promise<void> {
     const rule = await this.getRuleById(ruleId);
     if (!rule) return;
-    await this.prisma.inactivityReminderRule.update({
-      where: { id: ruleId },
+    const where = this.ruleScopeWhere({ id: ruleId });
+    await this.prisma.inactivityReminderRule.updateMany({
+      where,
       data: { isActive }
     });
     if (!isActive) {
@@ -364,7 +371,8 @@ export class InactivityReminderService {
     const rule = await this.getRuleById(ruleId);
     if (!rule) return;
     await this.cancelPendingForRule(ruleId);
-    await this.prisma.inactivityReminderRule.delete({ where: { id: ruleId } });
+    const where = this.ruleScopeWhere({ id: ruleId });
+    await this.prisma.inactivityReminderRule.deleteMany({ where });
   }
 
   public async deleteRuleByTriggerPageId(triggerPageId: string): Promise<void> {

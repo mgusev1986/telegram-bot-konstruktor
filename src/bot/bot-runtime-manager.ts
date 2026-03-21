@@ -4,6 +4,7 @@ import type { Telegraf } from "telegraf";
 import { Telegraf as TelegrafCtor } from "telegraf";
 
 import { env } from "../config/env";
+import { logger } from "../common/logger";
 import type { AppServices } from "../app/services";
 import { buildServices } from "../app/services";
 import { decryptTelegramBotToken } from "../common/telegram-token-encryption";
@@ -54,7 +55,20 @@ export class BotRuntimeManager {
 
     const shouldLaunch = opts?.launch ?? true;
     if (shouldLaunch && canBeLaunched) {
-      await bot.launch();
+      const LAUNCH_TIMEOUT_MS = 25_000;
+      const launchPromise = bot.launch();
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          try {
+            bot.stop("SIGTERM");
+          } catch {
+            // ignore
+          }
+          reject(new Error(`bot.launch() timed out after ${LAUNCH_TIMEOUT_MS}ms (check api.telegram.org reachability, token validity)`));
+        }, LAUNCH_TIMEOUT_MS);
+      });
+      await Promise.race([launchPromise, timeoutPromise]);
+      logger.info({ botInstanceId, username: botInstance.telegramBotUsername }, "Telegram polling started");
     }
 
     const runtime: BotRuntime = { botInstanceId, bot, services };

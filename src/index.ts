@@ -290,6 +290,7 @@ const bootstrap = async (): Promise<void> => {
     where: { status: "ACTIVE", isArchived: false },
     orderBy: { createdAt: "asc" }
   });
+  logger.info({ count: activeBots.length, ids: activeBots.map((b) => b.id) }, "Starting active bots");
 
   let primaryRuntime: Awaited<ReturnType<BotRuntimeManager["startBotInstance"]>> | null = null;
   const launchedBotIds: string[] = [];
