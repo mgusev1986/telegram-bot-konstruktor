@@ -14,10 +14,13 @@ export type BackofficeAction =
 
 export type BackofficeCapabilities = Set<BackofficeAction>;
 
-/** Whether this backoffice user can view the platform-wide user directory (audience) — только ALPHA_OWNER. */
+/** Whether this backoffice user can view the platform-wide user directory (audience) — ALPHA_OWNER or configured admin. */
 export function canViewGlobalUserDirectory(role: BackofficeUserRole, email: string): boolean {
   if (role === "ALPHA_OWNER") return true;
-  return Boolean(env.BACKOFFICE_ALPHA_EMAIL && email === env.BACKOFFICE_ALPHA_EMAIL);
+  if (env.BACKOFFICE_ALPHA_EMAIL && email === env.BACKOFFICE_ALPHA_EMAIL) return true;
+  // Single-owner: if only BACKOFFICE_ADMIN_EMAIL is set (no BACKOFFICE_ALPHA_EMAIL), that admin sees all bases
+  if (env.BACKOFFICE_ADMIN_EMAIL && !env.BACKOFFICE_ALPHA_EMAIL && email === env.BACKOFFICE_ADMIN_EMAIL) return true;
+  return false;
 }
 
 const OWNER_ACTIONS: BackofficeAction[] = [
@@ -38,7 +41,10 @@ const ADMIN_ACTIONS: BackofficeAction[] = [
 
 export function getBackofficeCapabilities(role: BackofficeUserRole, email?: string): BackofficeCapabilities {
   const caps = new Set<BackofficeAction>();
-  const isAlpha = role === "ALPHA_OWNER" || (email && env.BACKOFFICE_ALPHA_EMAIL && email === env.BACKOFFICE_ALPHA_EMAIL);
+  const isAlpha =
+    role === "ALPHA_OWNER" ||
+    (email && env.BACKOFFICE_ALPHA_EMAIL && email === env.BACKOFFICE_ALPHA_EMAIL) ||
+    (email && env.BACKOFFICE_ADMIN_EMAIL && !env.BACKOFFICE_ALPHA_EMAIL && email === env.BACKOFFICE_ADMIN_EMAIL);
   if (isAlpha) {
     caps.add("global_user_directory:view");
   }
