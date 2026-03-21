@@ -92,7 +92,7 @@ export const buildServices = (
   const exports = new ExportService(prisma, referrals);
   const permissions = new PermissionService(prisma, users, audit, botInstanceId);
   const mediaLibrary = new MediaLibraryService(prisma);
-  const inactivityReminders = new InactivityReminderService(prisma, scheduler);
+  const inactivityReminders = new InactivityReminderService(prisma, scheduler, botInstanceId);
   const languageGenerationTasks = new LanguageGenerationTaskService(prisma, i18n);
 
   return {

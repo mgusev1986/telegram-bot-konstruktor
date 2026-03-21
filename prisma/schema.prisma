@@ -371,6 +371,7 @@ model BotInstance {
   contentProgresses    ContentProgress[]
 
   roleAssignments      BotRoleAssignment[] @relation("BotRoleAssignmentBotInstance")
+  inactivityReminderRules InactivityReminderRule[]
 
   @@index([ownerBackofficeUserId, status])
   @@map("bot_instances")
@@ -1121,24 +1122,27 @@ model ReminderTemplate {
 }
 
 model InactivityReminderRule {
-  id             String                              @id @default(uuid())
-  templateId     String                              @map("template_id")
-  template       ReminderTemplate                   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  id              String                              @id @default(uuid())
+  botInstanceId   String?                             @map("bot_instance_id")
+  templateId      String                              @map("template_id")
+  template        ReminderTemplate                   @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  triggerPageId  String                              @map("trigger_page_id")
-  targetMenuItemId String                           @map("target_menu_item_id")
-  delayMinutes   Int                                @map("delay_minutes")
-  ctaLabel       String                              @map("cta_label")
-  ctaTargetType  InactivityReminderCtaTargetType     @map("cta_target_type")
-  isActive       Boolean                            @default(true) @map("is_active")
+  triggerPageId   String                              @map("trigger_page_id")
+  targetMenuItemId String                            @map("target_menu_item_id")
+  delayMinutes    Int                                @map("delay_minutes")
+  ctaLabel        String                             @map("cta_label")
+  ctaTargetType   InactivityReminderCtaTargetType    @map("cta_target_type")
+  isActive        Boolean                            @default(true) @map("is_active")
 
-  createdAt      DateTime                           @default(now()) @map("created_at")
-  updatedAt      DateTime                           @updatedAt @map("updated_at")
+  createdAt       DateTime                           @default(now()) @map("created_at")
+  updatedAt       DateTime                           @updatedAt @map("updated_at")
 
-  states         UserInactivityReminderState[]
+  botInstance     BotInstance?                       @relation(fields: [botInstanceId], references: [id], onDelete: Cascade)
+  states          UserInactivityReminderState[]
 
   @@index([triggerPageId])
   @@index([isActive])
+  @@index([botInstanceId, triggerPageId])
   @@map("inactivity_reminder_rules")
 }
 

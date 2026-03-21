@@ -5,15 +5,16 @@ import { env } from "../src/config/env";
 
 describe("InactivityReminderService", () => {
   it("scheduleForPageOpen schedules a job when no pending state exists", async () => {
+    const rule = {
+      id: "r1",
+      isActive: true,
+      delayMinutes: 45,
+      targetMenuItemId: "m1",
+      template: { id: "t1", isActive: true }
+    };
     const prisma = {
       inactivityReminderRule: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: "r1",
-          isActive: true,
-          delayMinutes: 45,
-          targetMenuItemId: "m1",
-          template: { id: "t1", isActive: true }
-        })
+        findMany: vi.fn().mockResolvedValue([rule])
       },
       userInactivityReminderState: {
         findUnique: vi.fn().mockResolvedValue(null),
@@ -42,13 +43,13 @@ describe("InactivityReminderService", () => {
       { shouldSchedule: true }
     );
 
-    expect(prisma.inactivityReminderRule.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.inactivityReminderRule.findMany).toHaveBeenCalledTimes(1);
     expect(prisma.userInactivityReminderState.findUnique).toHaveBeenCalledTimes(1);
     expect(prisma.userInactivityReminderState.create).toHaveBeenCalledTimes(1);
 
     expect(scheduler.schedule).toHaveBeenCalledWith(
       "SEND_INACTIVITY_REMINDER",
-      { reminderStateId: "s1" },
+      expect.objectContaining({ reminderStateId: "s1" }),
       expect.any(Date),
       "inact:s1"
     );
@@ -60,15 +61,16 @@ describe("InactivityReminderService", () => {
   });
 
   it("scheduleForPageOpen is idempotent when a pending state exists", async () => {
+    const rule = {
+      id: "r1",
+      isActive: true,
+      delayMinutes: 45,
+      targetMenuItemId: "m1",
+      template: { id: "t1", isActive: true }
+    };
     const prisma = {
       inactivityReminderRule: {
-        findUnique: vi.fn().mockResolvedValue({
-          id: "r1",
-          isActive: true,
-          delayMinutes: 45,
-          targetMenuItemId: "m1",
-          template: { id: "t1", isActive: true }
-        })
+        findMany: vi.fn().mockResolvedValue([rule])
       },
       userInactivityReminderState: {
         findUnique: vi.fn().mockResolvedValue({ id: "existing" }),

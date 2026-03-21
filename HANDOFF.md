@@ -3,10 +3,21 @@
 Один snapshot проекта для переноса контекста в новый чат или онбординга разработчика. Обновляйте этот файл после крупных изменений.
 
 ### Last checkpoint
-Дата: 2026-03-20
-Снапшот: `snapshot-2026-03-20_20-40-51.tar.gz`
+Дата: 2026-03-21
+Снапшот: `snapshot-2026-03-21_16-15-43.tar.gz`
+SHA256: `6d04ff8bd8ff516a28a7c28d55d15559aad89fbcc3baccadfd03160a0f75adb5`
 Сборка: `npm run build` (pass), `npm run lint:types` (pass)
 Деплой: Hetzner VPS (77.42.79.54), Docker Compose
+Тесты: 208 passed, 7 failed (интеграционные — требуют postgres)
+
+### Checkpoint notes (2026-03-21) — subscription channel, drip buttons, backup, backoffice
+
+- **Subscription channel + linkedChatId, reminders, ban on expiry:** Product.linkedChats (JSON) вместо linked_chat_id; SubscriptionChannelService — напоминания за 3/2/1 день, исключение из канала при expiry; linked-chat-parser для t.me/joinchat; workers SEND_SUBSCRIPTION_REMINDER, PROCESS_ACCESS_EXPIRY; backoffice UI для привязки каналов к продуктам; docs/SUBSCRIPTION_CHANNEL_SETUP.md.
+- **Drip step buttons:** add-drip-step-buttons.scene.ts — кнопки (inline) к шагам drip; create-drip-campaign и drip.service расширены.
+- **Database section в Backoffice:** статистика по ботам (пользователи, активность).
+- **Backup/restore:** scripts/backup-db.sh, restore-db.sh, full-backup-to-local.sh, server-backup-rotating.sh, install-backup-cron.sh, fetch-db-from-server.sh; docs/BACKUP.md, DATA_PERSISTENCE.md.
+- **Deploy:** deploy-hetzner.sh с .env.deploy (HETZNER_HOST, HETZNER_USER, HETZNER_APP_DIR); migrate в deploy.sh; .env.deploy.example.
+- **Edit content submenu:** подменю редактирования контента в админке.
 
 ### Checkpoint notes (2026-03-20) — деплой и bootstrap
 - **Деплой на Hetzner VPS:** проект развёрнут через `scripts/hetzner-setup.sh`, `docker-compose.prod.yml`. Репозиторий: github.com/mgusev1986/telegram-bot-konstruktor.
@@ -71,10 +82,23 @@ Telegram Bot - Konstruktor/
 │   ├── schema.prisma
 │   ├── seed.ts                # теги, бейджи
 │   └── seed-demo-structure.ts # демо: главная, разделы, подразделы, drip
+├── scripts/
+│   ├── backup-db.sh
+│   ├── restore-db.sh
+│   ├── full-backup-to-local.sh
+│   ├── server-backup-rotating.sh
+│   ├── install-backup-cron.sh
+│   ├── deploy-hetzner.sh
+│   ├── fetch-db-from-server.sh
+│   └── hetzner-setup.sh
 ├── docs/
 │   ├── PRODUCT_REBUILD_AUDIT_REPORT.md
 │   ├── CONSTRUCTOR_UX_REDESIGN.md
-│   └── NAVIGATION_STANDARD.md
+│   ├── NAVIGATION_STANDARD.md
+│   ├── BACKUP.md
+│   ├── DATA_PERSISTENCE.md
+│   ├── DEPLOY_GUIDE.md
+│   └── SUBSCRIPTION_CHANNEL_SETUP.md
 ├── tests/
 │   ├── README.md
 │   ├── helpers/
@@ -91,6 +115,7 @@ Telegram Bot - Konstruktor/
     ├── common/
     │   ├── callback-data.ts
     │   ├── errors.ts
+    │   ├── linked-chat-parser.ts
     │   ├── html.ts
     │   ├── json.ts
     │   ├── logger.ts
@@ -116,6 +141,7 @@ Telegram Bot - Konstruktor/
     │       ├── rename-button.scene.ts
     │       ├── create-broadcast.scene.ts
     │       ├── create-drip-campaign.scene.ts
+    │       ├── add-drip-step-buttons.scene.ts
     │       └── ...
     └── modules/
         ├── menu/
@@ -155,6 +181,8 @@ Telegram Bot - Konstruktor/
         │   └── notification.service.ts
         ├── ab/
         │   └── ab-test.service.ts
+        ├── subscription-channel/
+        │   └── subscription-channel.service.ts
         └── ...
 ```
 
@@ -216,6 +244,7 @@ Telegram Bot - Konstruktor/
 | **jobs/scheduler** | Отложенные задачи (BullMQ), восстановление после рестарта. |
 | **exports** | Выгрузка структуры/пользователей (HTML, Excel). |
 | **permissions** | Роли, OWNER/ADMIN, grantAdmin. |
+| **subscription-channel** | Product.linkedChats, напоминания 3/2/1 день, ban при expiry, приглашение в каналы при оплате. |
 
 ---
 
@@ -246,6 +275,10 @@ Telegram Bot - Konstruktor/
 - Экспорт (HTML, Excel).
 - Аудит навигации: buildNavigationGraph, validateNavigationGraph, runNavigationAudit (по активному шаблону).
 - Демо-сид: `npm run prisma:seed-demo` — готовая структура для ручной проверки.
+- **Subscription channel:** привязка продукта к каналам/чатам (linkedChats); напоминания за 3/2/1 день до истечения; ban при expiry; кнопки «Канал»/«Чат» в оплаченной секции.
+- **Drip step buttons:** inline-кнопки к шагам drip-кампании.
+- **Backup:** backup-db.sh, restore-db.sh, full-backup-to-local.sh, server-backup-rotating.sh; docs/BACKUP.md.
+- **Deploy:** deploy-hetzner.sh с .env.deploy; migrate в deploy.sh.
 
 ---
 
@@ -310,15 +343,24 @@ npm run lint:types           # tsc --noEmit
 
 ### Деплой на Hetzner VPS
 
+**С локальной машины (рекомендуется):**
 ```bash
-# На сервере (первый раз)
+cp .env.deploy.example .env.deploy
+nano .env.deploy   # HETZNER_HOST, HETZNER_USER, HETZNER_APP_DIR
+bash scripts/deploy-hetzner.sh
+```
+
+**На сервере (первый раз):**
+```bash
 git clone https://github.com/mgusev1986/telegram-bot-konstruktor.git /opt/telegram-bot-konstruktor
 cd /opt/telegram-bot-konstruktor
 cp .env.production.example .env
 nano .env   # заполнить DATABASE_URL, REDIS_URL, BOT_TOKEN, SUPER_ADMIN_TELEGRAM_ID и др.
 sudo bash scripts/hetzner-setup.sh
+```
 
-# Обновление после git push
+**Обновление после git push:**
+```bash
 cd /opt/telegram-bot-konstruktor
 git pull
 docker compose -f docker-compose.prod.yml build --no-cache bot
@@ -359,6 +401,6 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate
 
 **Ключевые файлы:** `src/bot/register-bot.ts` (хендлеры, sendRootWithWelcome, sendMenuPage), `src/bot/keyboards.ts` (вертикальные кнопки, callback_data), `src/modules/menu/menu.service.ts` (контент, дети, createMenuItem), `src/modules/menu/navigation-audit.ts` (граф, валидация). Тесты: `tests/navigation-audit.test.ts`, `tests/navigation-integrity.test.ts`, `tests/keyboards.test.ts`. Демо-данные: `npm run prisma:seed-demo`.
 
-**Деплой:** Hetzner VPS 77.42.79.54, Docker Compose. HTTP-сервер стартует до запуска ботов — `/health` отвечает сразу. Репозиторий: github.com/mgusev1986/telegram-bot-konstruktor.
+**Деплой:** Hetzner VPS 77.42.79.54, Docker Compose. `scripts/deploy-hetzner.sh` с `.env.deploy`. HTTP-сервер стартует до запуска ботов — `/health` отвечает сразу. Репозиторий: github.com/mgusev1986/telegram-bot-konstruktor.
 
 **Полный контекст:** см. HANDOFF.md в корне проекта.

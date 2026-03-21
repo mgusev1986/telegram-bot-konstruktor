@@ -16,8 +16,17 @@ export class InactivityReminderService {
 
   public constructor(
     private readonly prisma: PrismaClient,
-    private readonly scheduler: SchedulerService
+    private readonly scheduler: SchedulerService,
+    private readonly botInstanceId?: string | null
   ) {}
+
+  /** Build where clause for bot-scoped rule queries. Includes legacy rules (botInstanceId=null) for backward compat. */
+  private ruleScopeWhere<T extends Record<string, unknown>>(base: T): T & { OR?: Array<{ botInstanceId: string | null }> } {
+    if (this.botInstanceId != null) {
+      return { ...base, OR: [{ botInstanceId: this.botInstanceId }, { botInstanceId: null }] } as any;
+    }
+    return base as any;
+  }
 
   public setTelegram(telegram: Telegram): void {
     this.telegram = telegram;
@@ -60,7 +69,7 @@ export class InactivityReminderService {
     if (!opts.shouldSchedule) return;
 
     const rules = await this.prisma.inactivityReminderRule.findMany({
-      where: { triggerPageId, isActive: true },
+      where: this.ruleScopeWhere({ triggerPageId, isActive: true }),
       include: { template: true }
     });
     if (rules.length === 0) return;
@@ -261,6 +270,7 @@ export class InactivityReminderService {
   }
 
   public async upsertRuleForTriggerPage(input: {
+    botInstanceId?: string | null;
     triggerPageId: string;
     templateId: string;
     targetMenuItemId: string;
@@ -281,13 +291,16 @@ export class InactivityReminderService {
       throw new Error("delayMinutes must be between 1 and 1440");
     }
 
+    const botInstanceId = input.botInstanceId ?? this.botInstanceId;
+
     if (input.ruleId) {
       return this.prisma.inactivityReminderRule.update({
         where: { id: input.ruleId },
         data: {
-        templateId: input.templateId,
-        targetMenuItemId: input.targetMenuItemId,
-        delayMinutes: delay,
+          ...(botInstanceId != null && { botInstanceId }),
+          templateId: input.templateId,
+          targetMenuItemId: input.targetMenuItemId,
+          delayMinutes: delay,
           ctaLabel: input.ctaLabel,
           ctaTargetType: input.ctaTargetType,
           isActive: true
@@ -298,6 +311,7 @@ export class InactivityReminderService {
 
     return this.prisma.inactivityReminderRule.create({
       data: {
+        ...(botInstanceId != null && { botInstanceId }),
         templateId: input.templateId,
         triggerPageId: input.triggerPageId,
         targetMenuItemId: input.targetMenuItemId,
@@ -312,7 +326,7 @@ export class InactivityReminderService {
 
   public async getRuleByTriggerPageId(triggerPageId: string) {
     return this.prisma.inactivityReminderRule.findFirst({
-      where: { triggerPageId },
+      where: this.ruleScopeWhere({ triggerPageId }),
       orderBy: { createdAt: "desc" },
       include: { template: true }
     });
@@ -327,7 +341,7 @@ export class InactivityReminderService {
 
   public async listRulesForTriggerPageId(triggerPageId: string) {
     return this.prisma.inactivityReminderRule.findMany({
-      where: { triggerPageId },
+      where: this.ruleScopeWhere({ triggerPageId }),
       include: { template: true },
       orderBy: { createdAt: "asc" }
     });

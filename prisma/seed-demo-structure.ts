@@ -310,6 +310,11 @@ async function main(): Promise<void> {
   }
 
   console.log("Creating demo inactivity reminder rule for «О продукте»...");
+  const templateWithBot = await prisma.presentationTemplate.findUnique({
+    where: { id: templateId },
+    select: { botInstanceId: true }
+  });
+  const botInstanceId = templateWithBot?.botInstanceId ?? null;
   const softTemplate = INACTIVITY_REMINDER_TEMPLATES_RU.find((t) => t.key === "soft_4")!;
   const softTemplateRow = await prisma.reminderTemplate.findUnique({ where: { key: softTemplate.key } });
   if (softTemplateRow) {
@@ -317,6 +322,7 @@ async function main(): Promise<void> {
       where: { triggerPageId: idAboutProduct, templateId: softTemplateRow.id }
     });
     const data = {
+      ...(botInstanceId && { botInstanceId }),
       templateId: softTemplateRow.id,
       targetMenuItemId: idProduct1,
       delayMinutes: 45,
