@@ -42,12 +42,41 @@ bash scripts/backup-db.sh
 
 Бэкап сохраняется в `backups/telegram_bot_konstruktor_YYYY-MM-DD_HH-MM-SS.sql.gz`.
 
-### Автоматический бэкап (cron)
+### Полный бэкап каждые 2 часа (БД + настройки, макс. 12 копий)
 
-Ежедневно в 3:00 ночи:
+Рекомендуемый вариант: полный бэкап (БД, .env, schema) каждые 2 часа с ротацией — хранится не более 10 последних бэкапов.
 
 ```bash
-sudo crontab -e
+cd /opt/telegram-bot-konstruktor
+bash scripts/server-backup-rotating.sh
+```
+
+Бэкапы сохраняются в `/root/bot-backups/backup-YYYY-MM-DD_HH-MM-SS/` (не в веб-доступе, только root).
+
+**Cron (каждые 2 часа):**
+
+```bash
+crontab -e
+```
+
+Добавьте строку (для root):
+
+```
+0 */2 * * * cd /opt/telegram-bot-konstruktor && bash scripts/server-backup-rotating.sh >> /var/log/telegram-bot-backup.log 2>&1
+```
+
+Создайте лог-файл при необходимости:
+
+```bash
+touch /var/log/telegram-bot-backup.log
+```
+
+### Автоматический бэкап только БД (cron)
+
+Ежедневно в 3:00 ночи (только дамп PostgreSQL):
+
+```bash
+crontab -e
 ```
 
 Добавьте строку:
@@ -73,11 +102,14 @@ mkdir -p /opt/telegram-bot-konstruktor/logs
 ```bash
 cd /opt/telegram-bot-konstruktor
 
-# Восстановить последний бэкап
+# Восстановить последний бэкап (из backups/)
 bash scripts/restore-db.sh
 
-# Восстановить конкретный файл
-bash scripts/restore-db.sh backups/telegram_bot_konstruktor_2025-03-19_03-00-00.sql.gz
+# Восстановить из полного бэкапа (server-backup-rotating)
+bash scripts/restore-db.sh /root/bot-backups/backup-2026-03-21_12-00-00/database.sql.gz
+
+# Восстановить .env из бэкапа
+cp /root/bot-backups/backup-2026-03-21_12-00-00/.env .env
 ```
 
 Скрипт остановит бота, пересоздаст БД, восстановит данные, применит миграции и запустит бота.
@@ -91,7 +123,9 @@ bash scripts/restore-db.sh backups/telegram_bot_konstruktor_2025-03-19_03-00-00.
 | `APP_DIR`    | `/opt/telegram-bot-konstruktor`        | Директория проекта                 |
 | `BACKUP_DIR` | `$APP_DIR/backups`                     | Директория для бэкапов             |
 | `COMPOSE_FILE` | `docker-compose.prod.yml`            | Файл Docker Compose                |
-| `KEEP_DAILY` | `7`                                    | Сколько дневных бэкапов хранить    |
+| `KEEP_DAILY` | `7`                                    | Сколько дневных бэкапов хранить (backup-db.sh) |
+| `KEEP_COUNT` | `12`                                   | Сколько полных бэкапов хранить (server-backup-rotating.sh) |
+| `BACKUP_ROOT` | `/root/bot-backups`                   | Корень для полных бэкапов на сервере |
 
 Пример: хранить 14 бэкапов:
 
