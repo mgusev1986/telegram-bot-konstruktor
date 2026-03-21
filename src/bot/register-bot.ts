@@ -1157,7 +1157,17 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
     const parts = splitCallbackData(ctx.callbackQuery.data);
     const [scope, action, value, extra] = parts;
-    const user = ctx.currentUser!;
+    const user = ctx.currentUser;
+    if (!user) {
+      logger.warn({ callbackData: ctx.callbackQuery.data }, "Callback without currentUser");
+      try {
+        await ctx.answerCbQuery();
+        await ctx.reply(services.i18n.t("ru", "error_generic"));
+      } catch {
+        // ignore
+      }
+      return;
+    }
 
     try {
       await ctx.answerCbQuery();
@@ -1200,7 +1210,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           );
           return;
         }
-        if (prev === "admin:open" && isAdminRole(user.role)) {
+        if (prev === "admin:open" && isAdminRole(resolveEffectiveRole(ctx))) {
           const locale = services.i18n.resolveLanguage(user.selectedLanguage);
           setNavCurrent(ctx, "admin:open");
           const opts = await getAdminKeyboardOpts(user, resolveEffectiveRole(ctx));
@@ -1641,6 +1651,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           if (pageId !== "root") {
             const item = await services.menu.findMenuItemById(pageId);
             if (!item) {
+              logger.warn({ pageId, userId: user.id }, "page_edit:open - menu item not found");
               await ctx.reply(
                 services.i18n.t(locale, "error_generic"),
                 Markup.inlineKeyboard([[Markup.button.callback(services.i18n.t(locale, "to_main_menu"), NAV_ROOT_DATA)]])
@@ -1651,7 +1662,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           }
           await showPageEditor(pageId);
         } catch (err) {
-          logger.error({ err, pageId, userId: user.id }, "showPageEditor failed");
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const errStack = err instanceof Error ? err.stack : undefined;
+          logger.error({ err, errMsg, errStack, pageId, userId: user.id }, "showPageEditor failed");
           try {
             await ctx.reply(
               services.i18n.t(locale, "error_generic"),
