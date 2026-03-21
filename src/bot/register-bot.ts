@@ -1131,7 +1131,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const filename = services.exports.formatExportFilename("html", exportDate, "users");
       const captionTypeLabel = services.i18n.t(
         locale,
-        effectiveRole === "ALPHA_OWNER" ? "export_type_users_html" : "export_type_first_line_html"
+        effectiveRole === "ALPHA_OWNER" || effectiveRole === "OWNER" ? "export_type_users_html" : "export_type_first_line_html"
       );
     const caption = services.i18n
       .t(locale, "export_caption_with_type")
@@ -1321,7 +1321,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     }
 
     if (scope === "page_edit") {
-      if (!isAdminRole(user.role)) {
+      if (!isAdminRole(resolveEffectiveRole(ctx))) {
         await ctx.reply(services.i18n.t(user.selectedLanguage, "permission_denied"));
         return;
       }
@@ -2821,7 +2821,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       const filename = services.exports.formatExportFilename("html", exportDate, "structure");
         const captionTypeLabel = services.i18n.t(
           locale,
-          effectiveRole === "ALPHA_OWNER" ? "export_type_structure_html" : "export_type_first_line_html"
+          effectiveRole === "ALPHA_OWNER" || effectiveRole === "OWNER" ? "export_type_structure_html" : "export_type_first_line_html"
         );
       const exportDateText = services.exports.formatExportDate(exportDate);
       const caption = services.i18n
@@ -3976,7 +3976,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           const filename = services.exports.formatExportFilename("html", exportDate, "users");
           const captionTypeLabel = services.i18n.t(
             locale,
-            effectiveRole === "ALPHA_OWNER" ? "export_type_users_html" : "export_type_first_line_html"
+            effectiveRole === "ALPHA_OWNER" || effectiveRole === "OWNER" ? "export_type_users_html" : "export_type_first_line_html"
           );
           const caption = services.i18n
             .t(locale, "export_caption_with_type")
@@ -4001,7 +4001,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           const filename = services.exports.formatExportFilename("html", exportDate, "users");
           const captionTypeLabel = services.i18n.t(
             locale,
-            effectiveRole === "ALPHA_OWNER" ? "export_type_users_html" : "export_type_first_line_html"
+            effectiveRole === "ALPHA_OWNER" || effectiveRole === "OWNER" ? "export_type_users_html" : "export_type_first_line_html"
           );
           const caption = services.i18n
             .t(locale, "export_caption_with_type")

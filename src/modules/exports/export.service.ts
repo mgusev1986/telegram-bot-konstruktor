@@ -124,9 +124,9 @@ export class ExportService {
   private async getExportRows(requester: User, exportRole: UserRole): Promise<ExportUserRow[]> {
     const scopedBotInstanceId = requester.botInstanceId ?? null;
     // Effective role decides export scope:
-    // - OWNER => full structure (all users)
+    // - ALPHA_OWNER, OWNER => full structure (all users in bot)
     // - ADMIN/USER => only first line (direct referrals, level 1)
-    if (exportRole === "ALPHA_OWNER") {
+    if (exportRole === "ALPHA_OWNER" || exportRole === "OWNER") {
       return this.prisma.$queryRaw<ExportUserRow[]>`
         SELECT
           id,

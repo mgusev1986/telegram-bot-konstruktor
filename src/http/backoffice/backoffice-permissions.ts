@@ -14,7 +14,7 @@ export type BackofficeAction =
 
 export type BackofficeCapabilities = Set<BackofficeAction>;
 
-/** Whether this backoffice user can view the platform-wide user directory (audience) — ALPHA_OWNER or configured admin. */
+/** Whether this backoffice user can view the platform-wide user directory (audience) — ALPHA_OWNER only. */
 export function canViewGlobalUserDirectory(role: BackofficeUserRole, email: string): boolean {
   if (role === "ALPHA_OWNER") return true;
   if (env.BACKOFFICE_ALPHA_EMAIL && email === env.BACKOFFICE_ALPHA_EMAIL) return true;
