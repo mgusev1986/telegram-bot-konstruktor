@@ -12,7 +12,8 @@ import type { User } from "@prisma/client";
 /** Inline button for drip step message */
 export type DripStepButton =
   | { type: "url"; label: string; url: string }
-  | { type: "system"; label: string; systemKind: "partner_register" | "mentor_contact" | "main_menu" };
+  | { type: "system"; label: string; systemKind: "partner_register" | "mentor_contact" | "main_menu" }
+  | { type: "section"; label: string; targetMenuItemId: string };
 
 export const DRIP_SYSTEM_KINDS = ["partner_register", "mentor_contact", "main_menu"] as const;
 export type DripSystemKind = (typeof DRIP_SYSTEM_KINDS)[number];
@@ -97,6 +98,12 @@ export class DripService {
           }
           continue;
         }
+      }
+
+      if ((b as any).type === "section" && typeof (b as any).targetMenuItemId === "string") {
+        const targetId = (b as any).targetMenuItemId as string;
+        rows.push([Markup.button.callback(label, makeCallbackData("menu", "open", targetId))]);
+        continue;
       }
     }
 

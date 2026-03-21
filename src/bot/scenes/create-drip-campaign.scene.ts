@@ -47,6 +47,8 @@ interface DripWizardState {
   stepButtons?: DripStepButton[];
   stepButtonsPendingLabel?: string;
   stepButtonsPendingSystemKind?: DripSystemKind;
+  stepButtonsPendingTargetMenuItemId?: string;
+  stepButtonsPendingSectionTitle?: string;
 }
 
 const DRIP_SYSTEM_TARGETS: { kind: DripSystemKind; labelRu: string }[] = [
@@ -272,10 +274,13 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
         await ctx.answerCbQuery();
         state.stepButtonsPendingLabel = undefined;
         state.stepButtonsPendingSystemKind = undefined;
+        state.stepButtonsPendingTargetMenuItemId = undefined;
+        state.stepButtonsPendingSectionTitle = undefined;
         await ctx.reply(
           "Выберите куда ведёт кнопка (системные — каждый пользователь попадёт к своему партнёру/наставнику):",
           dripKeyboard(i18n, locale, [
             ...DRIP_SYSTEM_TARGETS.map((t) => [{ text: `🔗 ${t.labelRu}`, data: makeCallbackData(DRIP_PREFIX, "btn_sys", t.kind) }]),
+            [{ text: "📂 Переход в раздел", data: makeCallbackData(DRIP_PREFIX, "btn_section") }],
             [{ text: "📎 Своя ссылка (URL)", data: makeCallbackData(DRIP_PREFIX, "btn_url") }]
           ])
         );
@@ -291,6 +296,33 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
         );
         return;
       }
+      if (parts[1] === "btn_section") {
+        await ctx.answerCbQuery();
+        const lang = state.draft?.languageCode ?? locale;
+        const sections = await ctx.services.menu.getContentSectionsForPicker(lang);
+        if (sections.length === 0) {
+          await ctx.reply("Нет доступных разделов. Сначала создайте разделы в меню.", dripKeyboard(i18n, locale, []));
+          return;
+        }
+        const rows = sections.map((s: { id: string; title: string }) => [{ text: `📂 ${s.title}`, data: makeCallbackData(DRIP_PREFIX, "btn_sec_pick", s.id) }]);
+        await ctx.reply("Выберите раздел, в который ведёт кнопка:", dripKeyboard(i18n, locale, rows));
+        return;
+      }
+      if (parts[1] === "btn_sec_pick" && parts[2]) {
+        await ctx.answerCbQuery();
+        const lang = state.draft?.languageCode ?? locale;
+        const sections = await ctx.services.menu.getContentSectionsForPicker(lang);
+        const sec = sections.find((s: { id: string; title: string }) => s.id === parts[2]);
+        if (!sec) return;
+        state.stepButtonsPendingTargetMenuItemId = sec.id;
+        state.stepButtonsPendingSectionTitle = sec.title;
+        const defLabel = sec.title;
+        await ctx.reply(
+          `Введите текст кнопки или «.» для «${defLabel}»:`,
+          dripKeyboard(i18n, locale, [])
+        );
+        return;
+      }
       if (parts[1] === "btn_url") {
         await ctx.answerCbQuery();
         await ctx.reply("Введите текст кнопки и URL через | (например: Стать партнёром | https://example.com):", dripKeyboard(i18n, locale, []));
@@ -299,7 +331,8 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
       if (parts[1] === "btn_remove" && state.stepButtons && state.stepButtons.length > 0) {
         await ctx.answerCbQuery();
         state.stepButtons.pop();
-        const formatBtn = (b: DripStepButton, i: number) => (b.type === "system" ? `${b.label} [${b.systemKind}]` : b.label);
+        const formatBtn = (b: DripStepButton, i: number) =>
+          b.type === "system" ? `${b.label} [${b.systemKind}]` : b.type === "section" ? `${b.label} [раздел]` : b.label;
         await ctx.reply(
           "Текущие кнопки: " + (state.stepButtons!.length === 0 ? "—" : state.stepButtons!.map((b, i) => `${i + 1}. ${formatBtn(b, i)}`).join(", ")),
           dripKeyboard(i18n, locale, [
@@ -418,6 +451,12 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
         const label = text === "." || !text ? defLabel : (text.length > 64 ? text.slice(0, 64) : text);
         state.stepButtons.push({ type: "system", label, systemKind: state.stepButtonsPendingSystemKind });
         state.stepButtonsPendingSystemKind = undefined;
+      } else if (state.stepButtonsPendingTargetMenuItemId) {
+        const defLabel = state.stepButtonsPendingSectionTitle ?? "Раздел";
+        const label = text === "." || !text ? defLabel : (text.length > 64 ? text.slice(0, 64) : text);
+        state.stepButtons.push({ type: "section", label, targetMenuItemId: state.stepButtonsPendingTargetMenuItemId });
+        state.stepButtonsPendingTargetMenuItemId = undefined;
+        state.stepButtonsPendingSectionTitle = undefined;
       } else if (state.stepButtonsPendingLabel) {
         if (!isValidUrl(text)) {
           await ctx.reply("Введите корректный URL (http:// или https://).", dripKeyboard(i18n, locale, []));
@@ -447,8 +486,9 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
         }
       }
       const formatBtn = (b: DripStepButton, i: number) => {
-        const label = b.type === "system" ? `${b.label} [${b.systemKind}]` : b.label;
-        return `${i + 1}. ${label}`;
+        if (b.type === "system") return `${i + 1}. ${b.label} [${b.systemKind}]`;
+        if (b.type === "section") return `${i + 1}. ${b.label} [раздел]`;
+        return `${i + 1}. ${b.label}`;
       };
       await ctx.reply(
         "✅ Кнопка добавлена. Текущие: " + (state.stepButtons.length === 0 ? "—" : state.stepButtons.map(formatBtn).join(", ")),

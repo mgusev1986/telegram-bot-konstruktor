@@ -8,7 +8,7 @@ import type { DripStepButton, DripSystemKind } from "../../modules/drip/drip.ser
 export const ADD_DRIP_STEP_BUTTONS_SCENE = "add-drip-step-buttons-scene";
 const PREFIX = "drip_btns";
 
-type Phase = "menu" | "choose_type" | "add_label" | "add_url" | "add_system_label";
+type Phase = "menu" | "choose_type" | "choose_section" | "add_label" | "add_url" | "add_system_label" | "add_section_label";
 
 const SYSTEM_TARGETS: { kind: DripSystemKind; labelRu: string }[] = [
   { kind: "partner_register", labelRu: "Зарегистрироваться / Стать партнёром" },
@@ -24,6 +24,8 @@ type State = {
   phase: Phase;
   pendingLabel?: string;
   pendingSystemKind?: DripSystemKind;
+  pendingTargetMenuItemId?: string;
+  pendingSectionTitle?: string;
 };
 
 function isValidUrl(s: string): boolean {
@@ -50,6 +52,7 @@ function formatButtonDest(b: DripStepButton): string {
     const t = SYSTEM_TARGETS.find((x) => x.kind === b.systemKind);
     return t ? `[${t.labelRu}]` : `[${b.systemKind}]`;
   }
+  if (b.type === "section") return "[Раздел]";
   return "?";
 }
 
@@ -112,6 +115,7 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
             "Выберите куда ведёт кнопка (системные кнопки сохраняют сетевую логику — каждый пользователь попадает к своему партнёру/наставнику):",
             kb(i18n, locale, [
               ...SYSTEM_TARGETS.map((t) => [{ text: `🔗 ${t.labelRu}`, data: makeCallbackData(PREFIX, "sys", t.kind) }]),
+              [{ text: "📂 Переход в раздел", data: makeCallbackData(PREFIX, "section") }],
               [{ text: "📎 Своя ссылка (URL)", data: makeCallbackData(PREFIX, "url") }]
             ])
           );
@@ -123,6 +127,32 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
           const defLabel = SYSTEM_TARGETS.find((t) => t.kind === parts[2])?.labelRu ?? parts[2];
           await ctx.reply(
             `Введите текст кнопки (или отправьте «.» чтобы использовать «${defLabel}»):`,
+            kb(i18n, locale, [])
+          );
+          return;
+        }
+        if (parts[1] === "section") {
+          const sections = await ctx.services.menu.getContentSectionsForPicker(state.languageCode);
+          if (sections.length === 0) {
+            await ctx.reply("Нет доступных разделов. Сначала создайте разделы в меню.", kb(i18n, locale, []));
+            state.phase = "menu";
+            await showButtonsMenu(ctx, state);
+            return;
+          }
+          state.phase = "choose_section";
+          const rows = sections.map((s: { id: string; title: string }) => [{ text: `📂 ${s.title}`, data: makeCallbackData(PREFIX, "sec_pick", s.id) }]);
+          await ctx.reply("Выберите раздел, в который ведёт кнопка:", kb(i18n, locale, rows));
+          return;
+        }
+        if (parts[1] === "sec_pick" && parts[2]) {
+          const sections = await ctx.services.menu.getContentSectionsForPicker(state.languageCode);
+          const sec = sections.find((s: { id: string; title: string }) => s.id === parts[2]);
+          if (!sec) return;
+          state.pendingTargetMenuItemId = sec.id;
+          state.pendingSectionTitle = sec.title;
+          state.phase = "add_section_label";
+          await ctx.reply(
+            `Введите текст кнопки (или отправьте «.» чтобы использовать «${sec.title}»):`,
             kb(i18n, locale, [])
           );
           return;
@@ -179,6 +209,21 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
         state.pendingSystemKind = undefined;
         state.phase = "menu";
         await ctx.reply("✅ Системная кнопка добавлена.", kb(i18n, locale, []));
+        await showButtonsMenu(ctx, state);
+        return;
+      }
+      if (state.phase === "add_section_label" && state.pendingTargetMenuItemId) {
+        const defLabel = state.pendingSectionTitle ?? "Раздел";
+        const label = text === "." || !text ? defLabel : text;
+        if (label.length > 64) {
+          await ctx.reply("Текст кнопки: до 64 символов.");
+          return;
+        }
+        state.buttons.push({ type: "section", label, targetMenuItemId: state.pendingTargetMenuItemId });
+        state.pendingTargetMenuItemId = undefined;
+        state.pendingSectionTitle = undefined;
+        state.phase = "menu";
+        await ctx.reply("✅ Кнопка «Переход в раздел» добавлена.", kb(i18n, locale, []));
         await showButtonsMenu(ctx, state);
         return;
       }
