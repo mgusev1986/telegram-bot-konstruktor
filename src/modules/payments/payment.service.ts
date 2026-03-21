@@ -79,7 +79,7 @@ export class PaymentService {
       }
     });
 
-    const walletAddress = this.resolveWallet(network);
+    const walletAddress = this.resolveWallet(network, product);
 
     const payment = await this.prisma.payment.create({
       data: {
@@ -321,14 +321,15 @@ export class PaymentService {
     };
   }
 
-  private resolveWallet(network: PaymentNetwork): string {
+  private resolveWallet(network: PaymentNetwork, product?: { walletBep20?: string | null }): string {
     switch (network) {
+      case "USDT_BEP20":
+        if (product?.walletBep20?.trim()) return product.walletBep20.trim();
+        return env.USDT_BEP20_WALLET;
       case "USDT_TRC20":
         return env.USDT_TRC20_WALLET;
-      case "USDT_BEP20":
-        return env.USDT_BEP20_WALLET;
       default:
-        return env.USDT_TRC20_WALLET || env.USDT_BEP20_WALLET;
+        return env.USDT_BEP20_WALLET || env.USDT_TRC20_WALLET;
     }
   }
 }

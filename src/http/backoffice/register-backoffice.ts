@@ -1971,6 +1971,11 @@ export async function registerBackofficeRoutes(
                <input name="durationMinutes" type="number" min="1" max="1440" placeholder="пусто = дни" style="max-width:120px; box-sizing:border-box" title="1–5 мин для быстрой проверки" />
              </div>
              <div style="margin-top:12px">
+               <label class="small">Кошелёк USDT BEP20 (адрес для приёма оплаты)</label>
+               <input name="walletBep20" type="text" placeholder="0x..." style="margin-top:4px; width:100%; box-sizing:border-box" />
+               <div class="small" style="margin-top:4px">Обязательно. Кошелёк владельца или партнёра.</div>
+             </div>
+             <div style="margin-top:12px">
                <label class="small">Ссылки на чат/канал (каждая с новой строки)</label>
                <textarea name="linkedChatsRaw" rows="2" placeholder="https://t.me/channel" style="margin-top:4px"></textarea>
              </div>
@@ -2020,6 +2025,10 @@ export async function registerBackofficeRoutes(
                     </div>
                     <div class="small" style="margin-top:6px">Укажите 1 или 5 — подписка истечёт через минуты. Напоминания (3/2/1 день) не отправятся.</div>
                   </div>
+
+                  <div class="section-title">Кошелёк USDT BEP20</div>
+                  <input name="walletBep20" type="text" placeholder="0x..." value="${escapeHtml((p as any).walletBep20 ?? "")}" style="width:100%; box-sizing:border-box" />
+                  <div class="small" style="margin-top:4px">Адрес для приёма оплаты. Если пусто — используется USDT_BEP20_WALLET из .env</div>
 
                   <div class="section-title">Ссылки на чат/канал</div>
                   <textarea name="linkedChatsRaw" rows="2" placeholder="https://t.me/channel&#10;https://t.me/joinchat/xxx" style="width:100%; box-sizing:border-box">${formatLinkedChatsForEdit(p.linkedChats)}</textarea>
@@ -2140,8 +2149,10 @@ export async function registerBackofficeRoutes(
     const durationMinutes = durationMinutesRaw != null && String(durationMinutesRaw).trim() !== "" ? parseInt(String(durationMinutesRaw), 10) : null;
     const linkedChatsRaw = String(body?.linkedChatsRaw ?? "").trim();
     const linkedChats = linkedChatsRaw ? parseLinkedChatsFromForm(linkedChatsRaw) : [];
+    const walletBep20 = String(body?.walletBep20 ?? "").trim() || null;
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
+    if (!walletBep20) return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">Укажите кошелёк USDT BEP20</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
 
     const code = `bot_${bot.id.slice(0, 8)}_${randomBytes(4).toString("hex")}`;
 
@@ -2155,6 +2166,7 @@ export async function registerBackofficeRoutes(
         durationDays: billingType === "TEMPORARY" && durationDays != null && durationDays > 0 ? durationDays : null,
         durationMinutes: durationMinutes != null && durationMinutes > 0 ? durationMinutes : null,
         linkedChats: linkedChats.length ? (linkedChats as any) : null,
+        walletBep20,
         isActive: true,
         localizations: {
           createMany: {
@@ -2225,6 +2237,7 @@ export async function registerBackofficeRoutes(
     const durationMinutes = durationMinutesRaw != null && String(durationMinutesRaw).trim() !== "" ? parseInt(String(durationMinutesRaw), 10) : null;
     const linkedChatsRaw = String(body?.linkedChatsRaw ?? "").trim();
     const linkedChats = linkedChatsRaw ? parseLinkedChatsFromForm(linkedChatsRaw) : [];
+    const walletBep20 = String(body?.walletBep20 ?? "").trim() || null;
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
 
@@ -2248,7 +2261,8 @@ export async function registerBackofficeRoutes(
           billingType,
           durationDays: billingType === "TEMPORARY" && durationDays != null && durationDays > 0 ? durationDays : null,
           durationMinutes: durationMinutes != null && durationMinutes > 0 ? durationMinutes : null,
-          linkedChats: linkedChats.length ? (linkedChats as any) : null
+          linkedChats: linkedChats.length ? (linkedChats as any) : null,
+          walletBep20
         }
       }),
       prisma.productLocalization.upsert({

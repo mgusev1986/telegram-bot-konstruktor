@@ -657,9 +657,15 @@ export const buildStructureKeyboard = (languageCode: string, i18n: I18nService) 
   return Markup.inlineKeyboard(rows);
 };
 
-export const buildPaywallKeyboard = (languageCode: string, productId: string, i18n: I18nService) => {
+export const buildPaywallKeyboard = (
+  languageCode: string,
+  productId: string,
+  i18n: I18nService,
+  opts?: { payButtonText?: string }
+) => {
+  const btnLabel = opts?.payButtonText?.trim() || i18n.t(languageCode, "pay_now");
   const rows = [
-    [Markup.button.callback(`💳 ${i18n.t(languageCode, "pay_now")} USDT (BEP20)`, makeCallbackData("pay", "network", productId, "USDT_BEP20"))],
+    [Markup.button.callback(`💳 ${btnLabel} USDT (BEP20)`, makeCallbackData("pay", "network", productId, "USDT_BEP20"))],
     buildNavigationRow(i18n, languageCode, { back: true, toMain: true })
   ];
   return Markup.inlineKeyboard(rows);

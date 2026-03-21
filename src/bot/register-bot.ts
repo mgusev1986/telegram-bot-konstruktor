@@ -379,6 +379,16 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     };
     awaitingUserLookup?: boolean;
   };
+  const getProductPayButtonText = (
+    product: { localizations?: Array<{ languageCode: string; payButtonText: string }> } | null | undefined,
+    userLang: string
+  ): string | undefined => {
+    const locs = product?.localizations;
+    if (!locs?.length) return undefined;
+    return locs.find((l) => l.languageCode === userLang)?.payButtonText
+      ?? locs.find((l) => l.languageCode === "ru")?.payButtonText
+      ?? locs[0]?.payButtonText;
+  };
   const getNavSession = (ctx: BotContext): NavSession => {
     const s = (ctx as unknown as { session?: NavSession }).session;
     return s ? { navCurrent: s.navCurrent, navPrev: s.navPrev } : {};
@@ -612,7 +622,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         ctx.chat?.id ?? user.telegramUserId,
         { text: paywallText },
         content.item.productId
-          ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n)
+          ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n, {
+              payButtonText: getProductPayButtonText(content.item.product as any, user.selectedLanguage)
+            })
           : {}
       );
       return;
@@ -2463,7 +2475,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             ctx.chat?.id ?? user.telegramUserId,
             { text: paywallText },
             content.item.productId
-              ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n)
+              ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n, {
+                  payButtonText: getProductPayButtonText(content.item.product as any, user.selectedLanguage)
+                })
               : {}
           );
           return;
@@ -2566,7 +2580,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           ctx.chat?.id ?? user.telegramUserId,
           { text: paywallText },
           content.item.productId
-            ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n)
+            ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n, {
+                payButtonText: getProductPayButtonText(content.item.product as any, user.selectedLanguage)
+              })
             : {}
         );
         return;

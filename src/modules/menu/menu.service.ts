@@ -749,14 +749,14 @@ export class MenuService {
           where: { id: menuItemId, template: { botInstanceId: this.botInstanceId } },
           include: {
             localizations: true,
-            product: true
+            product: { include: { localizations: true } }
           }
         })
       : await this.prisma.menuItem.findUniqueOrThrow({
           where: { id: menuItemId },
           include: {
             localizations: true,
-            product: true
+            product: { include: { localizations: true } }
           }
         });
 

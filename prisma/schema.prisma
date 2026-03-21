@@ -839,6 +839,7 @@ model Product {
   durationDays    Int?                  @map("duration_days")
   durationMinutes Int?                  @map("duration_minutes")
   linkedChats     Json?                 @map("linked_chats")
+  walletBep20     String?               @map("wallet_bep20")
   isActive        Boolean               @default(true) @map("is_active")
   createdAt       DateTime              @default(now()) @map("created_at")
   updatedAt       DateTime              @updatedAt @map("updated_at")
