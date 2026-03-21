@@ -357,6 +357,7 @@ model BotInstance {
   telegramBotUsername   String?           @map("telegram_bot_username")
   status                 BotInstanceStatus @default(DRAFT)
   paidAccessEnabled     Boolean           @default(true) @map("paid_access_enabled")
+  paywallMessage         String?           @map("paywall_message")
   isArchived             Boolean           @default(false) @map("is_archived")
   createdAt              DateTime          @default(now()) @map("created_at")
   updatedAt              DateTime          @updatedAt @map("updated_at")

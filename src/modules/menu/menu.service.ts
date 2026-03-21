@@ -84,6 +84,17 @@ export class MenuService {
     return this.botInstanceId ? { isActive: true, botInstanceId: this.botInstanceId } : { isActive: true };
   }
 
+  /** Returns custom paywall message for the bot, or null if not set (use default i18n). */
+  public async getPaywallMessage(): Promise<string | null> {
+    if (!this.botInstanceId) return null;
+    const bot = await this.prisma.botInstance.findUnique({
+      where: { id: this.botInstanceId },
+      select: { paywallMessage: true }
+    });
+    const msg = bot?.paywallMessage?.trim();
+    return msg || null;
+  }
+
   /** Returns active template id. If baseLanguageCode is provided and template exists, updates it; if creating, uses it. */
   public async ensureActiveTemplate(actorUserId: string, baseLanguageCode?: string): Promise<string> {
     const existing = await this.prisma.presentationTemplate.findFirst({

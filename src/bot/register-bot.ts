@@ -602,11 +602,12 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       // Locked content: cancel all pending reminders to avoid "soft spam" on an unreachable step.
       await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
       setNavBeforeShow(ctx, "paywall:locked:" + content.item.id);
+      const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
       await services.navigation.replaceScreen(
         user,
         ctx.telegram,
         ctx.chat?.id ?? user.telegramUserId,
-        { text: services.i18n.t(user.selectedLanguage, "access_locked") },
+        { text: paywallText },
         content.item.productId
           ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n)
           : {}
@@ -2402,11 +2403,12 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         if (content.locked) {
           await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
           setNavBeforeShow(ctx, "paywall:locked:" + linkItem.id);
+          const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
           await services.navigation.replaceScreen(
             user,
             ctx.telegram,
             ctx.chat?.id ?? user.telegramUserId,
-            { text: services.i18n.t(user.selectedLanguage, "access_locked") },
+            { text: paywallText },
             content.item.productId
               ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n)
               : {}
@@ -2504,13 +2506,12 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       if (content.locked) {
         await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
         setNavBeforeShow(ctx, "paywall:locked:" + content.item.id);
+        const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
         await services.navigation.replaceScreen(
           user,
           ctx.telegram,
           ctx.chat?.id ?? user.telegramUserId,
-          {
-            text: services.i18n.t(user.selectedLanguage, "access_locked")
-          },
+          { text: paywallText },
           content.item.productId
             ? buildPaywallKeyboard(user.selectedLanguage, content.item.productId, services.i18n)
             : {}

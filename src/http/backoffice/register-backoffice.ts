@@ -151,7 +151,7 @@ function renderPage(title: string, body: string): string {
       .paid-table tr:last-child td { border-bottom: none; }
       .product-card { margin-top: 20px; padding: 18px; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; background: rgba(0,0,0,0.12); }
       .product-card:first-of-type { margin-top: 12px; }
-      .products-existing-block { margin-top: 28px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.15); }
+      .products-existing-block { margin-top: 40px; padding-top: 32px; border-top: 1px solid rgba(255,255,255,0.15); }
       .product-card-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
       .test-badge { display: inline-block; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.5); color: #fbbf24; }
     </style>
@@ -1757,6 +1757,15 @@ export async function registerBackofficeRoutes(
          </div>
 
          <div class="card" style="margin-top:16px">
+           <h3 style="margin-top:0">Текст при закрытом доступе</h3>
+           <p class="small" style="margin:0 0 12px 0">Показывается пользователю, когда он пытается открыть заблокированный раздел. Можно указать адрес кошелька, валюту, сеть и другие инструкции. Если пусто — используется стандартный текст.</p>
+           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/paywall-message">
+             <textarea name="paywallMessage" rows="8" placeholder="💼 Ваш личный адрес для пополнения:&#10;0x00...&#10;&#10;🪙 Валюта: USDT&#10;⛓️ Сеть: BSC (BEP20)&#10;Перед отправкой дважды проверьте сеть перевода!" style="width:100%; box-sizing:border-box">${escapeHtml(String((bot as any).paywallMessage ?? ""))}</textarea>
+             <button type="submit" style="margin-top:10px">Сохранить текст</button>
+           </form>
+         </div>
+
+         <div class="card" style="margin-top:16px">
            <h3 style="margin-top:0">Блокировка пунктов меню</h3>
            <p class="small" style="margin:0 0 12px 0">Привяжите продукт к разделу — доступ откроется только после оплаты.</p>
            ${
@@ -1934,6 +1943,31 @@ export async function registerBackofficeRoutes(
     if (bot.status === "ACTIVE" && !bot.isArchived) {
       await runtimeManager.restartBotInstance(bot.id);
     }
+
+    return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/paid`);
+  });
+
+  server.post("/backoffice/api/bots/:botId/paid/paywall-message", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const body = req.body as any;
+    const paywallMessage = String(body?.paywallMessage ?? "").trim() || null;
+
+    await prisma.botInstance.update({ where: { id: bot.id }, data: { paywallMessage } });
 
     return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/paid`);
   });

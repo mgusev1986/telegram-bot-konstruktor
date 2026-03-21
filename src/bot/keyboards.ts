@@ -659,7 +659,7 @@ export const buildStructureKeyboard = (languageCode: string, i18n: I18nService) 
 
 export const buildPaywallKeyboard = (languageCode: string, productId: string, i18n: I18nService) => {
   const rows = [
-    [Markup.button.callback(`${i18n.t(languageCode, "pay_now")} USDT (BEP20)`, makeCallbackData("pay", "network", productId, "USDT_BEP20"))],
+    [Markup.button.callback(`💳 ${i18n.t(languageCode, "pay_now")} USDT (BEP20)`, makeCallbackData("pay", "network", productId, "USDT_BEP20"))],
     buildNavigationRow(i18n, languageCode, { back: true, toMain: true })
   ];
   return Markup.inlineKeyboard(rows);
