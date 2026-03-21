@@ -30,11 +30,16 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      NODE_OPTIONS: "--dns-result-order=ipv4first"
     depends_on:
       - postgres
       - redis
     ports:
       - "3000:3000"
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     networks:
       - botnet
 
