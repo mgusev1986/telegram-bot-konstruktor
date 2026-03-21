@@ -285,7 +285,7 @@ const bootstrap = async (): Promise<void> => {
 
   await startHttpServer(httpServer);
 
-  // Load all active, non-archived bots and start each with per-bot error isolation.
+  // Load all active, non-archived bots and start each in parallel (no blocking between bots).
   const activeBots = await prisma.botInstance.findMany({
     where: { status: "ACTIVE", isArchived: false },
     orderBy: { createdAt: "asc" }
@@ -295,17 +295,37 @@ const bootstrap = async (): Promise<void> => {
   let primaryRuntime: Awaited<ReturnType<BotRuntimeManager["startBotInstance"]>> | null = null;
   const launchedBotIds: string[] = [];
 
-  for (const bot of activeBots) {
-    try {
-      const rt = await runtimeManager.startBotInstance(bot.id, { launch: true });
-      if (!primaryRuntime) primaryRuntime = rt;
+  const results = await Promise.allSettled(
+    activeBots.map((bot, idx) => {
+      logger.info(
+        { botInstanceId: bot.id, username: bot.telegramBotUsername, index: idx + 1, total: activeBots.length },
+        "Launching bot..."
+      );
+      return runtimeManager
+        .startBotInstance(bot.id, { launch: true })
+        .then((rt) => ({ status: "fulfilled" as const, rt, bot }));
+    })
+  );
+
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i]!;
+    const bot = activeBots[i]!;
+    const fulfilled = result.status === "fulfilled" && result.value.status === "fulfilled";
+    if (fulfilled) {
+      if (!primaryRuntime) primaryRuntime = result.value.rt;
       launchedBotIds.push(bot.id);
       logger.info(
         { botInstanceId: bot.id, username: bot.telegramBotUsername },
         "Bot started successfully"
       );
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+    } else {
+      const msg =
+        result.status === "rejected"
+          ? (() => {
+              const e = result.reason;
+              return e instanceof Error ? e.message : String(e);
+            })()
+          : "Unknown";
       logger.error(
         { botInstanceId: bot.id, username: bot.telegramBotUsername, error: msg },
         "Failed to start bot instance (continuing with others)"

@@ -55,6 +55,7 @@ export class BotRuntimeManager {
 
     const shouldLaunch = opts?.launch ?? true;
     if (shouldLaunch && canBeLaunched) {
+      logger.info({ botInstanceId, username: botInstance.telegramBotUsername }, "Connecting to Telegram...");
       await bot.launch();
       logger.info({ botInstanceId, username: botInstance.telegramBotUsername }, "Telegram polling started");
     }
