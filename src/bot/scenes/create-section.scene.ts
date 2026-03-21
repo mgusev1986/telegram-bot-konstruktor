@@ -10,7 +10,6 @@ import {
   buildReturnToAdminOrPageKeyboard,
   buildNavigationRow,
   buildOnboardingChoiceAfterSectionKeyboard,
-  buildOnboardingGoToPreviewKeyboard,
   SCENE_CANCEL_DATA
 } from "../keyboards";
 
@@ -336,13 +335,13 @@ export const createSectionScene = new Scenes.WizardScene<any>(
           buildOnboardingChoiceAfterSectionKeyboard(locale, ctx.services.i18n)
         );
       } else if (state.fromOnboardingStep === 3) {
-        await ctx.services.users.setOnboardingStep(actorUserId, 4);
+        await ctx.services.users.setOnboardingStep(actorUserId, 3);
         const refreshed = await ctx.services.users.findById(actorUserId);
         if (refreshed) ctx.currentUser = refreshed;
-        logger.info({ userId: refreshed?.id ?? ctx.currentUser?.id }, "Create section: optional second section created, going to preview");
+        logger.info({ userId: refreshed?.id ?? ctx.currentUser?.id }, "Create section: optional section created, showing choice (add another / main menu)");
         await ctx.reply(
-          ctx.services.i18n.t(locale, "onboarding_step2_success") + "\n" + typeLabel + "\n\n" + ctx.services.i18n.t(locale, "onboarding_go_to_preview"),
-          buildOnboardingGoToPreviewKeyboard(locale, ctx.services.i18n)
+          ctx.services.i18n.t(locale, "onboarding_step2_success") + "\n" + typeLabel + "\n\n" + ctx.services.i18n.t(locale, "onboarding_choice_after_section"),
+          buildOnboardingChoiceAfterSectionKeyboard(locale, ctx.services.i18n)
         );
       } else {
         await ctx.reply(successText, buildReturnToAdminOrPageKeyboard(fromPageId, ctx.services.i18n, locale));
@@ -451,13 +450,13 @@ export const createSectionScene = new Scenes.WizardScene<any>(
           buildOnboardingChoiceAfterSectionKeyboard(locale, ctx.services.i18n)
         );
       } else if (state.fromOnboardingStep === 3) {
-        await ctx.services.users.setOnboardingStep(actorUserId, 4);
+        await ctx.services.users.setOnboardingStep(actorUserId, 3);
         const refreshed = await ctx.services.users.findById(actorUserId);
         if (refreshed) ctx.currentUser = refreshed;
-        logger.info({ userId: ctx.currentUser?.id }, "Onboarding optional second section created (fallback), going to preview");
+        logger.info({ userId: ctx.currentUser?.id }, "Onboarding optional section created (fallback), showing choice");
         await ctx.reply(
-          ctx.services.i18n.t(locale, "onboarding_step2_success") + "\n\n" + ctx.services.i18n.t(locale, "onboarding_go_to_preview"),
-          buildOnboardingGoToPreviewKeyboard(locale, ctx.services.i18n)
+          ctx.services.i18n.t(locale, "onboarding_step2_success") + "\n\n" + ctx.services.i18n.t(locale, "onboarding_choice_after_section"),
+          buildOnboardingChoiceAfterSectionKeyboard(locale, ctx.services.i18n)
         );
       } else {
         const successText = ctx.services.i18n

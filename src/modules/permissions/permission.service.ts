@@ -222,6 +222,30 @@ export class PermissionService {
     return (row?.role as BotScopedRole | null) ?? null;
   }
 
+  /**
+   * Returns true if the user has a PENDING BotRoleAssignment for this bot (matched by telegram username).
+   * Such users see an empty screen until the alpha owner activates them via backoffice "Сверить сейчас".
+   */
+  public async hasPendingOwnerAssignment(userId: string): Promise<boolean> {
+    if (!this.botInstanceId) return false;
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { username: true }
+    });
+    if (!user?.username?.trim()) return false;
+    const normalized = user.username.trim().replace(/^@/, "").toLowerCase();
+    if (!/^[a-z0-9_]{5,32}$/.test(normalized)) return false;
+    const row = await this.prisma.botRoleAssignment.findFirst({
+      where: {
+        botInstanceId: this.botInstanceId,
+        telegramUsernameNormalized: normalized,
+        status: "PENDING"
+      },
+      select: { id: true }
+    });
+    return row != null;
+  }
+
   public async canAssignBotOwner(actorUserId: string): Promise<boolean> {
     return this.isAlphaOwner(actorUserId);
   }

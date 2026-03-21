@@ -276,6 +276,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       } catch {
         // ignore
       }
+      const botCtx = ctx as BotContext;
+      const u = botCtx.currentUser;
+      if (u?.id && u.onboardingCompletedAt == null && (u.onboardingStep === 2 || u.onboardingStep === 3 || u.onboardingStep === 4 || u.onboardingStep === 5)) {
+        await services.users.setOnboardingCompleted(u.id);
+        const refreshed = await services.users.findById(u.id);
+        if (refreshed) botCtx.currentUser = refreshed;
+      }
       await resetUserSessionToRoot(ctx);
       await sendRootWithWelcome(ctx);
       return;
@@ -442,6 +449,20 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const effectiveRole = resolveEffectiveRole(ctx);
     // Leaving any previous reminder "stop" point: keep only root reminders.
     await services.inactivityReminders.cancelPendingForUserExcept(user.id, "root");
+
+    // Pending owner: user has PENDING BotRoleAssignment (alpha owner hasn't activated yet). Show empty screen.
+    if (await services.permissions.hasPendingOwnerAssignment(user.id)) {
+      const locale = services.i18n.resolveLanguage(user.selectedLanguage);
+      await services.navigation.replaceScreen(
+        user,
+        ctx.telegram,
+        ctx.chat?.id ?? user.telegramUserId,
+        { text: services.i18n.t(locale, "pending_owner_message") },
+        Markup.inlineKeyboard([])
+      );
+      return;
+    }
+
     const mentorUsername =
       user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
     const menuEmpty = await services.menu.isRootMenuEmpty();
@@ -2895,15 +2916,14 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         if (currentStep === 3) {
           const sections = await services.menu.getContentSectionsForPicker(user.selectedLanguage ?? locale);
           if (sections.length === 0) {
-            await services.users.setOnboardingStep(user.id, 4);
-            const text = stepLabel(4) + "\n\n" + services.i18n.t(locale, "onboarding_step4_intro");
-            await services.navigation.replaceScreen(
-              user,
-              ctx.telegram,
-              ctx.chat?.id ?? user.telegramUserId,
-              { text },
-              buildOnboardingStep4Keyboard(locale, services.i18n)
+            await services.users.setOnboardingStep(user.id, 2);
+            const refreshed = await services.users.findById(user.id);
+            if (refreshed) ctx.currentUser = refreshed;
+            await ctx.reply(
+              stepLabel(2) + "\n\n" + services.i18n.t(locale, "onboarding_step2_intro"),
+              buildCancelKeyboard(services.i18n, locale)
             );
+            await ctx.scene.enter(CREATE_SECTION_SCENE, { parentId: null, fromPageId: "root", fromOnboardingStep: 2 });
           } else {
             await ctx.reply(
               stepLabel(3) + "\n\n" + services.i18n.t(locale, "onboarding_choice_after_section"),
@@ -2912,42 +2932,12 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           }
           return;
         }
-        if (currentStep === 4) {
-          const text = stepLabel(4) + "\n\n" + services.i18n.t(locale, "onboarding_step4_intro");
-          await services.navigation.replaceScreen(
-            user,
-            ctx.telegram,
-            ctx.chat?.id ?? user.telegramUserId,
-            { text },
-            buildOnboardingStep4Keyboard(locale, services.i18n)
-          );
+        if (currentStep === 4 || currentStep === 5 || currentStep === 6) {
+          await services.users.setOnboardingCompleted(user.id);
+          const refreshed = await services.users.findById(user.id);
+          if (refreshed) ctx.currentUser = refreshed;
+          await sendRootWithWelcome(ctx);
           return;
-        }
-        if (currentStep === 5) {
-          const text = stepLabel(5) + "\n\n" + services.i18n.t(locale, "onboarding_step5_intro");
-          await services.navigation.replaceScreen(
-            user,
-            ctx.telegram,
-            ctx.chat?.id ?? user.telegramUserId,
-            { text },
-            buildOnboardingStep5Keyboard(locale, services.i18n)
-          );
-          return;
-        }
-        if (currentStep === 6) {
-          const text =
-            services.i18n.t(locale, "onboarding_step6_title") +
-            "\n\n" +
-            services.i18n.t(locale, "onboarding_step6_summary") +
-            "\n\n" +
-            services.i18n.t(locale, "onboarding_step6_next");
-          await services.navigation.replaceScreen(
-            user,
-            ctx.telegram,
-            ctx.chat?.id ?? user.telegramUserId,
-            { text },
-            buildOnboardingStep6Keyboard(locale, services.i18n)
-          );
         }
         return;
       }
@@ -2966,29 +2956,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         return;
       }
 
-      if (action === "choice_after" && value) {
-          if (value === "add") {
-            await services.users.setOnboardingStep(user.id, 3);
-            const refreshed = await services.users.findById(user.id);
-            if (refreshed) ctx.currentUser = refreshed;
-            await ctx.scene.enter(CREATE_SECTION_SCENE, { parentId: null, fromPageId: "root", fromOnboardingStep: 3 });
-            return;
-          }
-          if (value === "preview") {
-            await services.users.setOnboardingStep(user.id, 4);
-            const refreshed = await services.users.findById(user.id);
-            if (refreshed) ctx.currentUser = refreshed;
-            const text = stepLabel(4) + "\n\n" + services.i18n.t(locale, "onboarding_step4_intro");
-            await services.navigation.replaceScreen(
-              user,
-              ctx.telegram,
-              ctx.chat?.id ?? user.telegramUserId,
-              { text },
-              buildOnboardingStep4Keyboard(locale, services.i18n)
-            );
-            return;
-          }
-        }
+      if (action === "choice_after" && value === "add") {
+        await services.users.setOnboardingStep(user.id, 3);
+        const refreshed = await services.users.findById(user.id);
+        if (refreshed) ctx.currentUser = refreshed;
+        await ctx.scene.enter(CREATE_SECTION_SCENE, { parentId: null, fromPageId: "root", fromOnboardingStep: 3 });
+        return;
+      }
 
       if (action === "next" && value) {
         const toStep = parseInt(value, 10);
@@ -3023,17 +2997,14 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           if (refreshed) ctx.currentUser = refreshed;
           const sections = await services.menu.getContentSectionsForPicker(user.selectedLanguage ?? locale);
           if (sections.length === 0) {
-            await services.users.setOnboardingStep(user.id, 4);
+            await services.users.setOnboardingStep(user.id, 2);
             const refreshed2 = await services.users.findById(user.id);
             if (refreshed2) ctx.currentUser = refreshed2;
-            const text = stepLabel(4) + "\n\n" + services.i18n.t(locale, "onboarding_step4_intro");
-            await services.navigation.replaceScreen(
-              user,
-              ctx.telegram,
-              ctx.chat?.id ?? user.telegramUserId,
-              { text },
-              buildOnboardingStep4Keyboard(locale, services.i18n)
+            await ctx.reply(
+              stepLabel(2) + "\n\n" + services.i18n.t(locale, "onboarding_step2_intro"),
+              buildCancelKeyboard(services.i18n, locale)
             );
+            await ctx.scene.enter(CREATE_SECTION_SCENE, { parentId: null, fromPageId: "root", fromOnboardingStep: 2 });
             return;
           }
           await ctx.reply(
@@ -3042,54 +3013,11 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           );
           return;
         }
-        if (toStep === 4) {
-          await services.users.setOnboardingStep(user.id, 4);
+        if (toStep === 4 || toStep === 5 || toStep === 6) {
+          await services.users.setOnboardingCompleted(user.id);
           const refreshed = await services.users.findById(user.id);
           if (refreshed) ctx.currentUser = refreshed;
-          const text = stepLabel(4) + "\n\n" + services.i18n.t(locale, "onboarding_step4_intro");
-          await services.navigation.replaceScreen(
-            user,
-            ctx.telegram,
-            ctx.chat?.id ?? user.telegramUserId,
-            { text },
-            buildOnboardingStep4Keyboard(locale, services.i18n)
-          );
-          return;
-        }
-        if (toStep === 5) {
-          await services.users.setOnboardingStep(user.id, 5);
-          const refreshed = await services.users.findById(user.id);
-          if (refreshed) ctx.currentUser = refreshed;
-          await ctx.reply(
-            `${stepLabel(4)}\n\n${services.i18n.t(locale, "onboarding_step4_title")}: ${services.i18n.t(locale, "onboarding_btn_got_it")}\n${services.i18n.t(locale, "next_step")}: ${services.i18n.t(locale, "onboarding_step5_title")}`
-          );
-          const text = stepLabel(5) + "\n\n" + services.i18n.t(locale, "onboarding_step5_intro");
-          await services.navigation.replaceScreen(
-            user,
-            ctx.telegram,
-            ctx.chat?.id ?? user.telegramUserId,
-            { text },
-            buildOnboardingStep5Keyboard(locale, services.i18n)
-          );
-          return;
-        }
-        if (toStep === 6) {
-          await services.users.setOnboardingStep(user.id, 6);
-          const refreshed = await services.users.findById(user.id);
-          if (refreshed) ctx.currentUser = refreshed;
-          const text =
-            services.i18n.t(locale, "onboarding_step6_title") +
-            "\n\n" +
-            services.i18n.t(locale, "onboarding_step6_summary") +
-            "\n\n" +
-            services.i18n.t(locale, "onboarding_step6_next");
-          await services.navigation.replaceScreen(
-            user,
-            ctx.telegram,
-            ctx.chat?.id ?? user.telegramUserId,
-            { text },
-            buildOnboardingStep6Keyboard(locale, services.i18n)
-          );
+          await sendRootWithWelcome(ctx);
           return;
         }
       }
@@ -3120,17 +3048,14 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           if (refreshed) ctx.currentUser = refreshed;
           const sections = await services.menu.getContentSectionsForPicker(user.selectedLanguage ?? locale);
           if (sections.length === 0) {
-            await services.users.setOnboardingStep(user.id, 4);
+            await services.users.setOnboardingStep(user.id, 2);
             const ref2 = await services.users.findById(user.id);
             if (ref2) ctx.currentUser = ref2;
-            const text = stepLabel(4) + "\n\n" + services.i18n.t(locale, "onboarding_step4_intro");
-            await services.navigation.replaceScreen(
-              user,
-              ctx.telegram,
-              ctx.chat?.id ?? user.telegramUserId,
-              { text },
-              buildOnboardingStep4Keyboard(locale, services.i18n)
+            await ctx.reply(
+              stepLabel(2) + "\n\n" + services.i18n.t(locale, "onboarding_step2_intro"),
+              buildCancelKeyboard(services.i18n, locale)
             );
+            await ctx.scene.enter(CREATE_SECTION_SCENE, { parentId: null, fromPageId: "root", fromOnboardingStep: 2 });
           } else {
             await ctx.reply(
               stepLabel(3) + "\n\n" + services.i18n.t(locale, "onboarding_choice_after_section"),

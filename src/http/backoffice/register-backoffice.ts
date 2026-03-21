@@ -168,7 +168,7 @@ function escapeHtml(input: string): string {
 }
 
 /** @internal Exported for testing */
-export type CreateFormValues = { name?: string; telegramBotUsername?: string; baseLanguageCode?: string };
+export type CreateFormValues = { name?: string; telegramBotUsername?: string; ownerTelegramUsername?: string; baseLanguageCode?: string };
 
 /** @internal Exported for testing */
 export function buildCreateBotForm(opts: {
@@ -179,6 +179,7 @@ export function buildCreateBotForm(opts: {
   const vals = opts.formValues ?? {};
   const name = escapeHtml(vals.name ?? "");
   const username = escapeHtml(vals.telegramBotUsername ?? "");
+  const ownerUsername = escapeHtml(vals.ownerTelegramUsername ?? "");
   const langOpts = opts.languageOptions ?? [
     { code: "ru", label: "Русский" },
     { code: "en", label: "English" },
@@ -193,7 +194,7 @@ export function buildCreateBotForm(opts: {
     ? `<div class="error" role="alert">${escapeHtml(opts.createError)}</div>`
     : "";
   return `${errorBlock}
-            <form id="create-bot-form" method="POST" action="/backoffice/api/bots/create" style="margin-top:12px">
+            <form id="create-bot-form" method="POST" action="/backoffice/api/bots/create" style="margin-top:12px" onsubmit="var btn=this.querySelector('button[type=submit]');if(btn&&!btn.disabled){btn.disabled=true;btn.textContent='Создание…';}">
               <div style="margin-bottom:10px">
                 <label>Название бота</label>
                 <input name="name" type="text" required value="${name}" />
@@ -203,8 +204,13 @@ export function buildCreateBotForm(opts: {
                 <input name="telegramBotToken" type="text" required placeholder="Введите токен" autocomplete="off" />
               </div>
               <div style="margin-bottom:10px">
-                <label>Telegram Username (опционально)</label>
+                <label>Telegram Username бота (опционально)</label>
                 <input name="telegramBotUsername" type="text" placeholder="my_bot" value="${username}" />
+              </div>
+              <div style="margin-bottom:10px">
+                <label>Username владельца (опционально)</label>
+                <input name="ownerTelegramUsername" type="text" placeholder="@username клиента, создавшего токен" value="${ownerUsername}" />
+                <div class="small" style="margin-top:2px; color:#94a3b8">Будущий владелец увидит пустой экран до активации роли в разделе «Роли».</div>
               </div>
               <div style="margin-bottom:10px">
                 <label>Базовый язык</label>
@@ -213,33 +219,7 @@ export function buildCreateBotForm(opts: {
                 </select>
               </div>
               <button type="submit" id="create-bot-submit">Создать</button>
-            </form>
-            <script>
-(function(){
-var form=document.getElementById("create-bot-form");
-var btn=document.getElementById("create-bot-submit");
-if(!form||!btn)return;
-form.addEventListener("submit",function(e){
-e.preventDefault();
-if(form.dataset.submitting==="1")return;
-form.dataset.submitting="1";
-btn.disabled=true;
-btn.textContent="Создание\u2026";
-var fd=new FormData(form);
-var body=new URLSearchParams(fd).toString();
-fetch(form.action,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body,redirect:"follow"}).then(function(r){
-if(r.redirected){window.location.href=r.url;return;}
-if(r.ok){window.location.href=r.url;return;}
-return r.text().then(function(html){document.open();document.write(html);document.close();});
-}).catch(function(){
-form.dataset.submitting="";
-btn.disabled=false;
-btn.textContent="Создать";
-alert("Ошибка сети. Попробуйте ещё раз.");
-});
-});
-})();
-            </script>`;
+            </form>`;
 }
 
 /** @internal Exported for testing */
@@ -864,9 +844,15 @@ export async function registerBackofficeRoutes(
     const name = String(body?.name ?? "").trim();
     const token = String(body?.telegramBotToken ?? "").trim();
     let telegramBotUsername = String(body?.telegramBotUsername ?? "").trim().replace(/^@/, "");
+    const ownerTelegramUsername = String(body?.ownerTelegramUsername ?? "").trim().replace(/^@/, "");
     const baseLanguageCode = String(body?.baseLanguageCode ?? "ru").trim().toLowerCase();
 
-    const formValues: CreateFormValues = { name: name || undefined, telegramBotUsername: telegramBotUsername || undefined, baseLanguageCode: baseLanguageCode || "ru" };
+    const formValues: CreateFormValues = {
+      name: name || undefined,
+      telegramBotUsername: telegramBotUsername || undefined,
+      ownerTelegramUsername: ownerTelegramUsername || undefined,
+      baseLanguageCode: baseLanguageCode || "ru"
+    };
 
     const renderErrorDashboard = async (createError: string, statusCode = 400) => {
       const backofficeUser = await prisma.backofficeUser.findUnique({
@@ -948,6 +934,32 @@ export async function registerBackofficeRoutes(
           { templateId: template.id, languageCode: "uk", welcomeText: "Ласкаво просимо, {{first_name}}! Оберіть потрібний розділ нижче." }
         ]
       });
+
+        // Если указан username владельца — создаём PENDING назначение. До активации в «Роли» пользователь видит пустой экран.
+        const ownerNorm = ownerTelegramUsername.toLowerCase();
+        if (ownerNorm && /^[a-z0-9_]{5,32}$/.test(ownerNorm)) {
+          await tx.botRoleAssignment.upsert({
+            where: {
+              botInstanceId_telegramUsernameNormalized: { botInstanceId: bot.id, telegramUsernameNormalized: ownerNorm }
+            },
+            create: {
+              botInstanceId: bot.id,
+              telegramUsernameRaw: ownerTelegramUsername,
+              telegramUsernameNormalized: ownerNorm,
+              role: "OWNER",
+              status: "PENDING",
+              grantedByUserId: superAdmin.id
+            },
+            update: {
+              telegramUsernameRaw: ownerTelegramUsername,
+              role: "OWNER",
+              status: "PENDING",
+              userId: null,
+              revokedAt: null,
+              activatedAt: null
+            }
+          });
+        }
 
         return { bot, template };
       });
@@ -2117,6 +2129,7 @@ export async function registerBackofficeRoutes(
     const q = String((req.query as any)?.q ?? "").trim();
     const status = String((req.query as any)?.status ?? "").trim();
     const role = String((req.query as any)?.role ?? "").trim();
+    const errorMsg = String((req.query as any)?.error ?? "").trim();
 
     const audit = new AuditService(prisma);
     const users = new UserService(prisma, bot.id);
@@ -2137,6 +2150,7 @@ export async function registerBackofficeRoutes(
         "Bot roles / team",
         `<h2 style="margin-top:0">${escapeHtml(t("bo_roles_title"))}</h2>
          <div class="small">Bot: <code>${escapeHtml(bot.id)}</code></div>
+         ${errorMsg ? `<div class="error" role="alert" style="margin-top:12px">${escapeHtml(errorMsg)}</div>` : ""}
 
          <div class="card" style="margin-top:16px">
            <h3 style="margin-top:0">${escapeHtml(t("bo_roles_assign_title"))}</h3>
@@ -2217,13 +2231,27 @@ export async function registerBackofficeRoutes(
                        </div>
 
                        <div style="margin-top:10px">
-                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/recheck" style="margin:0">
+                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/recheck" style="display:inline">
                            ${
                              a.status === "PENDING"
                                ? `<button type="submit" class="secondary">${escapeHtml(t("bo_roles_recheck_btn"))}</button>`
                                : ""
                            }
+                          </form>
+                         ${
+                           a.status === "PENDING"
+                             ? `
+                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/activate-by-username" style="display:inline; margin-left:8px">
+                           <input name="telegramUsername" type="text" placeholder="@username" required style="width:140px; padding:8px" />
+                           <button type="submit" class="secondary" style="margin-left:4px">Активировать по username</button>
                          </form>
+                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/activate-by-telegram-id" style="display:inline; margin-left:8px">
+                           <input name="telegramUserId" type="text" placeholder="Telegram ID" style="width:120px; padding:8px" />
+                           <button type="submit" class="secondary" style="margin-left:4px">По ID</button>
+                         </form>
+                         <div class="small" style="margin-top:4px; color:#94a3b8">Если «Сверить» не сработало — введите @username или Telegram ID (из @userinfobot). Пользователь должен написать боту /start.</div>`
+                             : ""
+                         }
                        </div>
 
                        <div style="margin-top:10px">
@@ -2411,6 +2439,94 @@ export async function registerBackofficeRoutes(
     } catch (e: any) {
       const code = typeof e?.statusCode === "number" ? e.statusCode : 400;
       return reply.code(code).send(String(e?.message ?? "Error"));
+    }
+
+    return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/roles`);
+  });
+
+  server.post("/backoffice/api/bots/:botId/roles/:assignmentId/activate-by-username", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const backofficeRole = roleRow?.role ?? "ADMIN";
+    if (!canPerform(backofficeRole, "bot_roles:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const assignmentId = String((req.params as any)?.assignmentId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const body = req.body as any;
+    const telegramUsername = String(body?.telegramUsername ?? "").trim();
+    if (!telegramUsername) {
+      return reply.redirect(`/backoffice/bots/${bot.id}/roles?error=${encodeURIComponent("Введите username")}`);
+    }
+
+    const superAdmin = await ensureSuperAdminTelegramUser(prisma);
+    const audit = new AuditService(prisma);
+    const users = new UserService(prisma, bot.id);
+    const permissions = new PermissionService(prisma, users, audit, bot.id);
+    const roleSvc = new BotRoleAssignmentService(prisma, bot.id, permissions, audit);
+
+    try {
+      await roleSvc.activatePendingByUsername({
+        actorUserId: superAdmin.id,
+        assignmentId,
+        telegramUsername
+      });
+    } catch (e: any) {
+      const msg = e?.message ?? "Error";
+      return reply.redirect(`/backoffice/bots/${bot.id}/roles?error=${encodeURIComponent(msg)}`);
+    }
+
+    return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/roles`);
+  });
+
+  server.post("/backoffice/api/bots/:botId/roles/:assignmentId/activate-by-telegram-id", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const backofficeRole = roleRow?.role ?? "ADMIN";
+    if (!canPerform(backofficeRole, "bot_roles:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const assignmentId = String((req.params as any)?.assignmentId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const body = req.body as any;
+    const telegramUserId = String(body?.telegramUserId ?? "").trim();
+    if (!telegramUserId || !/^\d+$/.test(telegramUserId)) {
+      return reply.redirect(`/backoffice/bots/${bot.id}/roles?error=${encodeURIComponent("Введите числовой Telegram ID")}`);
+    }
+
+    const superAdmin = await ensureSuperAdminTelegramUser(prisma);
+    const audit = new AuditService(prisma);
+    const users = new UserService(prisma, bot.id);
+    const permissions = new PermissionService(prisma, users, audit, bot.id);
+    const roleSvc = new BotRoleAssignmentService(prisma, bot.id, permissions, audit);
+
+    try {
+      await roleSvc.activatePendingByTelegramId({
+        actorUserId: superAdmin.id,
+        assignmentId,
+        telegramUserId
+      });
+    } catch (e: any) {
+      const msg = e?.message ?? "Error";
+      return reply.redirect(`/backoffice/bots/${bot.id}/roles?error=${encodeURIComponent(msg)}`);
     }
 
     return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/roles`);

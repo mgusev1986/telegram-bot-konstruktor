@@ -131,7 +131,7 @@ describe("Keyboards: menu keyboard", () => {
     expect(callbacks.some((c) => c.startsWith("page_edit:open:"))).toBe(false);
   });
 
-  it("root screen: user role hides admin_panel and root configure_page", () => {
+  it("root screen: user role hides admin_panel and configure_page but shows cabinet, mentor, language", () => {
     const items = [
       { id: "sec", locked: false, localizations: [{ languageCode: "ru", title: "Sec" }] },
     ];
@@ -139,6 +139,20 @@ describe("Keyboards: menu keyboard", () => {
     const callbacks = getAllCallbackData(kb as any);
     expect(callbacks).not.toContain("admin:open");
     expect(callbacks).not.toContain("page_edit:open:root");
+    expect(callbacks).toContain("cabinet:open");
+    expect(callbacks).toContain("mentor:open");
+    expect(callbacks).toContain("lang:picker");
+  });
+
+  it("root screen: admin role shows cabinet, mentor, language", () => {
+    const items = [
+      { id: "sec", locked: false, localizations: [{ languageCode: "ru", title: "Sec" }] },
+    ];
+    const kb = buildMenuKeyboard(items as any, lang, i18n, undefined, "ADMIN", undefined, undefined);
+    const callbacks = getAllCallbackData(kb as any);
+    expect(callbacks).toContain("cabinet:open");
+    expect(callbacks).toContain("mentor:open");
+    expect(callbacks).toContain("lang:picker");
   });
 
   it("root external partner button is rendered only when externalPartnerUrl is provided", () => {
@@ -156,7 +170,7 @@ describe("Keyboards: menu keyboard", () => {
     expect(hasPartnerUrl2).toBe(false);
   });
 
-  it("root external partner button appears between cabinet:open and mentor:open", () => {
+  it("root shows partner, cabinet, mentor, language in order (USER and ADMIN roles)", () => {
     const items = [{ id: "sec", locked: false, localizations: [{ languageCode: "ru", title: "Sec" }] }];
     const externalUrl = "https://example.com/partner";
 
@@ -166,12 +180,15 @@ describe("Keyboards: menu keyboard", () => {
     const cabinetIdx = rows.findIndex((row) => row[0]?.callback_data === "cabinet:open");
     const mentorIdx = rows.findIndex((row) => row[0]?.callback_data === "mentor:open");
     const partnerIdx = rows.findIndex((row) => row[0]?.url === externalUrl);
+    const langIdx = rows.findIndex((row) => row[0]?.callback_data === "lang:picker");
 
     expect(cabinetIdx).toBeGreaterThanOrEqual(0);
     expect(mentorIdx).toBeGreaterThanOrEqual(0);
     expect(partnerIdx).toBeGreaterThanOrEqual(0);
-    expect(cabinetIdx).toBeLessThan(partnerIdx);
-    expect(partnerIdx).toBeLessThan(mentorIdx);
+    expect(langIdx).toBeGreaterThanOrEqual(0);
+    expect(partnerIdx).toBeLessThan(cabinetIdx);
+    expect(cabinetIdx).toBeLessThan(mentorIdx);
+    expect(mentorIdx).toBeLessThan(langIdx);
   });
 
   it("all visible page buttons are one per row (vertical layout)", () => {

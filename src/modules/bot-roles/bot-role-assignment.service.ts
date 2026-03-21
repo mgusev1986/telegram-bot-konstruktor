@@ -299,5 +299,110 @@ export class BotRoleAssignmentService {
 
     await this.audit.log(actorUserId, "bot_role_assignment_pending_linked", "bot_role_assignment", assignmentId, {});
   }
+
+  /**
+   * Activates a PENDING assignment by Telegram user ID when Recheck fails (e.g. user has no username).
+   */
+  public async activatePendingByTelegramId(input: {
+    actorUserId: string;
+    assignmentId: string;
+    telegramUserId: string;
+  }): Promise<void> {
+    const { actorUserId, assignmentId, telegramUserId } = input;
+
+    const assignment = await this.prisma.botRoleAssignment.findUnique({
+      where: { id: assignmentId }
+    });
+    if (!assignment) throw new NotFoundError("Assignment not found");
+    if (assignment.botInstanceId !== this.botInstanceId) throw new ForbiddenError();
+    if (assignment.status !== "PENDING") return;
+
+    if (assignment.role === "OWNER") {
+      if (!(await this.permissions.canAssignBotOwner(actorUserId))) throw new ForbiddenError();
+    } else {
+      if (!(await this.permissions.canAssignBotAdmin(actorUserId))) throw new ForbiddenError();
+    }
+
+    const telegramId = BigInt(telegramUserId);
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        botInstanceId: this.botInstanceId,
+        telegramUserId: telegramId
+      },
+      select: { id: true }
+    });
+
+    if (!existingUser) throw new NotFoundError("Пользователь с таким Telegram ID не найден в этом боте. Попросите его написать боту /start.");
+
+    await this.prisma.botRoleAssignment.update({
+      where: { id: assignmentId },
+      data: {
+        status: "ACTIVE",
+        userId: existingUser.id,
+        revokedAt: null,
+        activatedAt: new Date()
+      }
+    });
+
+    await this.audit.log(actorUserId, "bot_role_assignment_activated_by_telegram_id", "bot_role_assignment", assignmentId, {
+      telegramUserId: telegramUserId
+    });
+  }
+
+  /**
+   * Activates a PENDING assignment by Telegram username. Useful when Recheck fails or assignment has wrong username.
+   */
+  public async activatePendingByUsername(input: {
+    actorUserId: string;
+    assignmentId: string;
+    telegramUsername: string;
+  }): Promise<void> {
+    const { actorUserId, assignmentId, telegramUsername } = input;
+
+    const assignment = await this.prisma.botRoleAssignment.findUnique({
+      where: { id: assignmentId }
+    });
+    if (!assignment) throw new NotFoundError("Assignment not found");
+    if (assignment.botInstanceId !== this.botInstanceId) throw new ForbiddenError();
+    if (assignment.status !== "PENDING") return;
+
+    if (assignment.role === "OWNER") {
+      if (!(await this.permissions.canAssignBotOwner(actorUserId))) throw new ForbiddenError();
+    } else {
+      if (!(await this.permissions.canAssignBotAdmin(actorUserId))) throw new ForbiddenError();
+    }
+
+    const raw = String(telegramUsername ?? "").trim().replace(/^@/, "");
+    const normalized = raw.toLowerCase();
+    if (!raw || !/^[a-z0-9_]{5,32}$/.test(normalized)) {
+      throw new ValidationError("Некорректный Telegram username (5–32 символа, буквы/цифры/подчёркивание).");
+    }
+
+    const existingUser = await this.prisma.user.findFirst({
+      where: {
+        botInstanceId: this.botInstanceId,
+        username: { equals: normalized, mode: "insensitive" }
+      },
+      select: { id: true }
+    });
+
+    if (!existingUser) throw new NotFoundError("Пользователь с таким username не найден в этом боте. Попросите его написать боту /start.");
+
+    await this.prisma.botRoleAssignment.update({
+      where: { id: assignmentId },
+      data: {
+        telegramUsernameRaw: raw,
+        telegramUsernameNormalized: normalized,
+        status: "ACTIVE",
+        userId: existingUser.id,
+        revokedAt: null,
+        activatedAt: new Date()
+      }
+    });
+
+    await this.audit.log(actorUserId, "bot_role_assignment_activated_by_username", "bot_role_assignment", assignmentId, {
+      telegramUsername: normalized
+    });
+  }
 }
 

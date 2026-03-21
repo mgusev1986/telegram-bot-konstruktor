@@ -42,15 +42,14 @@ describe("Back-office create-bot UX", () => {
       expect(html).toContain("Создать");
     });
 
-    it("includes duplicate submit protection (in-flight lock, preventDefault, fetch)", () => {
+    it("includes submit loading state and duplicate-submit protection", () => {
       const html = buildCreateBotForm({});
       expect(html).toContain('id="create-bot-form"');
-      expect(html).toContain("addEventListener");
-      expect(html).toContain("preventDefault");
-      expect(html).toContain("submitting");
+      expect(html).toContain("onsubmit");
       expect(html).toContain("disabled=true");
       expect(html).toContain("Создание");
-      expect(html).toContain("fetch(");
+      expect(html).toContain('method="POST"');
+      expect(html).toContain('action="/backoffice/api/bots/create"');
     });
 
     it("shows error block when createError is provided", () => {
@@ -63,12 +62,20 @@ describe("Back-office create-bot UX", () => {
       const formValues: CreateFormValues = {
         name: "My Bot",
         telegramBotUsername: "my_bot",
+        ownerTelegramUsername: "client_username",
         baseLanguageCode: "en"
       };
       const html = buildCreateBotForm({ formValues });
       expect(html).toContain('value="My Bot"');
       expect(html).toContain('value="my_bot"');
+      expect(html).toContain('value="client_username"');
       expect(html).toContain('value="en" selected');
+    });
+
+    it("includes owner username field for future bot owner", () => {
+      const html = buildCreateBotForm({});
+      expect(html).toContain('name="ownerTelegramUsername"');
+      expect(html).toContain("Username владельца");
     });
 
     it("does not echo token (security)", () => {

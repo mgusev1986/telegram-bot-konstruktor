@@ -12,7 +12,7 @@ import {
   buildReturnToAdminOrPageKeyboard,
   buildCancelKeyboard,
   buildNavigationRow,
-  buildOnboardingStep4Keyboard,
+  buildOnboardingChoiceAfterSectionKeyboard,
   SCENE_CANCEL_DATA
 } from "../keyboards";
 
@@ -240,24 +240,19 @@ export const createButtonLinkScene = new Scenes.WizardScene<any>(
       });
       const fromPageId = state.fromPageId ?? "root";
       if (state.fromOnboardingStep === 3) {
-        await ctx.reply(
-          ctx.services.i18n.t(locale, "onboarding_step3_success") +
-            "\n" +
-            `${ctx.services.i18n.t(locale, "next_step")}: ${ctx.services.i18n.t(locale, "onboarding_step4_title")}`
-        );
-        await ctx.services.users.setOnboardingStep(ctx.currentUser!.id, 4);
+        await ctx.services.users.setOnboardingStep(ctx.currentUser!.id, 3);
         const refreshed = await ctx.services.users.findById(ctx.currentUser!.id);
         if (refreshed) ctx.currentUser = refreshed;
-        logger.info({ userId: ctx.currentUser?.id }, "Onboarding advanced to step 4 (after step 3 success)");
+        logger.info({ userId: ctx.currentUser?.id }, "Onboarding button link created, showing choice");
         const stepLabel = (s: number) =>
           ctx.services.i18n.t(locale, "onboarding_step_of").replace("{{step}}", String(s));
-        const text = stepLabel(4) + "\n\n" + ctx.services.i18n.t(locale, "onboarding_step4_intro");
-        await ctx.services.navigation.replaceScreen(
-          ctx.currentUser!,
-          ctx.telegram,
-          ctx.chat?.id ?? ctx.currentUser!.telegramUserId,
-          { text },
-          buildOnboardingStep4Keyboard(locale, ctx.services.i18n)
+        await ctx.reply(
+          ctx.services.i18n.t(locale, "onboarding_step3_success") +
+            "\n\n" +
+            stepLabel(3) +
+            "\n\n" +
+            ctx.services.i18n.t(locale, "onboarding_choice_after_section"),
+          buildOnboardingChoiceAfterSectionKeyboard(locale, ctx.services.i18n)
         );
       } else {
         await ctx.reply(

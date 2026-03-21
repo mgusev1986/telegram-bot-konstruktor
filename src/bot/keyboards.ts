@@ -346,6 +346,8 @@ export const buildMenuKeyboard = (
     if (showRootSys(SYS_SLOT_PARTNER_REGISTER) && externalPartnerUrl) {
       rows.push([Markup.button.url(i18n.t(languageCode, "partner_register_btn"), externalPartnerUrl)]);
     }
+    // Мой кабинет, Связь с наставником, Сменить язык — для всех пользователей (в т.ч. USER).
+    // Pending owner (ожидающий активации) не доходит до buildMenuKeyboard — видит пустой экран в sendRootWithWelcome.
     if (showRootSys(SYS_SLOT_MY_CABINET)) {
       rows.push([Markup.button.callback(i18n.t(languageCode, "my_cabinet"), makeCallbackData("cabinet", "open"))]);
     }
@@ -937,27 +939,14 @@ export const buildOnboardingStep2CompleteKeyboard = (languageCode: string, i18n:
     buildNavigationRow(i18n, languageCode, { toMain: true })
   ]);
 
-/** After creating a section during onboarding: add another section OR go to preview. No extra-button step. */
+/** After creating a section during onboarding: add another section OR go to main menu. No preview/publish step. */
 export const buildOnboardingChoiceAfterSectionKeyboard = (languageCode: string, i18n: I18nService) =>
   Markup.inlineKeyboard([
     [
       Markup.button.callback(i18n.t(languageCode, "onboarding_btn_add_another_section"), makeCallbackData(ONBOARDING_PREFIX, "choice_after", "add")),
-      Markup.button.callback(i18n.t(languageCode, "onboarding_btn_preview_next"), makeCallbackData(ONBOARDING_PREFIX, "choice_after", "preview"))
+      Markup.button.callback(i18n.t(languageCode, "to_main_menu"), NAV_ROOT_DATA)
     ],
-    [
-      Markup.button.callback(i18n.t(languageCode, "cancel_btn"), makeCallbackData(ONBOARDING_PREFIX, "cancel")),
-      ...buildNavigationRow(i18n, languageCode, { toMain: true })
-    ]
-  ]);
-
-/** After creating the optional second section: go to step 4 (preview). */
-export const buildOnboardingGoToPreviewKeyboard = (languageCode: string, i18n: I18nService) =>
-  Markup.inlineKeyboard([
-    [Markup.button.callback(i18n.t(languageCode, "onboarding_btn_preview_next"), makeCallbackData(ONBOARDING_PREFIX, "next", "4"))],
-    [
-      Markup.button.callback(i18n.t(languageCode, "cancel_btn"), makeCallbackData(ONBOARDING_PREFIX, "cancel")),
-      ...buildNavigationRow(i18n, languageCode, { toMain: true })
-    ]
+    [Markup.button.callback(i18n.t(languageCode, "cancel_btn"), makeCallbackData(ONBOARDING_PREFIX, "cancel"))]
   ]);
 
 export const buildOnboardingStep3CompleteKeyboard = (languageCode: string, i18n: I18nService) =>

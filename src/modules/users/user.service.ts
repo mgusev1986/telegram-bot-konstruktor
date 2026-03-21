@@ -83,20 +83,6 @@ export class UserService {
     const existing = await this.findByTelegramId(BigInt(telegramUser.id));
     const fullName = buildFullName(telegramUser.first_name, telegramUser.last_name) || telegramUser.first_name;
 
-    const incomingUsernameNormalized =
-      telegramUser.username && this.botInstanceId ? normalizeTelegramUsername(telegramUser.username) : null;
-
-    const pendingAssignment =
-      incomingUsernameNormalized && this.botInstanceId
-        ? await this.prisma.botRoleAssignment.findFirst({
-            where: {
-              botInstanceId: this.botInstanceId,
-              telegramUsernameNormalized: incomingUsernameNormalized,
-              status: "PENDING"
-            }
-          })
-        : null;
-
     const updatePayload: Prisma.UserUncheckedUpdateInput = {
       username: telegramUser.username ?? undefined,
       firstName: telegramUser.first_name ?? "",
@@ -145,23 +131,8 @@ export class UserService {
         });
       }
 
-      if (pendingAssignment && !isSuperAdmin) {
-        await this.prisma.botRoleAssignment.update({
-          where: { id: pendingAssignment.id },
-          data: {
-            status: "ACTIVE",
-            userId: updated.id,
-            revokedAt: null,
-            activatedAt: new Date()
-          }
-        });
-
-        await this.audit?.log(updated.id, "bot_role_assignment_linked", "bot_role_assignment", pendingAssignment.id, {
-          botInstanceId: this.botInstanceId,
-          telegramUsernameNormalized: incomingUsernameNormalized,
-          role: pendingAssignment.role
-        });
-      }
+      // PENDING assignments are NOT auto-activated here. Alpha owner must activate via backoffice "Сверить сейчас".
+      // Until then, the user sees an empty screen (no system buttons).
 
       return {
         user: updated,
@@ -220,23 +191,8 @@ export class UserService {
       });
     }
 
-    if (pendingAssignment && !isSuperAdmin) {
-      await this.prisma.botRoleAssignment.update({
-        where: { id: pendingAssignment.id },
-        data: {
-          status: "ACTIVE",
-          userId: created.id,
-          revokedAt: null,
-          activatedAt: new Date()
-        }
-      });
-
-      await this.audit?.log(created.id, "bot_role_assignment_linked", "bot_role_assignment", pendingAssignment.id, {
-        botInstanceId: this.botInstanceId,
-        telegramUsernameNormalized: incomingUsernameNormalized,
-        role: pendingAssignment.role
-      });
-    }
+    // PENDING assignments are NOT auto-activated here. Alpha owner must activate via backoffice "Сверить сейчас".
+    // Until then, the user sees an empty screen (no system buttons).
 
     return {
       user: created,
