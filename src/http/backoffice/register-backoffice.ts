@@ -226,7 +226,8 @@ form.dataset.submitting="1";
 btn.disabled=true;
 btn.textContent="Создание\u2026";
 var fd=new FormData(form);
-fetch(form.action,{method:"POST",body:fd,redirect:"follow"}).then(function(r){
+var body=new URLSearchParams(fd).toString();
+fetch(form.action,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body:body,redirect:"follow"}).then(function(r){
 if(r.redirected){window.location.href=r.url;return;}
 if(r.ok){window.location.href=r.url;return;}
 return r.text().then(function(html){document.open();document.write(html);document.close();});
