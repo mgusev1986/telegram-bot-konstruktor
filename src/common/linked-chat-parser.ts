@@ -1,0 +1,107 @@
+/**
+ * Парсинг ссылок на чаты/каналы Telegram для Product.linkedChats.
+ * Поддерживает: t.me/channel, t.me/c/123/1, t.me/+invite, @username, числовой ID.
+ */
+export interface LinkedChatEntry {
+  link?: string;
+  label?: string;
+  identifier?: string;
+}
+
+export function parseLinkedChatInput(raw: string): LinkedChatEntry | null {
+  const s = raw.trim();
+  if (!s) return null;
+
+  const normalized = s.replace(/^https?:\/\//, "").replace(/^www\./, "");
+  const lower = normalized.toLowerCase();
+
+  // Числовой ID: -1001234567890 или 1001234567890
+  const numMatch = s.match(/^-?\d{10,}$/);
+  if (numMatch) {
+    const id = numMatch[0];
+    const n = BigInt(id);
+    return { identifier: String(n), label: id.startsWith("-100") ? "Канал/чат" : "Чат" };
+  }
+
+  // @username
+  if (s.startsWith("@")) {
+    const username = s.slice(1).replace(/[^a-zA-Z0-9_]/g, "");
+    if (username) {
+      const link = `https://t.me/${username}`;
+      return { link, identifier: `@${username}`, label: "Канал" };
+    }
+  }
+
+  // t.me/channelname (публичный канал)
+  const pubMatch = normalized.match(/^t\.me\/([a-zA-Z0-9_]+)$/i);
+  if (pubMatch) {
+    const username = pubMatch[1];
+    const link = `https://t.me/${username}`;
+    return { link, identifier: `@${username}`, label: "Канал" };
+  }
+
+  // t.me/c/1234567890/1 (приватный супергрупп/канал)
+  const privMatch = normalized.match(/^t\.me\/c\/(\d+)(?:\/\d+)?$/i);
+  if (privMatch) {
+    const numPart = privMatch[1] ?? "";
+    const fullId = numPart.startsWith("-") ? numPart : `-100${numPart}`;
+    const link = `https://t.me/c/${numPart}/1`;
+    return { link, identifier: fullId, label: "Чат/канал" };
+  }
+
+  // t.me/joinchat/xxx или t.me/+xxx (инвайт-ссылка)
+  const inviteMatch = normalized.match(/^t\.me\/(?:\+([A-Za-z0-9_-]+)|joinchat\/([A-Za-z0-9_-]+))$/i);
+  if (inviteMatch) {
+    const hash = inviteMatch[1] ?? inviteMatch[2];
+    const link = `https://t.me/+${hash}`;
+    return { link, label: "Чат/канал" };
+  }
+
+  // Любая валидная ссылка t.me
+  if (lower.startsWith("t.me/") || s.includes("t.me/")) {
+    const url = s.startsWith("http") ? s : `https://${normalized}`;
+    return { link: url, label: "Чат/канал" };
+  }
+
+  return null;
+}
+
+export function parseLinkedChatsFromForm(rawLines: string): LinkedChatEntry[] {
+  const results: LinkedChatEntry[] = [];
+  const lines = rawLines.split("\n").map((l) => l.trim()).filter(Boolean);
+  const seen = new Set<string>();
+
+  for (const line of lines) {
+    const parsed = parseLinkedChatInput(line);
+    if (parsed) {
+      const key = parsed.link ?? parsed.identifier ?? "";
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        results.push(parsed);
+      }
+    }
+  }
+  return results;
+}
+
+export function getDisplayLinks(linkedChats: unknown): Array<{ link: string; label: string }> {
+  if (!Array.isArray(linkedChats)) return [];
+  const out: Array<{ link: string; label: string }> = [];
+  for (const item of linkedChats) {
+    if (item && typeof item === "object" && "link" in item && typeof (item as any).link === "string") {
+      out.push({ link: (item as any).link, label: (item as any).label ?? "Перейти" });
+    }
+  }
+  return out;
+}
+
+export function getBanIdentifiers(linkedChats: unknown): string[] {
+  if (!Array.isArray(linkedChats)) return [];
+  const out: string[] = [];
+  for (const item of linkedChats) {
+    if (item && typeof item === "object" && "identifier" in item && typeof (item as any).identifier === "string") {
+      out.push((item as any).identifier);
+    }
+  }
+  return out;
+}

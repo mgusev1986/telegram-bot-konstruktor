@@ -11,15 +11,25 @@ export class I18nService {
     this.defaultLanguage = defaultLanguage in dictionaries ? defaultLanguage : "ru";
   }
 
+  /**
+   * Resolves a language code (e.g. from Telegram's User.language_code: "en", "en-US", "zh-hans")
+   * to a supported bot language. If the code is supported — returns it; otherwise returns default (e.g. "ru").
+   */
   public resolveLanguage(language: MaybeLanguage): SupportedDictionaryLanguage {
     if (!language) {
       return this.defaultLanguage;
     }
 
-    const normalized = language.toLowerCase();
+    const normalized = language.toLowerCase().trim();
 
     if (normalized in dictionaries) {
       return normalized as SupportedDictionaryLanguage;
+    }
+
+    // Try primary part for IETF tags like "en-US", "zh-hans"
+    const primary = normalized.split("-")[0];
+    if (primary && primary in dictionaries) {
+      return primary as SupportedDictionaryLanguage;
     }
 
     return this.defaultLanguage;

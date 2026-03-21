@@ -1,6 +1,6 @@
 import type { BillingType, PaymentNetwork, PrismaClient, Product, User } from "@prisma/client";
 
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { env } from "../../config/env";
 import type { AuditService } from "../audit/audit.service";
@@ -144,10 +144,14 @@ export class PaymentService {
     }
 
     const accessType: BillingType = payment.product.billingType;
+    const durationMinutes = payment.product.durationMinutes;
+    const durationDays = payment.product.durationDays;
     const activeUntil =
-      payment.product.durationDays && payment.product.durationDays > 0
-        ? new Date(Date.now() + payment.product.durationDays * 24 * 60 * 60 * 1000)
-        : null;
+      durationMinutes != null && durationMinutes > 0
+        ? new Date(Date.now() + durationMinutes * 60 * 1000)
+        : durationDays && durationDays > 0
+          ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000)
+          : null;
 
     const accessRight = await this.prisma.$transaction(async (tx) => {
       const created = await tx.userAccessRight.create({
@@ -183,7 +187,8 @@ export class PaymentService {
       );
     }
 
-    if (payment.product.linkedChatId && this.subscriptionChannel) {
+    const hasLinkedChats = Array.isArray(payment.product.linkedChats) && (payment.product.linkedChats as any[]).length > 0;
+    if (hasLinkedChats && this.subscriptionChannel) {
       await this.subscriptionChannel.onAccessGranted(
         payment.userId,
         payment.productId,
@@ -207,6 +212,57 @@ export class PaymentService {
         paymentId: payment.id
       }
     );
+  }
+
+  /**
+   * Симулирует оплату для теста — выдаёт доступ без реального платежа.
+   * Полезно для проверки: напоминания, исключение из канала при истечении.
+   */
+  public async simulatePaymentForTest(
+    userId: string,
+    productId: string,
+    botInstanceId: string,
+    actorUserId: string
+  ): Promise<void> {
+    const [user, product] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { id: true, telegramUserId: true, selectedLanguage: true, botInstanceId: true }
+      }),
+      this.prisma.product.findUniqueOrThrow({
+        where: { id: productId },
+        include: { localizations: true }
+      })
+    ]);
+
+    if (user.botInstanceId !== botInstanceId) {
+      throw new Error("User does not belong to this bot");
+    }
+    if (!product.isActive) {
+      throw new Error("Product is not active");
+    }
+
+    const referenceCode = `test_${Date.now()}_${randomBytes(4).toString("hex")}`;
+    const payment = await this.prisma.payment.create({
+      data: {
+        userId: user.id,
+        productId: product.id,
+        botInstanceId,
+        provider: "MANUAL",
+        network: "OTHER",
+        walletAddress: "test",
+        amount: product.price,
+        currency: product.currency,
+        referenceCode,
+        status: "UNPAID"
+      },
+      include: {
+        user: true,
+        product: true
+      }
+    });
+
+    await this.confirmPayment(payment.id, actorUserId, `simulate_${referenceCode}`);
   }
 
   public async confirmPaymentByReference(referenceCode: string, actorUserId: string, externalTxId?: string): Promise<void> {

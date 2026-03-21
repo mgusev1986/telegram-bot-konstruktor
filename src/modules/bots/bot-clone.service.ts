@@ -177,6 +177,8 @@ export class BotCloneService {
             currency: p.currency,
             billingType: p.billingType,
             durationDays: p.durationDays,
+            durationMinutes: (p as any).durationMinutes ?? undefined,
+            linkedChats: (p as any).linkedChats ?? undefined,
             isActive: p.isActive,
             localizations: {
               create: p.localizations.map((pl) => ({
@@ -302,7 +304,8 @@ export class BotCloneService {
                   text: l.text,
                   mediaType: l.mediaType,
                   mediaFileId: l.mediaFileId,
-                  externalUrl: l.externalUrl
+                  externalUrl: l.externalUrl,
+                  ...(l.buttonsJson != null ? { buttonsJson: l.buttonsJson } : {})
                 }))
               }
             }

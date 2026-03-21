@@ -70,9 +70,15 @@ export class UserService {
     throw new ValidationError("Admin identifier must be Telegram ID or @username");
   }
 
+  /**
+   * @param preferredLanguageForNewUser — язык для нового пользователя (напр. из ctx.from.language_code).
+   * Если передан — при создании будет использован вместо DEFAULT_LANGUAGE.
+   * Должен быть уже разрешён через I18nService.resolveLanguage (поддерживаемый код или fallback на ru).
+   */
   public async ensureTelegramUser(
     telegramUser: TelegramUser,
-    inviterUserId?: string | null
+    inviterUserId?: string | null,
+    preferredLanguageForNewUser?: string | null
   ): Promise<EnsureUserResult> {
     const existing = await this.findByTelegramId(BigInt(telegramUser.id));
     const fullName = buildFullName(telegramUser.first_name, telegramUser.last_name) || telegramUser.first_name;
@@ -172,6 +178,11 @@ export class UserService {
     const isSuperAdmin = BigInt(telegramUser.id) === env.SUPER_ADMIN_TELEGRAM_ID;
     const role: User["role"] = isSuperAdmin ? "ALPHA_OWNER" : "USER";
 
+    const initialLanguage =
+      preferredLanguageForNewUser && preferredLanguageForNewUser.trim()
+        ? preferredLanguageForNewUser.trim().toLowerCase()
+        : env.DEFAULT_LANGUAGE;
+
     const created = await this.prisma.user.create({
       data: {
         telegramUserId: BigInt(telegramUser.id),
@@ -180,7 +191,7 @@ export class UserService {
         firstName: telegramUser.first_name ?? "",
         lastName: telegramUser.last_name ?? "",
         fullName,
-        selectedLanguage: env.DEFAULT_LANGUAGE,
+        selectedLanguage: initialLanguage,
         role,
         referralCode,
         invitedByUserId: inviterUserId ?? undefined,

@@ -1,7 +1,28 @@
 import type { DripTriggerType, MediaType, PrismaClient } from "@prisma/client";
+import { Markup } from "telegraf";
 import type { Telegram } from "telegraf";
 
 import { sendRichMessage } from "../../common/media";
+
+/** Inline button for drip step message: URL button (opens link) */
+export interface DripStepButton {
+  type: "url";
+  label: string;
+  url: string;
+}
+
+function buildDripStepReplyMarkup(buttonsJson: unknown): { reply_markup: object } | Record<string, never> {
+  const arr = Array.isArray(buttonsJson) ? buttonsJson : [];
+  if (arr.length === 0) return {};
+  const rows: Array<Array<{ text: string; url: string }>> = [];
+  for (const b of arr) {
+    if (b && typeof b === "object" && b.type === "url" && typeof b.label === "string" && typeof b.url === "string") {
+      rows.push([Markup.button.url(b.label, b.url)]);
+    }
+  }
+  if (rows.length === 0) return {};
+  return Markup.inlineKeyboard(rows);
+}
 import { renderPageContent } from "../../common/page-content-render";
 import type { AuditService } from "../audit/audit.service";
 import type { I18nService } from "../i18n/i18n.service";
@@ -15,6 +36,7 @@ export interface DripStepInput {
   mediaType?: MediaType;
   mediaFileId?: string | null;
   externalUrl?: string | null;
+  buttons?: DripStepButton[];
 }
 
 export interface CreateDripCampaignInput {
@@ -57,7 +79,8 @@ export class DripService {
                 text: step.text ?? "",
                 mediaType: step.mediaType ?? "NONE",
                 mediaFileId: step.mediaFileId ?? undefined,
-                externalUrl: step.externalUrl ?? undefined
+                externalUrl: step.externalUrl ?? undefined,
+                buttonsJson: step.buttons && step.buttons.length > 0 ? (step.buttons as object) : undefined
               }
             }
           }))
@@ -147,7 +170,8 @@ export class DripService {
             text: input.text ?? "",
             mediaType: input.mediaType ?? "NONE",
             mediaFileId: input.mediaFileId ?? undefined,
-            externalUrl: input.externalUrl ?? undefined
+            externalUrl: input.externalUrl ?? undefined,
+            buttonsJson: input.buttons && input.buttons.length > 0 ? (input.buttons as object) : undefined
           }
         }
       },
@@ -168,6 +192,48 @@ export class DripService {
     await this.prisma.dripStep.delete({ where: { id: stepId } });
     await this.audit.log(createdByUserId, "delete_drip_step", "drip_step", stepId, { campaignId });
     return true;
+  }
+
+  public async updateStepButtons(
+    createdByUserId: string,
+    stepId: string,
+    languageCode: string,
+    buttons: DripStepButton[]
+  ): Promise<boolean | null> {
+    const step = await this.prisma.dripStep.findFirst({
+      where: {
+        id: stepId,
+        campaign: { createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) }
+      },
+      include: { localizations: true }
+    });
+    if (!step) return null;
+    const loc = step.localizations.find((l) => l.languageCode === languageCode) ?? step.localizations[0];
+    if (!loc) return null;
+    await this.prisma.dripStepLocalization.update({
+      where: { id: loc.id },
+      data: {
+        buttonsJson: buttons.length > 0 ? (buttons as object) : undefined
+      }
+    });
+    await this.audit.log(createdByUserId, "update_drip_step_buttons", "drip_step_localization", loc.id, {
+      stepId,
+      buttonCount: buttons.length
+    });
+    return true;
+  }
+
+  public async getStepWithCampaign(createdByUserId: string, stepId: string) {
+    return this.prisma.dripStep.findFirst({
+      where: {
+        id: stepId,
+        campaign: { createdByUserId, ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {}) }
+      },
+      include: {
+        campaign: true,
+        localizations: true
+      }
+    });
   }
 
   public async deleteStepById(createdByUserId: string, stepId: string): Promise<{ ok: boolean; campaignId?: string }> {
@@ -278,12 +344,18 @@ export class DripService {
     const localization = this.i18n.pickLocalized(step.localizations, progress.user.selectedLanguage) ?? step.localizations[0];
 
     if (this.telegram && localization) {
-      await sendRichMessage(this.telegram, progress.user.telegramUserId, {
-        text: renderPageContent(localization.text, progress.user),
-        mediaType: localization.mediaType,
-        mediaFileId: localization.mediaFileId,
-        externalUrl: localization.externalUrl
-      });
+      const replyMarkup = buildDripStepReplyMarkup(localization.buttonsJson);
+      await sendRichMessage(
+        this.telegram,
+        progress.user.telegramUserId,
+        {
+          text: renderPageContent(localization.text, progress.user),
+          mediaType: localization.mediaType,
+          mediaFileId: localization.mediaFileId,
+          externalUrl: localization.externalUrl
+        },
+        Object.keys(replyMarkup).length > 0 ? replyMarkup : {}
+      );
     }
 
     const nextStep = progress.campaign.steps.find((item) => item.stepOrder === progress.currentStep + 1);

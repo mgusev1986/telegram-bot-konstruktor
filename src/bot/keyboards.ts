@@ -276,7 +276,9 @@ export const buildMenuKeyboard = (
   mentorUsername?: string | null,
   externalPartnerUrl?: string | null,
   /** Id of __sys_target_partner_register. When item is SECTION_LINK to this target: if externalPartnerUrl use url button, else hide. */
-  partnerRegisterTargetId?: string | null
+  partnerRegisterTargetId?: string | null,
+  /** Кнопки «Ссылка на чат/канал» — показываются в подменю после оплаты */
+  productChatLinks?: Array<{ link: string; label: string }>
 ) => {
   const showAdminButtons = isAdminRole(userRole);
   const isRootScreen = parentId === undefined;
@@ -308,6 +310,11 @@ export const buildMenuKeyboard = (
 
   if (slotOrder != null && slotOrder.length > 0) {
     rows = [];
+    if (productChatLinks?.length) {
+      for (const { link, label } of productChatLinks) {
+        rows.push([Markup.button.url(label, link)]);
+      }
+    }
     const backCallback = parentId != null ? makeCallbackData("menu", "back", parentId || "root") : null;
     for (const slotId of slotOrder) {
       if (slotId === NAV_SLOT_BACK && backCallback) {
@@ -323,7 +330,13 @@ export const buildMenuKeyboard = (
       }
     }
   } else {
-    rows = items.map(buildRowForItem).filter((r): r is NonNullable<typeof r> => r != null);
+    rows = [];
+    if (productChatLinks?.length) {
+      for (const { link, label } of productChatLinks) {
+        rows.push([Markup.button.url(label, link)]);
+      }
+    }
+    rows.push(...items.map(buildRowForItem).filter((r): r is NonNullable<typeof r> => r != null));
   }
 
   // Utility/system buttons should not be mixed into regular pages/submenus.
@@ -493,15 +506,27 @@ export const buildButtonManagementKeyboard = (
   return Markup.inlineKeyboard(rows);
 };
 
-/** Keyboard for leaf content (no submenu): nav buttons vertical; optional admin "Настроить страницу" for current page. */
+/** Keyboard for leaf content (no submenu): nav buttons vertical; optional productChatLinks (URL buttons after payment); optional admin. */
 export const buildContentScreenKeyboard = (
   parentId: string | null,
   languageCode: string,
   i18n: I18nService,
-  opts?: { currentPageId?: string; userRole?: string; slotOrder?: string[] | null }
+  opts?: {
+    currentPageId?: string;
+    userRole?: string;
+    slotOrder?: string[] | null;
+    /** Кнопки «Ссылка на чат/канал» — показываются после оплаты в этой секции */
+    productChatLinks?: Array<{ link: string; label: string }>;
+  }
 ) => {
-  const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+  const rows: (ReturnType<typeof Markup.button.callback> | ReturnType<typeof Markup.button.url>)[][] = [];
   const backCallback = makeCallbackData("menu", "back", parentId ?? "root");
+
+  if (opts?.productChatLinks?.length) {
+    for (const { link, label } of opts.productChatLinks) {
+      rows.push([Markup.button.url(label, link)]);
+    }
+  }
   if (opts?.slotOrder != null && opts.slotOrder.length > 0) {
     for (const slotId of opts.slotOrder) {
       if (slotId === NAV_SLOT_BACK) {

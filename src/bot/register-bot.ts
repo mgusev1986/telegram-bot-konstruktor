@@ -62,6 +62,7 @@ import { createBroadcastScene, createScheduledBroadcastScene, CREATE_BROADCAST_S
 import { createButtonLinkScene, CREATE_BUTTON_LINK_SCENE } from "./scenes/create-button-link.scene";
 import { createDripScene, CREATE_DRIP_SCENE } from "./scenes/create-drip-campaign.scene";
 import { addDripStepScene, ADD_DRIP_STEP_SCENE } from "./scenes/add-drip-step.scene";
+import { addDripStepButtonsScene, ADD_DRIP_STEP_BUTTONS_SCENE } from "./scenes/add-drip-step-buttons.scene";
 import { attachVideoFromLibraryScene, ATTACH_VIDEO_FROM_LIBRARY_SCENE } from "./scenes/attach-video-from-library.scene";
 import { createMenuItemScene, CREATE_MENU_ITEM_SCENE } from "./scenes/create-menu-item.scene";
 import { createSectionScene, CREATE_SECTION_SCENE } from "./scenes/create-section.scene";
@@ -90,6 +91,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     createScheduledBroadcastScene,
     createDripScene,
     addDripStepScene,
+    addDripStepButtonsScene,
     attachVideoFromLibraryScene,
     editPageContentScene,
     renameButtonScene,
@@ -222,9 +224,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       await services.referrals.validateInviter(existing.id, inviter.id);
     }
 
+    const telegramLanguageCode = (ctx.from as { language_code?: string })?.language_code;
+    const preferredLanguage = services.i18n.resolveLanguage(telegramLanguageCode);
+
     const result = await services.users.ensureTelegramUser(
       ctx.from,
-      existing?.invitedByUserId ? null : inviter?.id
+      existing?.invitedByUserId ? null : inviter?.id,
+      preferredLanguage
     );
 
     const newlyBound = Boolean(
@@ -592,6 +598,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
       const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
       const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+      const productChatLinks =
+        content.item.productId && content.item.product?.linkedChats
+          ? await services.subscriptionChannel.resolveProductLinksForDisplay(
+              content.item.product.linkedChats,
+              ctx.telegram
+            )
+          : [];
       await services.navigation.replaceScreen(
         user,
         ctx.telegram,
@@ -613,7 +626,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           slotOrder,
           mentorUsername,
           externalPartnerUrl,
-          partnerRegisterTargetId
+          partnerRegisterTargetId,
+          productChatLinks.length ? productChatLinks : undefined
         )
       );
       await services.inactivityReminders.scheduleForPageOpen(user, content.item.id, {
@@ -623,6 +637,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     }
 
     const contentSlotOrder = await services.menu.getEffectiveSlotOrder(content.item.id, []);
+    const productChatLinks =
+      content.item.productId && content.item.product?.linkedChats
+        ? await services.subscriptionChannel.resolveProductLinksForDisplay(
+            content.item.product.linkedChats,
+            ctx.telegram
+          )
+        : [];
     await services.navigation.replaceScreen(
       user,
       ctx.telegram,
@@ -636,7 +657,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       buildContentScreenKeyboard(content.item.parentId ?? "root", user.selectedLanguage, services.i18n, {
         currentPageId: content.item.id,
         userRole: effectiveRole,
-        slotOrder: contentSlotOrder
+        slotOrder: contentSlotOrder,
+        productChatLinks: productChatLinks.length ? productChatLinks : undefined
       })
     );
 
@@ -2339,6 +2361,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
           const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
           const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+          const linkProductChatLinks =
+            content.item.productId && content.item.product?.linkedChats
+              ? await services.subscriptionChannel.resolveProductLinksForDisplay(
+                  content.item.product.linkedChats,
+                  ctx.telegram
+                )
+              : [];
           await services.navigation.replaceScreen(
             user,
             ctx.telegram,
@@ -2360,12 +2389,20 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
               menuSlotOrder,
               mentorUsername,
               externalPartnerUrl,
-              partnerRegisterTargetId
+              partnerRegisterTargetId,
+              linkProductChatLinks.length ? linkProductChatLinks : undefined
             )
           );
           await services.inactivityReminders.scheduleForPageOpen(user, content.item.id, { shouldSchedule: false });
         } else {
           const linkContentSlotOrder = await services.menu.getEffectiveSlotOrder(content.item.id, []);
+          const linkProductChatLinks =
+            content.item.productId && content.item.product?.linkedChats
+              ? await services.subscriptionChannel.resolveProductLinksForDisplay(
+                  content.item.product.linkedChats,
+                  ctx.telegram
+                )
+              : [];
           await services.navigation.replaceScreen(
             user,
             ctx.telegram,
@@ -2379,7 +2416,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             buildContentScreenKeyboard(linkItem.parentId ?? "root", user.selectedLanguage, services.i18n, {
               currentPageId: content.item.id,
               userRole: resolveEffectiveRole(ctx),
-              slotOrder: linkContentSlotOrder
+              slotOrder: linkContentSlotOrder,
+              productChatLinks: linkProductChatLinks.length ? linkProductChatLinks : undefined
             })
           );
           await services.inactivityReminders.scheduleForPageOpen(user, content.item.id, { shouldSchedule: false });
@@ -2426,6 +2464,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
         const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
         const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+        const cbProductChatLinks =
+          content.item.productId && content.item.product?.linkedChats
+            ? await services.subscriptionChannel.resolveProductLinksForDisplay(
+                content.item.product.linkedChats,
+                ctx.telegram
+              )
+            : [];
         await services.navigation.replaceScreen(
           user,
           ctx.telegram,
@@ -2447,7 +2492,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             menuSlotOrder,
             mentorUsername,
             externalPartnerUrl,
-            partnerRegisterTargetId
+            partnerRegisterTargetId,
+            cbProductChatLinks.length ? cbProductChatLinks : undefined
           )
         );
         await services.inactivityReminders.scheduleForPageOpen(user, content.item.id, { shouldSchedule: false });
@@ -2455,6 +2501,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       }
 
       const contentSlotOrder = await services.menu.getEffectiveSlotOrder(content.item.id, []);
+      const cbProductChatLinks =
+        content.item.productId && content.item.product?.linkedChats
+          ? await services.subscriptionChannel.resolveProductLinksForDisplay(
+              content.item.product.linkedChats,
+              ctx.telegram
+            )
+          : [];
       await services.navigation.replaceScreen(
         user,
         ctx.telegram,
@@ -2468,7 +2521,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         buildContentScreenKeyboard(content.item.parentId ?? "root", user.selectedLanguage, services.i18n, {
           currentPageId: content.item.id,
           userRole: resolveEffectiveRole(ctx),
-          slotOrder: contentSlotOrder
+          slotOrder: contentSlotOrder,
+          productChatLinks: cbProductChatLinks.length ? cbProductChatLinks : undefined
         })
       );
       await services.inactivityReminders.scheduleForPageOpen(user, content.item.id, { shouldSchedule: false });
@@ -4943,8 +4997,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         rows.push([Markup.button.callback("❌ Удалить цепочку", makeCallbackData("dripm", "delete_confirm", campaign.id))]);
         if (campaign.steps.length > 0) {
           for (const s of campaign.steps) {
-            // callback_data must be <= 64 chars; avoid including both campaignId and stepId (two UUIDs).
-            rows.push([Markup.button.callback(`🗑 Удалить шаг ${s.stepOrder}`, makeCallbackData("dripm", "del_step", s.id))]);
+            rows.push([
+              Markup.button.callback(`🔗 Кнопки`, makeCallbackData("dripm", "step_btns", s.id)),
+              Markup.button.callback(`🗑 Удалить шаг ${s.stepOrder}`, makeCallbackData("dripm", "del_step", s.id))
+            ]);
           }
         }
         rows.push([Markup.button.callback("↩️ К списку цепочек", makeCallbackData("dripm", "list"))]);
@@ -4957,6 +5013,36 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
       if (action === "add_step" && value) {
         await ctx.scene.enter(ADD_DRIP_STEP_SCENE, { campaignId: value });
+        return;
+      }
+
+      if (action === "add_buttons" && value) {
+        const step = await services.drips.getStepWithCampaign(user.id, value);
+        if (!step) {
+          await ctx.reply("Шаг не найден.");
+          await renderList();
+          return;
+        }
+        await ctx.scene.enter(ADD_DRIP_STEP_BUTTONS_SCENE, {
+          stepId: value,
+          campaignId: step.campaignId,
+          languageCode: services.i18n.resolveLanguage(user.selectedLanguage)
+        });
+        return;
+      }
+
+      if (action === "step_btns" && value) {
+        const step = await services.drips.getStepWithCampaign(user.id, value);
+        if (!step) {
+          await ctx.reply("Шаг не найден.");
+          await renderList();
+          return;
+        }
+        await ctx.scene.enter(ADD_DRIP_STEP_BUTTONS_SCENE, {
+          stepId: value,
+          campaignId: step.campaignId,
+          languageCode: services.i18n.resolveLanguage(user.selectedLanguage)
+        });
         return;
       }
 

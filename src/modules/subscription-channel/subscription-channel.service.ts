@@ -5,6 +5,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Telegram } from "telegraf";
 import type { SchedulerService } from "../jobs/scheduler.service";
+import { getBanIdentifiers, getDisplayLinks } from "../../common/linked-chat-parser";
 import { logger } from "../../common/logger";
 
 const REMINDER_DAYS = [3, 2, 1] as const;
@@ -90,7 +91,7 @@ export class SubscriptionChannelService {
   }
 
   /**
-   * При истечении: отзывает доступ, исключает из канала (если product.linkedChatId).
+   * При истечении: отзывает доступ, исключает из всех чатов/каналов (product.linkedChats).
    */
   async processExpiry(accessRightId: string): Promise<void> {
     const right = await this.prisma.userAccessRight.findUnique({
@@ -104,19 +105,22 @@ export class SubscriptionChannelService {
       data: { status: "EXPIRED" }
     });
 
-    const chatId = right.product.linkedChatId;
-    if (chatId && this.telegram) {
-      try {
-        await this.telegram.banChatMember(Number(chatId), Number(right.user.telegramUserId));
-        logger.info({ accessRightId, userId: right.userId, chatId: chatId.toString() }, "Banned user from subscription chat");
-      } catch (e) {
-        logger.warn({ accessRightId, chatId: chatId.toString(), err: e }, "Failed to ban user from chat");
+    const identifiers = getBanIdentifiers(right.product.linkedChats);
+    if (identifiers.length && this.telegram) {
+      const chatId = (id: string) => id.startsWith("@") ? id : Number(id);
+      for (const ident of identifiers) {
+        try {
+          await this.telegram.banChatMember(chatId(ident), Number(right.user.telegramUserId));
+          logger.info({ accessRightId, userId: right.userId, chatId: ident }, "Banned user from subscription chat");
+        } catch (e) {
+          logger.warn({ accessRightId, chatId: ident, err: e }, "Failed to ban user from chat");
+        }
       }
     }
   }
 
   /**
-   * При оплате: разбанить в канале и отправить приглашение (если product.linkedChatId).
+   * При оплате: разбанить во всех чатах/каналах, отправить ссылки (product.linkedChats).
    */
   async onAccessGranted(
     userId: string,
@@ -126,19 +130,73 @@ export class SubscriptionChannelService {
     const product = await this.prisma.product.findUnique({
       where: { id: productId }
     });
-    if (!product?.linkedChatId || !this.telegram) return;
+    const linkedChats = product?.linkedChats as Array<{ link?: string; identifier?: string; label?: string }> | null;
+    if (!linkedChats?.length || !this.telegram) return;
 
-    try {
-      await this.telegram.unbanChatMember(Number(product.linkedChatId), Number(telegramUserId)).catch(() => undefined);
-      const link = await this.telegram.createChatInviteLink(Number(product.linkedChatId), {
-        member_limit: 1
-      } as any);
-      await this.telegram.sendMessage(
-        Number(telegramUserId),
-        `Оплата подтверждена. Присоединяйтесь к каналу: ${(link as { invite_link?: string }).invite_link ?? link}`
-      );
-    } catch (e) {
-      logger.warn({ userId, productId, err: e }, "Failed to unban/send invite for subscription");
+    const lines: string[] = [];
+    const identifiers = getBanIdentifiers(linkedChats);
+    const chatId = (id: string) => id.startsWith("@") ? id : Number(id);
+
+    for (const ident of identifiers) {
+      try {
+        await this.telegram.unbanChatMember(chatId(ident), Number(telegramUserId)).catch(() => undefined);
+      } catch {
+        /* ignore */
+      }
     }
+
+    for (const entry of linkedChats) {
+      let url: string | null = null;
+      if (entry.link) {
+        url = entry.link;
+      } else if (entry.identifier) {
+        try {
+          const inv = await this.telegram.createChatInviteLink(chatId(entry.identifier), { member_limit: 1 } as any);
+          url = (inv as { invite_link?: string }).invite_link ?? null;
+        } catch {
+          /* skip */
+        }
+      }
+      if (url) {
+        const label = entry.label ?? "Перейти";
+        lines.push(`${label}: ${url}`);
+      }
+    }
+
+    if (lines.length) {
+      try {
+        await this.telegram.sendMessage(
+          Number(telegramUserId),
+          `Оплата подтверждена. Ваши ссылки:\n\n${lines.join("\n\n")}`
+        );
+      } catch (e) {
+        logger.warn({ userId, productId, err: e }, "Failed to send invite links");
+      }
+    }
+  }
+
+  /** Возвращает ссылки для кнопок — для отображения в секции после оплаты. Для identifier-only запрашивает invite через API. */
+  async resolveProductLinksForDisplay(
+    linkedChats: unknown,
+    telegram: import("telegraf").Telegram
+  ): Promise<Array<{ link: string; label: string }>> {
+    const direct = getDisplayLinks(linkedChats);
+    if (!Array.isArray(linkedChats)) return direct;
+
+    const chatId = (id: string) => id.startsWith("@") ? id : Number(id);
+    const out = [...direct];
+
+    for (const entry of linkedChats as Array<{ link?: string; identifier?: string; label?: string }>) {
+      if (entry.link) continue;
+      if (!entry.identifier) continue;
+      try {
+        const inv = await telegram.createChatInviteLink(chatId(entry.identifier), { member_limit: 1 } as any);
+        const url = (inv as { invite_link?: string }).invite_link;
+        if (url) out.push({ link: url, label: entry.label ?? "Перейти" });
+      } catch {
+        /* skip */
+      }
+    }
+    return out;
   }
 }

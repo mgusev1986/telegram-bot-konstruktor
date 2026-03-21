@@ -12,7 +12,7 @@ import {
   SCENE_CANCEL_DATA
 } from "../keyboards";
 import { makeCallbackData } from "../../common/callback-data";
-import type { DripStepInput } from "../../modules/drip/drip.service";
+import type { DripStepInput, DripStepButton } from "../../modules/drip/drip.service";
 import type { DictionaryKey } from "../../modules/i18n/static-dictionaries";
 
 export const CREATE_DRIP_SCENE = "create-drip-scene";
@@ -26,6 +26,7 @@ type DripPhase =
   | "trigger_param"
   | "lang"
   | "steps_action"
+  | "step_buttons"
   | "step_delay"
   | "step_delay_number"
   | "step_delay_unit"
@@ -43,6 +44,19 @@ interface DripWizardState {
   };
   phase: DripPhase;
   pendingDelay?: { value: number; unit: "MINUTES" | "HOURS" | "DAYS" };
+  stepButtons?: DripStepButton[];
+  stepButtonsPendingLabel?: string;
+}
+
+function isValidUrl(s: string): boolean {
+  const t = s.trim();
+  if (!t.startsWith("http://") && !t.startsWith("https://")) return false;
+  try {
+    const u = new URL(t);
+    return Boolean(u.hostname);
+  } catch {
+    return false;
+  }
 }
 
 const TRIGGER_TYPES: { type: DripTriggerType; key: string }[] = [
@@ -164,6 +178,9 @@ export const createDripScene = new Scenes.WizardScene<any>(CREATE_DRIP_SCENE, as
       const msg = state.draft.steps.length === 0 ? i18n.t(locale, "drip_no_steps_yet") : interpolate(i18n.t(locale, "drip_wizard_after_steps"), { count: String(state.draft.steps.length) });
       const rows: { text: string; data: string }[][] = [
         [{ text: state.draft.steps.length === 0 ? i18n.t(locale, "drip_btn_add_first_step") : i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],
+        ...(state.draft.steps.length > 0
+          ? [[{ text: "🔗 Кнопки к последнему шагу", data: makeCallbackData(DRIP_PREFIX, "add_buttons") }] as { text: string; data: string }[]]
+          : []),
         [{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]
       ];
       await ctx.reply(msg, dripKeyboard(i18n, locale, rows));
@@ -218,8 +235,67 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
         await ctx.answerCbQuery();
         if (state.draft.steps.length > 0) state.draft.steps.pop();
         const msg = state.draft.steps.length === 0 ? i18n.t(locale, "drip_no_steps_yet") : interpolate(i18n.t(locale, "drip_wizard_after_steps"), { count: String(state.draft.steps.length) });
-        const rows: { text: string; data: string }[][] = [[{ text: state.draft.steps.length === 0 ? i18n.t(locale, "drip_btn_add_first_step") : i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],[{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]];
+        const rows: { text: string; data: string }[][] = [
+          [{ text: state.draft.steps.length === 0 ? i18n.t(locale, "drip_btn_add_first_step") : i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],
+          ...(state.draft.steps.length > 0 ? [[{ text: "🔗 Кнопки к последнему шагу", data: makeCallbackData(DRIP_PREFIX, "add_buttons") }] as { text: string; data: string }[]] : []),
+          [{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]
+        ];
         await ctx.reply(msg, dripKeyboard(i18n, locale, rows));
+      } else if (parts[1] === "add_buttons" && state.draft.steps.length > 0) {
+        await ctx.answerCbQuery();
+        const lastStep = state.draft.steps[state.draft.steps.length - 1]!;
+        state.stepButtons = lastStep.buttons ? [...lastStep.buttons] : [];
+        state.stepButtonsPendingLabel = undefined;
+        state.phase = "step_buttons";
+        await ctx.reply(
+          "🔗 Кнопки к письму. Добавьте URL-кнопки (например: Стать партнёром | https://...)\n\nТекущие: " +
+            (state.stepButtons.length === 0 ? "—" : state.stepButtons.map((b, i) => `${i + 1}. ${b.label}`).join(", ")),
+          dripKeyboard(i18n, locale, [
+            [{ text: "➕ Добавить кнопку", data: makeCallbackData(DRIP_PREFIX, "btn_add") }],
+            [{ text: "✅ Готово", data: makeCallbackData(DRIP_PREFIX, "btn_done") }],
+            ...(state.stepButtons.length > 0 ? [[{ text: "🗑 Удалить последнюю", data: makeCallbackData(DRIP_PREFIX, "btn_remove") }] as { text: string; data: string }[]] : [])
+          ])
+        );
+      }
+      return;
+    }
+
+    if (state.phase === "step_buttons" && prefix === DRIP_PREFIX) {
+      if (parts[1] === "btn_add") {
+        await ctx.answerCbQuery();
+        state.stepButtonsPendingLabel = undefined;
+        await ctx.reply("Введите текст кнопки и URL через | (например: Стать партнёром | https://example.com) или только текст кнопки:", dripKeyboard(i18n, locale, []));
+        return;
+      }
+      if (parts[1] === "btn_remove" && state.stepButtons && state.stepButtons.length > 0) {
+        await ctx.answerCbQuery();
+        state.stepButtons.pop();
+        await ctx.reply(
+          "Текущие кнопки: " + (state.stepButtons!.length === 0 ? "—" : state.stepButtons!.map((b, i) => `${i + 1}. ${b.label}`).join(", ")),
+          dripKeyboard(i18n, locale, [
+            [{ text: "➕ Добавить кнопку", data: makeCallbackData(DRIP_PREFIX, "btn_add") }],
+            [{ text: "✅ Готово", data: makeCallbackData(DRIP_PREFIX, "btn_done") }],
+            ...(state.stepButtons!.length > 0 ? [[{ text: "🗑 Удалить последнюю", data: makeCallbackData(DRIP_PREFIX, "btn_remove") }] as { text: string; data: string }[]] : [])
+          ])
+        );
+        return;
+      }
+      if (parts[1] === "btn_done") {
+        await ctx.answerCbQuery();
+        const lastStep = state.draft.steps[state.draft.steps.length - 1];
+        if (lastStep != null) lastStep.buttons = state.stepButtons ?? [];
+        state.stepButtons = undefined;
+        state.phase = "steps_action";
+        const msg = interpolate(i18n.t(locale, "drip_wizard_after_steps"), { count: String(state.draft.steps.length) });
+        const rows: { text: string; data: string }[][] = [
+          [{ text: i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],
+          [{ text: "🔗 Кнопки к последнему шагу", data: makeCallbackData(DRIP_PREFIX, "add_buttons") }],
+          [{ text: i18n.t(locale, "drip_btn_edit_last"), data: makeCallbackData(DRIP_PREFIX, "edit_last") }],
+          [{ text: i18n.t(locale, "drip_btn_delete_last"), data: makeCallbackData(DRIP_PREFIX, "delete_last") }],
+          [{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]
+        ];
+        await ctx.reply(msg, dripKeyboard(i18n, locale, rows));
+        return;
       }
       return;
     }
@@ -264,7 +340,13 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
         await ctx.answerCbQuery();
         state.phase = "steps_action";
         const msg = interpolate(i18n.t(locale, "drip_wizard_after_steps"), { count: String(state.draft.steps.length) });
-        const rows: { text: string; data: string }[][] = [[{ text: i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],[{ text: i18n.t(locale, "drip_btn_edit_last"), data: makeCallbackData(DRIP_PREFIX, "edit_last") }],[{ text: i18n.t(locale, "drip_btn_delete_last"), data: makeCallbackData(DRIP_PREFIX, "delete_last") }],[{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]];
+        const rows: { text: string; data: string }[][] = [
+          [{ text: i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],
+          [{ text: "🔗 Кнопки к последнему шагу", data: makeCallbackData(DRIP_PREFIX, "add_buttons") }],
+          [{ text: i18n.t(locale, "drip_btn_edit_last"), data: makeCallbackData(DRIP_PREFIX, "edit_last") }],
+          [{ text: i18n.t(locale, "drip_btn_delete_last"), data: makeCallbackData(DRIP_PREFIX, "delete_last") }],
+          [{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]
+        ];
         await ctx.reply(msg, dripKeyboard(i18n, locale, rows));
       }
       return;
@@ -295,6 +377,48 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
       state.draft.triggerParam = param || undefined;
       state.phase = "lang";
       await ctx.reply(i18n.t(locale, "drip_wizard_step_language"), buildLanguageSceneKeyboard(i18n, locale, DRIP_PREFIX));
+      return;
+    }
+
+    if (state.phase === "step_buttons") {
+      const text = readTextMessage(ctx).trim();
+      if (!state.stepButtons) state.stepButtons = [];
+      if (state.stepButtonsPendingLabel) {
+        if (!isValidUrl(text)) {
+          await ctx.reply("Введите корректный URL (http:// или https://).", dripKeyboard(i18n, locale, []));
+          return;
+        }
+        state.stepButtons.push({ type: "url", label: state.stepButtonsPendingLabel, url: text });
+        state.stepButtonsPendingLabel = undefined;
+      } else {
+        const sep = text.indexOf("|");
+        if (sep >= 0) {
+          const label = text.slice(0, sep).trim();
+          const urlPart = text.slice(sep + 1).trim();
+          if (label && urlPart && isValidUrl(urlPart)) {
+            state.stepButtons.push({ type: "url", label, url: urlPart });
+          } else {
+            await ctx.reply("Формат: Текст кнопки | URL (например: Стать партнёром | https://example.com)", dripKeyboard(i18n, locale, []));
+            return;
+          }
+        } else {
+          if (!text || text.length > 64) {
+            await ctx.reply("Текст кнопки: 1–64 символа.", dripKeyboard(i18n, locale, []));
+            return;
+          }
+          state.stepButtonsPendingLabel = text;
+          await ctx.reply("Теперь введите URL ссылки:", dripKeyboard(i18n, locale, []));
+          return;
+        }
+      }
+      await ctx.reply(
+        "✅ Кнопка добавлена. Текущие: " + (state.stepButtons.length === 0 ? "—" : state.stepButtons.map((b, i) => `${i + 1}. ${b.label}`).join(", ")),
+        dripKeyboard(i18n, locale, [
+          [{ text: "➕ Добавить кнопку", data: makeCallbackData(DRIP_PREFIX, "btn_add") }],
+          [{ text: "✅ Готово", data: makeCallbackData(DRIP_PREFIX, "btn_done") }],
+          ...(state.stepButtons.length > 0 ? [[{ text: "🗑 Удалить последнюю", data: makeCallbackData(DRIP_PREFIX, "btn_remove") }] as { text: string; data: string }[]] : [])
+        ])
+      );
       return;
     }
 
@@ -347,6 +471,7 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
 
       const rows: { text: string; data: string }[][] = [
         [{ text: i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],
+        [{ text: "🔗 Кнопки к последнему шагу", data: makeCallbackData(DRIP_PREFIX, "add_buttons") }],
         [{ text: i18n.t(locale, "drip_btn_edit_last"), data: makeCallbackData(DRIP_PREFIX, "edit_last") }],
         [{ text: i18n.t(locale, "drip_btn_delete_last"), data: makeCallbackData(DRIP_PREFIX, "delete_last") }],
         [{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]

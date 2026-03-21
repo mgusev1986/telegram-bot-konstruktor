@@ -147,6 +147,7 @@ export const addDripStepScene = new Scenes.WizardScene<any>(
     await ctx.reply(
       "✅ Шаг добавлен.",
       Markup.inlineKeyboard([
+        [Markup.button.callback("🔗 Добавить кнопки к письму", makeCallbackData(PREFIX, "add_buttons", saved.id))],
         [Markup.button.callback("↩️ Назад к цепочке", makeCallbackData(PREFIX, "open", state.campaignId))],
         [Markup.button.callback(i18n.t(locale, "return_to_admin"), makeCallbackData("admin", "open"))],
         ...buildNavigationRow(i18n, locale, { toMain: true }).map((btn) => [btn])
