@@ -3,12 +3,18 @@ import { Markup, Scenes } from "telegraf";
 import type { BotContext } from "../context";
 import { buildNavigationRow, SCENE_CANCEL_DATA } from "../keyboards";
 import { makeCallbackData } from "../../common/callback-data";
-import type { DripStepButton } from "../../modules/drip/drip.service";
+import type { DripStepButton, DripSystemKind } from "../../modules/drip/drip.service";
 
 export const ADD_DRIP_STEP_BUTTONS_SCENE = "add-drip-step-buttons-scene";
 const PREFIX = "drip_btns";
 
-type Phase = "menu" | "add_label" | "add_url";
+type Phase = "menu" | "choose_type" | "add_label" | "add_url" | "add_system_label";
+
+const SYSTEM_TARGETS: { kind: DripSystemKind; labelRu: string }[] = [
+  { kind: "partner_register", labelRu: "Стать партнёром" },
+  { kind: "mentor_contact", labelRu: "Связаться с наставником" },
+  { kind: "main_menu", labelRu: "В главное меню" }
+];
 
 type State = {
   stepId: string;
@@ -17,6 +23,7 @@ type State = {
   buttons: DripStepButton[];
   phase: Phase;
   pendingLabel?: string;
+  pendingSystemKind?: DripSystemKind;
 };
 
 function isValidUrl(s: string): boolean {
@@ -37,9 +44,18 @@ const kb = (i18n: BotContext["services"]["i18n"], locale: string, rows: { text: 
     ...buildNavigationRow(i18n, locale, { toMain: true }).map((btn) => [btn])
   ]);
 
+function formatButtonDest(b: DripStepButton): string {
+  if (b.type === "url") return b.url;
+  if (b.type === "system") {
+    const t = SYSTEM_TARGETS.find((x) => x.kind === b.systemKind);
+    return t ? `[${t.labelRu}]` : `[${b.systemKind}]`;
+  }
+  return "?";
+}
+
 function formatButtonsList(buttons: DripStepButton[]): string {
   if (buttons.length === 0) return "—";
-  return buttons.map((b, i) => `${i + 1}. ${b.label} → ${b.url}`).join("\n");
+  return buttons.map((b, i) => `${i + 1}. ${b.label} → ${formatButtonDest(b)}`).join("\n");
 }
 
 export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
@@ -91,9 +107,30 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
       if (parts[0] === PREFIX) {
         await ctx.answerCbQuery();
         if (parts[1] === "add") {
+          state.phase = "choose_type";
+          await ctx.reply(
+            "Выберите куда ведёт кнопка (системные кнопки сохраняют сетевую логику — каждый пользователь попадает к своему партнёру/наставнику):",
+            kb(i18n, locale, [
+              ...SYSTEM_TARGETS.map((t) => [{ text: `🔗 ${t.labelRu}`, data: makeCallbackData(PREFIX, "sys", t.kind) }]),
+              [{ text: "📎 Своя ссылка (URL)", data: makeCallbackData(PREFIX, "url") }]
+            ])
+          );
+          return;
+        }
+        if (parts[1] === "sys" && parts[2] && ["partner_register", "mentor_contact", "main_menu"].includes(parts[2])) {
+          state.pendingSystemKind = parts[2] as DripSystemKind;
+          state.phase = "add_system_label";
+          const defLabel = SYSTEM_TARGETS.find((t) => t.kind === parts[2])?.labelRu ?? parts[2];
+          await ctx.reply(
+            `Введите текст кнопки (или отправьте «.» чтобы использовать «${defLabel}»):`,
+            kb(i18n, locale, [])
+          );
+          return;
+        }
+        if (parts[1] === "url") {
           state.phase = "add_label";
           await ctx.reply(
-            "Введите текст кнопки (например: Стать партнёром):",
+            "Введите текст кнопки и URL через | (например: Стать партнёром | https://example.com):",
             kb(i18n, locale, [])
           );
           return;
@@ -131,6 +168,20 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
 
     if (ctx.message && "text" in ctx.message) {
       const text = ctx.message.text?.trim() ?? "";
+      if (state.phase === "add_system_label" && state.pendingSystemKind) {
+        const defLabel = SYSTEM_TARGETS.find((t) => t.kind === state.pendingSystemKind)?.labelRu ?? state.pendingSystemKind;
+        const label = text === "." || !text ? defLabel : text;
+        if (label.length > 64) {
+          await ctx.reply("Текст кнопки: до 64 символов.");
+          return;
+        }
+        state.buttons.push({ type: "system", label, systemKind: state.pendingSystemKind });
+        state.pendingSystemKind = undefined;
+        state.phase = "menu";
+        await ctx.reply("✅ Системная кнопка добавлена.", kb(i18n, locale, []));
+        await showButtonsMenu(ctx, state);
+        return;
+      }
       if (state.phase === "add_label") {
         if (!text || text.length > 64) {
           await ctx.reply("Текст кнопки: от 1 до 64 символов.");
@@ -178,12 +229,10 @@ async function showButtonsMenu(ctx: BotContext, state: State) {
   const msg = [
     "🔗 Кнопки к письму",
     "",
-    "Добавленные кнопки появятся под сообщением, когда пользователь получит письмо.",
+    "Системные кнопки (Стать партнёром, Связь с наставником) ведут каждого пользователя к своему партнёру/наставнику — реферальная логика сохраняется.",
     "",
     "Текущие кнопки:",
-    list,
-    "",
-    "Можно ввести «Текст | URL» одной строкой (например: Стать партнёром | https://example.com)"
+    list
   ].join("\n");
 
   const rows: { text: string; data: string }[][] = [

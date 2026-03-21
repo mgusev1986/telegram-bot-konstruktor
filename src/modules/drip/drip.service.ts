@@ -3,26 +3,20 @@ import { Markup } from "telegraf";
 import type { Telegram } from "telegraf";
 
 import { sendRichMessage } from "../../common/media";
+import { makeCallbackData } from "../../common/callback-data";
+import type { CabinetService } from "../cabinet/cabinet.service";
 
-/** Inline button for drip step message: URL button (opens link) */
-export interface DripStepButton {
-  type: "url";
-  label: string;
-  url: string;
-}
+const NAV_ROOT_DATA = "nav:root";
+import type { User } from "@prisma/client";
 
-function buildDripStepReplyMarkup(buttonsJson: unknown): { reply_markup: object } | Record<string, never> {
-  const arr = Array.isArray(buttonsJson) ? buttonsJson : [];
-  if (arr.length === 0) return {};
-  const rows: Array<Array<{ text: string; url: string }>> = [];
-  for (const b of arr) {
-    if (b && typeof b === "object" && b.type === "url" && typeof b.label === "string" && typeof b.url === "string") {
-      rows.push([Markup.button.url(b.label, b.url)]);
-    }
-  }
-  if (rows.length === 0) return {};
-  return Markup.inlineKeyboard(rows);
-}
+/** Inline button for drip step message */
+export type DripStepButton =
+  | { type: "url"; label: string; url: string }
+  | { type: "system"; label: string; systemKind: "partner_register" | "mentor_contact" | "main_menu" };
+
+export const DRIP_SYSTEM_KINDS = ["partner_register", "mentor_contact", "main_menu"] as const;
+export type DripSystemKind = (typeof DRIP_SYSTEM_KINDS)[number];
+
 import { renderPageContent } from "../../common/page-content-render";
 import type { AuditService } from "../audit/audit.service";
 import type { I18nService } from "../i18n/i18n.service";
@@ -54,8 +48,61 @@ export class DripService {
     private readonly scheduler: SchedulerService,
     private readonly i18n: I18nService,
     private readonly audit: AuditService,
-    private readonly botInstanceId?: string
+    private readonly botInstanceId?: string,
+    private readonly cabinet?: CabinetService
   ) {}
+
+  /** Build inline keyboard for drip step buttons, resolving system targets per recipient. */
+  public async buildButtonsReplyMarkup(buttonsJson: unknown, user: User): Promise<{ reply_markup: object } | Record<string, never>> {
+    const arr = Array.isArray(buttonsJson) ? buttonsJson : [];
+    if (arr.length === 0) return {};
+    const rows: Array<Array<ReturnType<typeof Markup.button.url> | ReturnType<typeof Markup.button.callback>>> = [];
+
+    for (const b of arr) {
+      if (!b || typeof b !== "object" || typeof (b as any).label !== "string") continue;
+
+      const label = (b as any).label as string;
+
+      if ((b as any).type === "url" && typeof (b as any).url === "string") {
+        rows.push([Markup.button.url(label, (b as any).url)]);
+        continue;
+      }
+
+      if ((b as any).type === "system" && typeof (b as any).systemKind === "string") {
+        const kind = (b as any).systemKind as DripSystemKind;
+
+        if (kind === "main_menu") {
+          rows.push([Markup.button.callback(label, NAV_ROOT_DATA)]);
+          continue;
+        }
+
+        if (kind === "partner_register" && this.cabinet) {
+          const url = await this.cabinet.getPartnerRegisterLinkForUser(user);
+          if (url) rows.push([Markup.button.url(label, url)]);
+          continue;
+        }
+
+        if (kind === "mentor_contact") {
+          const mentorUsername =
+            user.mentorUserId
+              ? (await this.prisma.user.findUnique({
+                  where: { id: user.mentorUserId },
+                  select: { username: true }
+                }))?.username ?? null
+              : null;
+          if (mentorUsername?.trim()) {
+            rows.push([Markup.button.url(label, `https://t.me/${mentorUsername.trim()}`)]);
+          } else {
+            rows.push([Markup.button.callback(label, makeCallbackData("mentor", "open"))]);
+          }
+          continue;
+        }
+      }
+    }
+
+    if (rows.length === 0) return {};
+    return Markup.inlineKeyboard(rows);
+  }
 
   public setTelegram(telegram: Telegram): void {
     this.telegram = telegram;
@@ -344,7 +391,7 @@ export class DripService {
     const localization = this.i18n.pickLocalized(step.localizations, progress.user.selectedLanguage) ?? step.localizations[0];
 
     if (this.telegram && localization) {
-      const replyMarkup = buildDripStepReplyMarkup(localization.buttonsJson);
+      const replyMarkup = await this.buildButtonsReplyMarkup(localization.buttonsJson, progress.user);
       await sendRichMessage(
         this.telegram,
         progress.user.telegramUserId,

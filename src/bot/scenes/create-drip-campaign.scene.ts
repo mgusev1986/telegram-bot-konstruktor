@@ -12,7 +12,7 @@ import {
   SCENE_CANCEL_DATA
 } from "../keyboards";
 import { makeCallbackData } from "../../common/callback-data";
-import type { DripStepInput, DripStepButton } from "../../modules/drip/drip.service";
+import type { DripStepInput, DripStepButton, DripSystemKind } from "../../modules/drip/drip.service";
 import type { DictionaryKey } from "../../modules/i18n/static-dictionaries";
 
 export const CREATE_DRIP_SCENE = "create-drip-scene";
@@ -46,7 +46,14 @@ interface DripWizardState {
   pendingDelay?: { value: number; unit: "MINUTES" | "HOURS" | "DAYS" };
   stepButtons?: DripStepButton[];
   stepButtonsPendingLabel?: string;
+  stepButtonsPendingSystemKind?: DripSystemKind;
 }
+
+const DRIP_SYSTEM_TARGETS: { kind: DripSystemKind; labelRu: string }[] = [
+  { kind: "partner_register", labelRu: "Стать партнёром" },
+  { kind: "mentor_contact", labelRu: "Связаться с наставником" },
+  { kind: "main_menu", labelRu: "В главное меню" }
+];
 
 function isValidUrl(s: string): boolean {
   const t = s.trim();
@@ -264,14 +271,37 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
       if (parts[1] === "btn_add") {
         await ctx.answerCbQuery();
         state.stepButtonsPendingLabel = undefined;
-        await ctx.reply("Введите текст кнопки и URL через | (например: Стать партнёром | https://example.com) или только текст кнопки:", dripKeyboard(i18n, locale, []));
+        state.stepButtonsPendingSystemKind = undefined;
+        await ctx.reply(
+          "Выберите куда ведёт кнопка (системные — каждый пользователь попадёт к своему партнёру/наставнику):",
+          dripKeyboard(i18n, locale, [
+            ...DRIP_SYSTEM_TARGETS.map((t) => [{ text: `🔗 ${t.labelRu}`, data: makeCallbackData(DRIP_PREFIX, "btn_sys", t.kind) }]),
+            [{ text: "📎 Своя ссылка (URL)", data: makeCallbackData(DRIP_PREFIX, "btn_url") }]
+          ])
+        );
+        return;
+      }
+      if (parts[1] === "btn_sys" && parts[2] && ["partner_register", "mentor_contact", "main_menu"].includes(parts[2])) {
+        await ctx.answerCbQuery();
+        state.stepButtonsPendingSystemKind = parts[2] as DripSystemKind;
+        const defLabel = DRIP_SYSTEM_TARGETS.find((t) => t.kind === parts[2])?.labelRu ?? parts[2];
+        await ctx.reply(
+          `Введите текст кнопки или «.» для «${defLabel}»:`,
+          dripKeyboard(i18n, locale, [])
+        );
+        return;
+      }
+      if (parts[1] === "btn_url") {
+        await ctx.answerCbQuery();
+        await ctx.reply("Введите текст кнопки и URL через | (например: Стать партнёром | https://example.com):", dripKeyboard(i18n, locale, []));
         return;
       }
       if (parts[1] === "btn_remove" && state.stepButtons && state.stepButtons.length > 0) {
         await ctx.answerCbQuery();
         state.stepButtons.pop();
+        const formatBtn = (b: DripStepButton, i: number) => (b.type === "system" ? `${b.label} [${b.systemKind}]` : b.label);
         await ctx.reply(
-          "Текущие кнопки: " + (state.stepButtons!.length === 0 ? "—" : state.stepButtons!.map((b, i) => `${i + 1}. ${b.label}`).join(", ")),
+          "Текущие кнопки: " + (state.stepButtons!.length === 0 ? "—" : state.stepButtons!.map((b, i) => `${i + 1}. ${formatBtn(b, i)}`).join(", ")),
           dripKeyboard(i18n, locale, [
             [{ text: "➕ Добавить кнопку", data: makeCallbackData(DRIP_PREFIX, "btn_add") }],
             [{ text: "✅ Готово", data: makeCallbackData(DRIP_PREFIX, "btn_done") }],
@@ -383,7 +413,12 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
     if (state.phase === "step_buttons") {
       const text = readTextMessage(ctx).trim();
       if (!state.stepButtons) state.stepButtons = [];
-      if (state.stepButtonsPendingLabel) {
+      if (state.stepButtonsPendingSystemKind) {
+        const defLabel = DRIP_SYSTEM_TARGETS.find((t) => t.kind === state.stepButtonsPendingSystemKind)?.labelRu ?? state.stepButtonsPendingSystemKind;
+        const label = text === "." || !text ? defLabel : (text.length > 64 ? text.slice(0, 64) : text);
+        state.stepButtons.push({ type: "system", label, systemKind: state.stepButtonsPendingSystemKind });
+        state.stepButtonsPendingSystemKind = undefined;
+      } else if (state.stepButtonsPendingLabel) {
         if (!isValidUrl(text)) {
           await ctx.reply("Введите корректный URL (http:// или https://).", dripKeyboard(i18n, locale, []));
           return;
@@ -411,8 +446,12 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
           return;
         }
       }
+      const formatBtn = (b: DripStepButton, i: number) => {
+        const label = b.type === "system" ? `${b.label} [${b.systemKind}]` : b.label;
+        return `${i + 1}. ${label}`;
+      };
       await ctx.reply(
-        "✅ Кнопка добавлена. Текущие: " + (state.stepButtons.length === 0 ? "—" : state.stepButtons.map((b, i) => `${i + 1}. ${b.label}`).join(", ")),
+        "✅ Кнопка добавлена. Текущие: " + (state.stepButtons.length === 0 ? "—" : state.stepButtons.map(formatBtn).join(", ")),
         dripKeyboard(i18n, locale, [
           [{ text: "➕ Добавить кнопку", data: makeCallbackData(DRIP_PREFIX, "btn_add") }],
           [{ text: "✅ Готово", data: makeCallbackData(DRIP_PREFIX, "btn_done") }],
