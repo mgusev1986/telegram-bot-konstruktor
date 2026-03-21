@@ -55,19 +55,7 @@ export class BotRuntimeManager {
 
     const shouldLaunch = opts?.launch ?? true;
     if (shouldLaunch && canBeLaunched) {
-      const LAUNCH_TIMEOUT_MS = 25_000;
-      const launchPromise = bot.launch();
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          try {
-            bot.stop("SIGTERM");
-          } catch {
-            // ignore
-          }
-          reject(new Error(`bot.launch() timed out after ${LAUNCH_TIMEOUT_MS}ms (check api.telegram.org reachability, token validity)`));
-        }, LAUNCH_TIMEOUT_MS);
-      });
-      await Promise.race([launchPromise, timeoutPromise]);
+      await bot.launch();
       logger.info({ botInstanceId, username: botInstance.telegramBotUsername }, "Telegram polling started");
     }
 
