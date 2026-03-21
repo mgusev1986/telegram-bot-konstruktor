@@ -219,19 +219,34 @@ const bootstrap = async (): Promise<void> => {
   };
 
   await ensureInactivityReminderTemplates();
-  // Backfill for existing single-bot data: map legacy rows (botInstanceId=NULL) to current default instance.
-  // Skip users that would create unique constraint (telegram_user_id, bot_instance_id) — canonical row already exists.
+  // Backfill: consolidate data to the current default bot instance.
+  // 1) Rows with botInstanceId=null (legacy single-bot).
+  // 2) Rows with botInstanceId pointing to another BotInstance with same telegramBotUsername
+  //    (e.g. duplicate instances or "primary" changed after deploy) — migrate to current.
+  const sameUsernameBotIds =
+    env.BOT_USERNAME?.trim()
+      ? (await prisma.botInstance.findMany({
+          where: { telegramBotUsername: env.BOT_USERNAME },
+          select: { id: true }
+        }))
+      : [];
+  const otherBotIds = sameUsernameBotIds.map((b) => b.id).filter((id) => id !== botInstance.id);
+  const migrateWhere =
+    otherBotIds.length > 0
+      ? ({ OR: [{ botInstanceId: null }, { botInstanceId: { in: otherBotIds } }] } as const)
+      : ({ botInstanceId: null } as const);
+
   const existingTelegramIds = await prisma.user.findMany({
     where: { botInstanceId: botInstance.id },
     select: { telegramUserId: true }
   });
   const legacyToUpdate = await prisma.user.findMany({
     where: {
-      botInstanceId: null,
+      ...(migrateWhere as object),
       ...(existingTelegramIds.length > 0
         ? { NOT: { telegramUserId: { in: existingTelegramIds.map((u) => u.telegramUserId) } } }
         : {})
-    },
+    } as any,
     select: { id: true }
   });
   if (legacyToUpdate.length > 0) {
@@ -240,24 +255,27 @@ const bootstrap = async (): Promise<void> => {
       data: { botInstanceId: botInstance.id }
     });
   }
-  await prisma.dripCampaign.updateMany({
-    where: { botInstanceId: null },
+  const dripUpdated = await prisma.dripCampaign.updateMany({
+    where: migrateWhere as any,
     data: { botInstanceId: botInstance.id }
   });
+  if (dripUpdated.count > 0) {
+    logger.info({ count: dripUpdated.count }, "Backfill: migrated drip campaigns to current bot instance");
+  }
   await prisma.broadcast.updateMany({
-    where: { botInstanceId: null },
+    where: migrateWhere as any,
     data: { botInstanceId: botInstance.id }
   });
   await prisma.userDripProgress.updateMany({
-    where: { botInstanceId: null },
+    where: migrateWhere as any,
     data: { botInstanceId: botInstance.id }
   });
   await prisma.payment.updateMany({
-    where: { botInstanceId: null },
+    where: migrateWhere as any,
     data: { botInstanceId: botInstance.id }
   });
   await prisma.contentProgress.updateMany({
-    where: { botInstanceId: null },
+    where: migrateWhere as any,
     data: { botInstanceId: botInstance.id }
   });
   const runtimeManager = new BotRuntimeManager(prisma, redis, bullConnection);

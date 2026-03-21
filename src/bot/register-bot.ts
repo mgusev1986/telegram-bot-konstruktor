@@ -504,8 +504,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     if (!isAdminRole(effectiveUiRole)) return undefined;
     const menuEmpty = await services.menu.isRootMenuEmpty();
     return {
-      showOnboardingContinue:
-        user.onboardingCompletedAt == null && (user.onboardingStep != null || menuEmpty),
+      // Показывать «Продолжить настройку» только когда меню пустое — если разделы уже созданы, бот считается настроенным
+      showOnboardingContinue: user.onboardingCompletedAt == null && menuEmpty,
       showOnboardingRestart: user.onboardingCompletedAt != null,
       // UI visibility must follow the *effective* role (including SUPER_ADMIN preview override),
       // but production permissions are still enforced in backend guards.

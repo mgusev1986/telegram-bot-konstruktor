@@ -41,21 +41,44 @@ else
 fi
 echo ""
 
-# 2. Выполнение команд на сервере
+# 2. Бэкап БД перед деплоем (страховка)
+PRE_BACKUP_CMD="cd $HETZNER_APP_DIR && (bash scripts/server-backup-rotating.sh 2>/dev/null || true)"
+
+# 3. Выполнение команд на сервере
 RUN_CMD="cd $HETZNER_APP_DIR && git pull && docker compose -f docker-compose.prod.yml build --no-cache bot && docker compose -f docker-compose.prod.yml up -d --force-recreate bot"
 
-echo "Шаг 2: Обновление на сервере..."
+echo "Шаг 2: Бэкап БД перед деплоем..."
+if ssh -o BatchMode=yes -o ConnectTimeout=5 "$SSH_TARGET" "echo ok" 2>/dev/null | grep -q "ok"; then
+  ssh "$SSH_TARGET" "$PRE_BACKUP_CMD" 2>/dev/null || true
+fi
+echo ""
+
+echo "Шаг 3: Обновление на сервере..."
 echo "  $RUN_CMD"
 echo ""
 
 MIGRATE_CMD="cd $HETZNER_APP_DIR && docker compose -f docker-compose.prod.yml exec -T bot npx prisma migrate deploy"
 
+do_ssh() {
+  ssh "$@"
+}
+
+do_sshpass() {
+  sshpass -e ssh -o StrictHostKeyChecking=accept-new "$@"
+}
+
+run_full_deploy() {
+  local ssh_cmd="$1"
+  $ssh_cmd "$SSH_TARGET" "$PRE_BACKUP_CMD" 2>/dev/null || true
+  $ssh_cmd "$SSH_TARGET" "$RUN_CMD"
+  echo ""
+  echo "Шаг 4: Применение миграций..."
+  $ssh_cmd "$SSH_TARGET" "$MIGRATE_CMD"
+}
+
 # Проверяем, работает ли SSH по ключу
 if ssh -o BatchMode=yes -o ConnectTimeout=5 "$SSH_TARGET" "echo ok" 2>/dev/null | grep -q "ok"; then
-  ssh "$SSH_TARGET" "$RUN_CMD"
-  echo ""
-  echo "Шаг 3: Применение миграций..."
-  ssh "$SSH_TARGET" "$MIGRATE_CMD"
+  run_full_deploy "do_ssh"
   echo ""
   echo "✓ Деплой завершён"
   exit 0
@@ -74,10 +97,7 @@ if command -v sshpass &>/dev/null; then
     exit 1
   fi
   export SSHPASS="${HETZNER_SSH_PASSWORD}"
-  sshpass -e ssh -o StrictHostKeyChecking=accept-new "$SSH_TARGET" "$RUN_CMD"
-  echo ""
-  echo "Шаг 3: Применение миграций..."
-  sshpass -e ssh -o StrictHostKeyChecking=accept-new "$SSH_TARGET" "$MIGRATE_CMD"
+  run_full_deploy "do_sshpass"
   echo ""
   echo "✓ Деплой завершён"
   exit 0
