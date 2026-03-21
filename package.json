@@ -19,6 +19,7 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:seed-demo": "tsx prisma/seed-demo-structure.ts",
     "deploy": "bash scripts/deploy.sh",
+    "deploy:hetzner": "bash scripts/deploy-hetzner.sh",
     "lint:types": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

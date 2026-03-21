@@ -8,3 +8,4 @@ tmp
 generated
 .snapshots
 backups/
+.env.deploy
