@@ -1327,7 +1327,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             ctx.telegram,
             ctx.chat?.id ?? user.telegramUserId,
             { text: pageTitle },
-            buildPageEditorKeyboard(pageId, childList, locale, services.i18n)
+            buildPageEditorKeyboard(pageId, childList, locale, services.i18n, {
+              canManageSystemButtons: pageId === "root" && resolveEffectiveRole(ctx) === "ALPHA_OWNER"
+            })
           );
           return;
         }
@@ -1501,7 +1503,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           { text: screenText },
           buildPageEditorKeyboard(pageId, childList, locale, services.i18n, {
             hasVideo,
-            editingContentLanguageCode: contentLanguageCode
+            editingContentLanguageCode: contentLanguageCode,
+            canManageSystemButtons: pageId === "root" && resolveEffectiveRole(ctx) === "ALPHA_OWNER"
           })
         );
       };

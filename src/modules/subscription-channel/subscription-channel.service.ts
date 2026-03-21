@@ -91,12 +91,13 @@ export class SubscriptionChannelService {
   }
 
   /**
-   * При истечении: отзывает доступ, исключает из всех чатов/каналов (product.linkedChats).
+   * При истечении: отзывает доступ, исключает из всех чатов/каналов (product.linkedChats),
+   * отправляет DM пользователю о необходимости продления.
    */
   async processExpiry(accessRightId: string): Promise<void> {
     const right = await this.prisma.userAccessRight.findUnique({
       where: { id: accessRightId },
-      include: { user: true, product: true }
+      include: { user: true, product: { include: { localizations: true } } }
     });
     if (!right || right.status !== "ACTIVE") return;
 
@@ -107,14 +108,41 @@ export class SubscriptionChannelService {
 
     const identifiers = getBanIdentifiers(right.product.linkedChats);
     if (identifiers.length && this.telegram) {
-      const chatId = (id: string) => id.startsWith("@") ? id : Number(id);
+      const chatId = (id: string) => (id.startsWith("@") ? id : Number(id));
       for (const ident of identifiers) {
         try {
           await this.telegram.banChatMember(chatId(ident), Number(right.user.telegramUserId));
           logger.info({ accessRightId, userId: right.userId, chatId: ident }, "Banned user from subscription chat");
         } catch (e) {
-          logger.warn({ accessRightId, chatId: ident, err: e }, "Failed to ban user from chat");
+          const errMsg = e instanceof Error ? e.message : String(e);
+          const hint =
+            /not enough rights|need admin|CHAT_ADMIN_REQUIRED|not an admin/i.test(errMsg)
+              ? " (бот не администратор в чате/канале или нет прав на бан)"
+              : "";
+          logger.warn(
+            { accessRightId, chatId: ident, err: e },
+            `Failed to ban user from chat${hint}`
+          );
         }
+      }
+    } else if (identifiers.length === 0 && Array.isArray(right.product.linkedChats) && (right.product.linkedChats as any[]).length > 0) {
+      logger.warn(
+        { accessRightId, productId: right.productId },
+        "linkedChats has no identifier entries (only invite links); cannot ban via API. Add chat identifier (numeric id or @username) for ban on expiry."
+      );
+    }
+
+    const expiryMsg =
+      right.user.selectedLanguage === "en"
+        ? "Your access has expired. Please renew your subscription to regain access to the chat and materials."
+        : right.user.selectedLanguage === "de"
+          ? "Ihr Zugang ist abgelaufen. Bitte verlängern Sie Ihr Abonnement."
+          : "Ваш доступ истёк. Продлите подписку, чтобы снова получить доступ к чату и материалам.";
+    if (this.telegram) {
+      try {
+        await this.telegram.sendMessage(Number(right.user.telegramUserId), expiryMsg);
+      } catch (e) {
+        logger.warn({ accessRightId, userId: right.userId, err: e }, "Failed to send expiry DM to user");
       }
     }
   }

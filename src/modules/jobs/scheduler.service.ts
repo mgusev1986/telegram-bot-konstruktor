@@ -37,7 +37,11 @@ export class SchedulerService {
     runAt: Date,
     idempotencyKey: string
   ) {
-    const payloadWithBot = this.botInstanceId ? { ...payloadJson, botInstanceId: this.botInstanceId } : payloadJson;
+    const effectiveBotId =
+      payloadJson.botInstanceId && String(payloadJson.botInstanceId).trim()
+        ? String(payloadJson.botInstanceId)
+        : this.botInstanceId;
+    const payloadWithBot = effectiveBotId ? { ...payloadJson, botInstanceId: effectiveBotId } : payloadJson;
     const delayMs = Math.max(0, runAt.getTime() - Date.now());
     const existing = await this.prisma.scheduledJob.findUnique({
       where: { idempotencyKey }

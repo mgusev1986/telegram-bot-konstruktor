@@ -365,6 +365,18 @@ describe("Keyboards: page editor language hub", () => {
     callbacks.forEach((callback) => expect(callback.length).toBeLessThanOrEqual(64));
   });
 
+  it("exposes system buttons link when canManageSystemButtons and root", () => {
+    const kb = buildPageEditorKeyboard("root", [], lang, i18n, { canManageSystemButtons: true });
+    const callbacks = getAllCallbackData(kb as any);
+    expect(callbacks).toContain("admin:system_buttons");
+  });
+
+  it("does not expose system buttons link when canManageSystemButtons false", () => {
+    const kb = buildPageEditorKeyboard("root", [], lang, i18n, {});
+    const callbacks = getAllCallbackData(kb as any);
+    expect(callbacks).not.toContain("admin:system_buttons");
+  });
+
   it("content submenu exposes all replace/attach actions", () => {
     const kb = buildPageEditorContentSubmenuKeyboard("root", lang, i18n, {
       editingContentLanguageCode: "en",
