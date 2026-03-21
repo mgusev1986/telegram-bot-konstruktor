@@ -377,9 +377,9 @@ export type PageEditorChild = {
   type: "SUBMENU" | "TEXT" | "PHOTO" | "VIDEO" | "DOCUMENT" | "LINK" | "SECTION_LINK";
 };
 
-export const buildPageEditorKeyboard = (
+/** Submenu with content-editing options (replace text/photo/video/document, full replace, attach video). */
+export const buildPageEditorContentSubmenuKeyboard = (
   pageId: string,
-  _children: PageEditorChild[],
   languageCode: string,
   i18n: I18nService,
   opts?: { hasVideo?: boolean; editingContentLanguageCode?: string }
@@ -392,14 +392,32 @@ export const buildPageEditorKeyboard = (
     [Markup.button.callback("📄 " + i18n.t(languageCode, "langv_btn_replace_document"), makeCallbackData(PAGE_EDIT_PREFIX, "edit_document", pageId, editingContentLanguageCode))],
     [Markup.button.callback("🔁 " + i18n.t(languageCode, "langv_btn_full_replace"), makeCallbackData(PAGE_EDIT_PREFIX, "edit_full", pageId, editingContentLanguageCode))],
     [Markup.button.callback("🎬 " + i18n.t(languageCode, "page_attach_video"), makeCallbackData(PAGE_EDIT_PREFIX, "attach_video", pageId))],
+  ];
+  if (opts?.hasVideo) {
+    rows.push([Markup.button.callback("🗑 " + i18n.t(languageCode, "page_detach_video"), makeCallbackData(PAGE_EDIT_PREFIX, "detach_video", pageId))]);
+  }
+  rows.push([Markup.button.callback(i18n.t(languageCode, "back"), makeCallbackData(PAGE_EDIT_PREFIX, "open", pageId))]);
+  for (const btn of buildNavigationRow(i18n, languageCode, { toMain: true })) {
+    rows.push([btn]);
+  }
+  return Markup.inlineKeyboard(rows);
+};
+
+export const buildPageEditorKeyboard = (
+  pageId: string,
+  _children: PageEditorChild[],
+  languageCode: string,
+  i18n: I18nService,
+  opts?: { hasVideo?: boolean; editingContentLanguageCode?: string }
+) => {
+  const editingContentLanguageCode = opts?.editingContentLanguageCode ?? languageCode;
+  const rows: ReturnType<typeof Markup.button.callback>[][] = [
+    [Markup.button.callback("✏️ " + i18n.t(languageCode, "page_edit_content"), makeCallbackData(PAGE_EDIT_PREFIX, "open_content_menu", pageId, editingContentLanguageCode))],
     [Markup.button.callback("➕ " + i18n.t(languageCode, "page_add_section"), makeCallbackData(PAGE_EDIT_PREFIX, "add_sec", pageId))],
     [Markup.button.callback("🔗 " + i18n.t(languageCode, "page_add_button"), makeCallbackData(PAGE_EDIT_PREFIX, "add_btn", pageId))],
     [Markup.button.callback("🧩 " + i18n.t(languageCode, "page_manage_buttons"), makeCallbackData(PAGE_EDIT_PREFIX, "manage_buttons", pageId))],
     [Markup.button.callback(i18n.t(languageCode, "reminders_hub_title"), makeCallbackData(PAGE_EDIT_PREFIX, "open_reminders", pageId))],
   ];
-  if (opts?.hasVideo) {
-    rows.splice(2, 0, [Markup.button.callback("🗑 " + i18n.t(languageCode, "page_detach_video"), makeCallbackData(PAGE_EDIT_PREFIX, "detach_video", pageId))]);
-  }
 
   if (pageId !== "root") {
     rows.push([Markup.button.callback(i18n.t(languageCode, "page_delete_page"), makeCallbackData(PAGE_EDIT_PREFIX, "delete", pageId))]);

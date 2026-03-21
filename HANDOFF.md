@@ -327,6 +327,10 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate
 
 Проверка: `curl http://localhost:3000/health` или `http://77.42.79.54:3000/health`.
 
+### Резервное копирование БД
+
+См. [docs/BACKUP.md](docs/BACKUP.md). Кратко: `scripts/backup-db.sh` (ручной/cron), `scripts/restore-db.sh` (восстановление). Бэкапы в `backups/`, ротация по умолчанию — 7 дней.
+
 ---
 
 ## 14. Manual testing checklist

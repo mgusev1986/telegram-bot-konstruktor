@@ -29,6 +29,7 @@ import {
   buildPageDeleteConfirmKeyboard,
   buildPageDeleteItemConfirmKeyboard,
   buildPageEditorKeyboard,
+  buildPageEditorContentSubmenuKeyboard,
   buildLanguageVersionHubKeyboard,
   buildLanguageVersionPageActionsKeyboard,
   buildLanguageVersionPreviewConfirmKeyboard,
@@ -1584,6 +1585,42 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       if (action === "open" && value) {
         setNavBeforeShow(ctx, "page_edit:open:" + value);
         await showPageEditor(value);
+        return;
+      }
+
+      if (action === "open_content_menu" && value) {
+        const pageId = value;
+        const editingLangCode = extra
+          ? services.i18n.normalizeLocalizationLanguageCode(String(extra))
+          : contentLanguageCode;
+        const locRow =
+          pageId === "root"
+            ? null
+            : await services.menu.findMenuItemById(pageId).then((item) => {
+                if (!item) return null;
+                const loc = services.i18n.pickLocalized(item.localizations, editingLangCode);
+                return loc ?? null;
+              });
+        const hasVideo = (locRow as any)?.mediaType === "VIDEO" && Boolean((locRow as any)?.mediaFileId);
+        const pageTitle =
+          pageId === "root"
+            ? services.i18n.t(locale, "page_root_title")
+            : await services.menu.findMenuItemById(pageId).then((it) => {
+                const loc = it ? services.i18n.pickLocalized(it.localizations, editingLangCode) : null;
+                return loc?.title ?? it?.key ?? pageId;
+              });
+        const header = services.i18n.t(locale, "page_edit_content");
+        const contextLine = services.i18n.t(locale, "page_editor_editing").replace("{{title}}", pageTitle);
+        await services.navigation.replaceScreen(
+          user,
+          ctx.telegram,
+          ctx.chat?.id ?? user.telegramUserId,
+          { text: `${header}\n\n${contextLine}` },
+          buildPageEditorContentSubmenuKeyboard(pageId, locale, services.i18n, {
+            hasVideo,
+            editingContentLanguageCode: editingLangCode
+          })
+        );
         return;
       }
 

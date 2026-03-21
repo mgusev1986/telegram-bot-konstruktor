@@ -11,6 +11,7 @@ import {
   buildScheduledBroadcastDetailKeyboard,
   buildLanguageKeyboard,
   buildPageEditorKeyboard,
+  buildPageEditorContentSubmenuKeyboard,
   buildLanguageVersionHubKeyboard,
   buildLanguageVersionPageActionsKeyboard,
   buildLanguageVersionPreviewConfirmKeyboard,
@@ -328,8 +329,27 @@ describe("Keyboards: scheduled broadcasts management", () => {
 });
 
 describe("Keyboards: page editor language hub", () => {
-  it("is fully vertical and exposes partial replace + draft/publish actions", () => {
+  it("is fully vertical and exposes edit content submenu + structure actions", () => {
     const kb = buildPageEditorKeyboard("root", [], lang, i18n, {
+      editingContentLanguageCode: "en",
+      hasVideo: true
+    });
+    const rows = getInlineKeyboardRows(kb as any);
+    rows.forEach((row) => expect(row.length).toBe(1));
+
+    const callbacks = getAllCallbackData(kb as any);
+    expect(callbacks).toContain("page_edit:open_content_menu:root:en");
+    expect(callbacks).toContain("page_edit:add_sec:root");
+    expect(callbacks).toContain("page_edit:add_btn:root");
+    expect(callbacks).toContain("page_edit:manage_buttons:root");
+    expect(callbacks).toContain("page_edit:open_reminders:root");
+    expect(callbacks).toContain("page_edit:back:root");
+    expect(callbacks).toContain(NAV_ROOT_DATA);
+    callbacks.forEach((callback) => expect(callback.length).toBeLessThanOrEqual(64));
+  });
+
+  it("content submenu exposes all replace/attach actions", () => {
+    const kb = buildPageEditorContentSubmenuKeyboard("root", lang, i18n, {
       editingContentLanguageCode: "en",
       hasVideo: true
     });
@@ -340,14 +360,9 @@ describe("Keyboards: page editor language hub", () => {
     expect(callbacks).toContain("page_edit:edit_text:root:en");
     expect(callbacks).toContain("page_edit:edit_full:root:en");
     expect(callbacks).toContain("page_edit:attach_video:root");
-    expect(callbacks).toContain("page_edit:add_sec:root");
-    expect(callbacks).toContain("page_edit:add_btn:root");
-    expect(callbacks).toContain("page_edit:manage_buttons:root");
-    expect(callbacks).toContain("page_edit:open_reminders:root");
     expect(callbacks).toContain("page_edit:detach_video:root");
-    expect(callbacks).toContain("page_edit:back:root");
+    expect(callbacks).toContain("page_edit:open:root");
     expect(callbacks).toContain(NAV_ROOT_DATA);
-    callbacks.forEach((callback) => expect(callback.length).toBeLessThanOrEqual(64));
   });
 });
 
