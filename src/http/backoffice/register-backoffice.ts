@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import argon2 from "argon2";
 import formBody from "@fastify/formbody";
+import ExcelJS from "exceljs";
 import { Telegraf } from "telegraf";
 import { randomBytes, timingSafeEqual, createHmac } from "node:crypto";
 
@@ -270,7 +271,7 @@ export function renderDashboardBody(params: DashboardParams): string {
               <div class="small" style="margin-top:6px">${b.createdAt.toISOString().slice(0, 10)}</div>
             </div>
           </div>
-          <div class="row" style="margin-top:12px">
+          <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center">
             <a href="${openUrl}" target="_blank" style="text-decoration:none"><button class="secondary" type="button">Открыть</button></a>
             ${settingsBtn}
             ${audienceBtn}
@@ -661,8 +662,12 @@ export async function registerBackofficeRoutes(
             <label>Поиск (username, id, имя)</label>
             <input name="search" type="text" value="${escapeHtml(search)}" placeholder="Поиск..." />
           </div>
-          <div style="flex:0 0 auto; align-self:flex-end">
+          <div style="flex:0 0 auto; align-self:flex-end; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <button type="submit">Применить</button>
+            <span class="small" style="color:#94a3b8">Экспорт:</span>
+            <a href="/backoffice/audience/export?format=html${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}" style="display:inline-block; text-decoration:none; padding:8px 12px; font-size:13px; border-radius:10px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#e5e7eb">HTML</a>
+            <a href="/backoffice/audience/export?format=xlsx${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}" style="display:inline-block; text-decoration:none; padding:8px 12px; font-size:13px; border-radius:10px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#e5e7eb">Excel</a>
+            <a href="/backoffice/audience/export?format=csv${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}" style="display:inline-block; text-decoration:none; padding:8px 12px; font-size:13px; border-radius:10px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#e5e7eb">CSV</a>
           </div>
         </form>
         <div class="table-wrap" style="overflow-x:auto">
@@ -689,6 +694,142 @@ export async function registerBackofficeRoutes(
         </div>`
       )
     );
+  });
+
+  server.get("/backoffice/audience/export", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const backofficeUser = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true, email: true }
+    });
+    const role = backofficeUser?.role ?? "ADMIN";
+    const email = backofficeUser?.email ?? "";
+    if (!canViewGlobalUserDirectory(role, email)) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const query = req.query as Record<string, string | undefined>;
+    const format = (query.format ?? "csv").toLowerCase();
+    const botId = query.bot;
+    const search = query.search?.trim() ?? "";
+
+    if (!["html", "xlsx", "csv"].includes(format)) {
+      return reply.code(400).send("Invalid format. Use html, xlsx or csv.");
+    }
+
+    const filters = {
+      botInstanceIds: botId ? [botId] : undefined,
+      search: search || undefined
+    };
+    const sort = { sortBy: "createdAt" as const, order: "desc" as const };
+    const { rows } = await userDirectory.listUsersAcrossBots(filters, { page: 1, perPage: 50000 }, sort);
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `audience-${dateStr}.${format === "xlsx" ? "xlsx" : format}`;
+
+    if (format === "csv") {
+      const sep = ";";
+      const header = ["ID", "Username", "Telegram ID", "Имя", "Бот", "Язык", "Последняя активность", "Регистрация"].join(sep);
+      const lines = rows.map(
+        (u) =>
+          [
+            u.id.slice(0, 8),
+            u.username ? `@${u.username}` : "",
+            String(u.telegramUserId),
+            (u.fullName || u.firstName || "").replace(/"/g, '""'),
+            u.botName ?? "",
+            u.selectedLanguage,
+            u.lastSeenAt ? u.lastSeenAt.toISOString().slice(0, 19) : "",
+            u.createdAt.toISOString().slice(0, 19)
+          ].join(sep)
+      );
+      const csv = [header, ...lines].join("\n");
+      return reply
+        .header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="${filename}"`)
+        .send("\uFEFF" + csv);
+    }
+
+    if (format === "html") {
+      const rowsHtml = rows
+        .map(
+          (u) =>
+            `<tr>
+              <td>${escapeHtml(u.id.slice(0, 8))}</td>
+              <td>${u.username ? `@${escapeHtml(u.username)}` : "—"}</td>
+              <td>${escapeHtml(String(u.telegramUserId))}</td>
+              <td>${escapeHtml(u.fullName || u.firstName || "—")}</td>
+              <td>${u.botName ? escapeHtml(u.botName) : "—"}</td>
+              <td>${escapeHtml(u.selectedLanguage)}</td>
+              <td>${u.lastSeenAt ? escapeHtml(u.lastSeenAt.toISOString().slice(0, 19)) : "—"}</td>
+              <td>${escapeHtml(u.createdAt.toISOString().slice(0, 19))}</td>
+            </tr>`
+        )
+        .join("");
+      const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Аудитория — ${dateStr}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 16px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; }
+    th { background: #f0f0f0; }
+  </style>
+</head>
+<body>
+  <h1>Аудитория — ${dateStr}</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Username</th><th>Telegram ID</th><th>Имя</th><th>Бот</th><th>Язык</th><th>Последняя активность</th><th>Регистрация</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml || "<tr><td colspan=\"8\">Нет данных</td></tr>"}
+    </tbody>
+  </table>
+</body>
+</html>`;
+      return reply
+        .header("Content-Type", "text/html; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="${filename}"`)
+        .send(html);
+    }
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Аудитория", { views: [{ state: "frozen", ySplit: 1 }] });
+    ws.columns = [
+      { header: "ID", key: "id", width: 12 },
+      { header: "Username", key: "username", width: 18 },
+      { header: "Telegram ID", key: "telegramUserId", width: 14 },
+      { header: "Имя", key: "fullName", width: 22 },
+      { header: "Бот", key: "botName", width: 16 },
+      { header: "Язык", key: "selectedLanguage", width: 8 },
+      { header: "Последняя активность", key: "lastSeenAt", width: 22 },
+      { header: "Регистрация", key: "createdAt", width: 22 }
+    ];
+    ws.getRow(1).font = { bold: true };
+    rows.forEach((u) => {
+      ws.addRow({
+        id: u.id.slice(0, 8),
+        username: u.username ? `@${u.username}` : "",
+        telegramUserId: String(u.telegramUserId),
+        fullName: u.fullName || u.firstName || "",
+        botName: u.botName ?? "",
+        selectedLanguage: u.selectedLanguage,
+        lastSeenAt: u.lastSeenAt ? u.lastSeenAt.toISOString().slice(0, 19) : "",
+        createdAt: u.createdAt.toISOString().slice(0, 19)
+      });
+    });
+    const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+    return reply
+      .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+      .header("Content-Disposition", `attachment; filename="${filename}"`)
+      .send(buffer);
   });
 
   server.get("/backoffice/database", async (req, reply) => {

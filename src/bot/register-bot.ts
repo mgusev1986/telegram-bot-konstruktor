@@ -209,17 +209,29 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       return;
     }
 
-    const existing = await services.users.findByTelegramId(BigInt(ctx.from.id));
     const commandArg =
       ctx.message && "text" in ctx.message && ctx.message.text.startsWith("/start")
         ? extractCommandArgument(ctx.message.text)
         : "";
     const referralCode = services.referrals.parseReferralPayload(commandArg);
-    let inviter = await services.referrals.resolveInviterByCode(referralCode);
 
-    // Self-referral: пользователь перешёл по своей же ссылке — просто игнорируем, показываем меню
+    const isStart = ctx.message && "text" in ctx.message && (ctx.message as { text: string }).text.trim().toLowerCase().startsWith("/start");
+    if (isStart && ctx.chat?.id) {
+      try {
+        await ctx.sendChatAction("typing");
+      } catch {
+        // ignore
+      }
+    }
+
+    const [existing, inviter] = await Promise.all([
+      services.users.findByTelegramId(BigInt(ctx.from.id)),
+      services.referrals.resolveInviterByCode(referralCode)
+    ]);
+
+    let resolvedInviter = inviter;
     if (existing && inviter && inviter.id === existing.id) {
-      inviter = null;
+      resolvedInviter = null;
     } else if (existing && !existing.invitedByUserId && inviter) {
       await services.referrals.validateInviter(existing.id, inviter.id);
     }
@@ -229,21 +241,18 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
     const result = await services.users.ensureTelegramUser(
       ctx.from,
-      existing?.invitedByUserId ? null : inviter?.id,
+      existing?.invitedByUserId ? null : resolvedInviter?.id,
       preferredLanguage
     );
 
     const newlyBound = Boolean(
-      existing && !existing.invitedByUserId && inviter && result.user.invitedByUserId === inviter.id
+      existing && !existing.invitedByUserId && resolvedInviter && result.user.invitedByUserId === resolvedInviter.id
     );
 
     ctx.currentUser = result.user;
-    // Bot-scoped roles (OWNER/ADMIN) must be resolved from BotRoleAssignment, not from User.role.
     const botScopedRole = await services.permissions.getActiveBotRole(result.user.id);
     (ctx.currentUser as any).effectiveBotRole = botScopedRole;
     if (botScopedRole) {
-      // In-memory override for UI/scene routing.
-      // PermissionService must still treat ALPHA_OWNER as the only global absolute role.
       (ctx.currentUser as any).role = botScopedRole;
     }
 
@@ -251,8 +260,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       await services.drips.enrollUser(result.user.id, "ON_REGISTRATION");
     }
 
-    if ((result.isNew || newlyBound) && inviter) {
-      await services.referrals.registerReferral(inviter, result.user);
+    if ((result.isNew || newlyBound) && resolvedInviter) {
+      await services.referrals.registerReferral(resolvedInviter, result.user);
     }
 
     return next();
