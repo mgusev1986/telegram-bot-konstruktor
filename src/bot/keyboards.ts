@@ -364,10 +364,10 @@ export const buildMenuKeyboard = (
       rows.push([Markup.button.callback(i18n.t(languageCode, "admin_panel"), makeCallbackData("admin", "open"))]);
     }
     if (showAdminButtons && showRootSys(SYS_SLOT_CONFIGURE_PAGE)) {
-      rows.push([Markup.button.callback(i18n.t(languageCode, "configure_page"), makeCallbackData(PAGE_EDIT_PREFIX, "open", pageIdForConfigure))]);
+      rows.push([Markup.button.callback(i18n.t(languageCode, "configure_page"), makeCallbackData(PAGE_EDIT_PREFIX, "open", pageIdForConfigure ?? "root"))]);
     }
   } else if (showAdminButtons) {
-    rows.push([Markup.button.callback(i18n.t(languageCode, "configure_page"), makeCallbackData(PAGE_EDIT_PREFIX, "open", pageIdForConfigure))]);
+    rows.push([Markup.button.callback(i18n.t(languageCode, "configure_page"), makeCallbackData(PAGE_EDIT_PREFIX, "open", pageIdForConfigure ?? "root"))]);
   }
 
   if (parentId !== undefined && (slotOrder == null || slotOrder.length === 0)) {

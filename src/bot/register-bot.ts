@@ -1604,22 +1604,37 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         );
       };
 
-      if (action === "open" && value) {
-        setNavBeforeShow(ctx, "page_edit:open:" + value);
+      if (action === "open") {
+        const pageId = value && value !== "undefined" ? value : "root";
+        setNavBeforeShow(ctx, "page_edit:open:" + pageId);
         try {
-          if (value !== "root") {
-            const item = await services.menu.findMenuItemById(value);
+          if (pageId !== "root") {
+            const item = await services.menu.findMenuItemById(pageId);
             if (!item) {
-              await ctx.reply(services.i18n.t(locale, "error_generic"));
+              await ctx.reply(
+                services.i18n.t(locale, "error_generic"),
+                Markup.inlineKeyboard([[Markup.button.callback(services.i18n.t(locale, "to_main_menu"), NAV_ROOT_DATA)]])
+              );
               await sendRootWithWelcome(ctx);
               return;
             }
           }
-          await showPageEditor(value);
+          await showPageEditor(pageId);
         } catch (err) {
-          logger.error({ err, pageId: value, userId: user.id }, "showPageEditor failed");
-          await ctx.reply(services.i18n.t(locale, "error_generic"));
-          await sendRootWithWelcome(ctx);
+          logger.error({ err, pageId, userId: user.id }, "showPageEditor failed");
+          try {
+            await ctx.reply(
+              services.i18n.t(locale, "error_generic"),
+              Markup.inlineKeyboard([[Markup.button.callback(services.i18n.t(locale, "to_main_menu"), NAV_ROOT_DATA)]])
+            );
+            await sendRootWithWelcome(ctx);
+          } catch (fallbackErr) {
+            logger.error({ err: fallbackErr, userId: user.id }, "Error fallback (sendRootWithWelcome) failed");
+            await ctx.reply(
+              services.i18n.t(locale, "error_generic"),
+              Markup.inlineKeyboard([[Markup.button.callback(services.i18n.t(locale, "to_main_menu"), NAV_ROOT_DATA)]])
+            );
+          }
         }
         return;
       }
