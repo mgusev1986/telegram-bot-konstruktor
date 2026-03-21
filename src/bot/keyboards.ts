@@ -300,7 +300,7 @@ export const buildMenuKeyboard = (
   const buildRowForItem = (item: (typeof items)[number]) => {
     const localization = i18n.pickLocalized(item.localizations, languageCode);
     const title = localization?.title ?? item.id;
-    const label = item.locked ? `[LOCKED] ${title}` : title;
+    const label = item.locked ? `🔒 ${i18n.t(languageCode, "menu_item_locked")} · ${title}` : title;
     if (isPartnerRegisterLink(item)) {
       if (externalPartnerUrl) return [Markup.button.url(label, externalPartnerUrl)];
       return null;
@@ -659,10 +659,7 @@ export const buildStructureKeyboard = (languageCode: string, i18n: I18nService) 
 
 export const buildPaywallKeyboard = (languageCode: string, productId: string, i18n: I18nService) => {
   const rows = [
-    [
-      Markup.button.callback(`${i18n.t(languageCode, "pay_now")} TRC20`, makeCallbackData("pay", "network", productId, "USDT_TRC20")),
-      Markup.button.callback(`${i18n.t(languageCode, "pay_now")} BEP20`, makeCallbackData("pay", "network", productId, "USDT_BEP20"))
-    ],
+    [Markup.button.callback(`${i18n.t(languageCode, "pay_now")} USDT (BEP20)`, makeCallbackData("pay", "network", productId, "USDT_BEP20"))],
     buildNavigationRow(i18n, languageCode, { back: true, toMain: true })
   ];
   return Markup.inlineKeyboard(rows);

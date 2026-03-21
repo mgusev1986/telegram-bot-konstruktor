@@ -141,6 +141,16 @@ function renderPage(title: string, body: string): string {
       .form-row .btn { flex-shrink: 0; }
       .mi-card { margin-top: 12px; padding: 14px; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; }
       .mi-card:first-of-type { margin-top: 0; }
+      .section-title { font-size: 14px; font-weight: 600; color: #cbd5e1; margin: 16px 0 8px 0; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+      .section-title:first-child { margin-top: 0; }
+      .paid-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      .paid-table th, .paid-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .paid-table th { color: #94a3b8; font-weight: 500; }
+      .paid-table tr:last-child td { border-bottom: none; }
+      .product-card { margin-top: 20px; padding: 18px; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; background: rgba(0,0,0,0.12); }
+      .product-card:first-of-type { margin-top: 12px; }
+      .product-card-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+      .test-badge { display: inline-block; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.5); color: #fbbf24; }
     </style>
   </head>
   <body>
@@ -1748,163 +1758,139 @@ export async function registerBackofficeRoutes(
            <p class="small" style="margin:0 0 12px 0">Привяжите продукт к разделу — доступ откроется только после оплаты.</p>
            ${
              menuItems.length
-               ? menuItems
-                   .map((mi) => {
-                     const title = mi.localizations[0]?.title ?? mi.key;
-                     const locked = Boolean(mi.productId);
-                     const productLabel = mi.productId ? productLabelById.get(mi.productId) ?? mi.productId : null;
-                     return locked
-                       ? `<div class="mi-card">
-                           <div><b>${escapeHtml(title)}</b></div>
-                           <div class="small" style="margin-top:4px">Продукт: <code>${escapeHtml(productLabel ?? "")}</code></div>
-                           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/unlock" style="margin-top:10px">
-                             <button type="submit" class="secondary">Снять блокировку</button>
-                           </form>
-                         </div>`
-                       : `<div class="mi-card">
-                           <div><b>${escapeHtml(title)}</b></div>
-                           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" class="form-row" style="margin-top:10px">
-                             <div class="field" style="min-width:180px; max-width:280px">
-                               <label class="small">Продукт</label>
-                               <select name="productId" required class="field">
-                                 ${productSelectOptions}
-                               </select>
-                             </div>
-                             <div class="btn"><button type="submit">Заблокировать</button></div>
-                           </form>
-                         </div>`;
-                   })
-                   .join("")
+               ? `<table class="paid-table">
+                   <thead><tr><th>Раздел</th><th>Продукт</th><th style="width:180px">Действие</th></tr></thead>
+                   <tbody>
+                   ${menuItems
+                     .map((mi) => {
+                       const title = mi.localizations[0]?.title ?? mi.key;
+                       const locked = Boolean(mi.productId);
+                       const productLabel = mi.productId ? productLabelById.get(mi.productId) ?? mi.productId : null;
+                       return locked
+                         ? `<tr>
+                             <td><b>${escapeHtml(title)}</b></td>
+                             <td><code>${escapeHtml(productLabel ?? "")}</code></td>
+                             <td>
+                               <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/unlock" style="display:inline">
+                                 <button type="submit" class="secondary">Снять блокировку</button>
+                               </form>
+                             </td>
+                           </tr>`
+                         : `<tr>
+                             <td><b>${escapeHtml(title)}</b></td>
+                             <td>
+                               <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" class="form-row" style="margin:0; max-width:320px">
+                                 <div class="field" style="flex:1; min-width:0">
+                                   <select name="productId" required class="field" style="width:100%">
+                                     ${productSelectOptions}
+                                   </select>
+                                 </div>
+                                 <div class="btn"><button type="submit">Заблокировать</button></div>
+                               </form>
+                             </td>
+                             <td>—</td>
+                           </tr>`;
+                     })
+                     .join("")}
+                   </tbody>
+                 </table>`
                : `<div class="small">Нет пунктов меню.</div>`
            }
          </div>
 
          <div class="card" style="margin-top:16px">
            <h3 style="margin-top:0">Продукты</h3>
+
+           <div class="section-title">Создать продукт</div>
            <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create">
-             <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px">
-               <div>
-                 <label>Title (ru)</label>
-                 <input name="titleRu" type="text" required />
-               </div>
-               <div>
-                 <label>Pay button text (ru)</label>
-                 <input name="payButtonTextRu" type="text" required />
-               </div>
-             </div>
-             <div style="margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:12px">
-               <div>
-                 <label>Price</label>
-                 <input name="price" type="text" required value="49.00" />
-               </div>
-               <div>
-                 <label>Currency</label>
-                 <input name="currency" type="text" required value="USDT" />
-               </div>
-             </div>
-             <div class="product-form-grid" style="margin-top:10px">
-               <div class="field-wrap">
-                 <label class="small">Тип</label>
+             <div class="product-form-grid">
+               <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required /></div>
+               <div class="field-wrap"><label class="small">Текст кнопки (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить" /></div>
+               <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="49.00" /></div>
+               <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="USDT" /></div>
+               <div class="field-wrap"><label class="small">Тип</label>
                  <select name="billingType" style="width:100%; box-sizing:border-box">
                    <option value="ONE_TIME">Разовая оплата</option>
                    <option value="TEMPORARY">Подписка (на N дней)</option>
                  </select>
                </div>
-               <div class="field-wrap">
-                 <label class="small">Дней доступа (подписка)</label>
-                 <input name="durationDays" type="number" min="1" placeholder="30" title="30 = месяц" style="width:100%; box-sizing:border-box" />
-               </div>
+               <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" placeholder="30" style="width:100%; box-sizing:border-box" /></div>
              </div>
-             <div class="test-block" style="margin-top:10px">
-               <div class="small" style="margin-bottom:6px; color:rgba(251,191,36,0.9)">🧪 Тест (минуты)</div>
-               <div class="field-wrap" style="max-width:180px">
-                 <label class="small">Минуты вместо дней</label>
-                 <input name="durationMinutes" type="number" min="1" max="1440" placeholder="пусто" style="width:100%; box-sizing:border-box" title="1–5 мин для проверки" />
-               </div>
+             <div class="test-block" style="margin-top:12px">
+               <div class="small" style="margin-bottom:6px; color:rgba(251,191,36,0.9)">🧪 Тест: минуты вместо дней</div>
+               <input name="durationMinutes" type="number" min="1" max="1440" placeholder="пусто = дни" style="max-width:120px; box-sizing:border-box" title="1–5 мин для быстрой проверки" />
+             </div>
+             <div style="margin-top:12px">
+               <label class="small">Ссылки на чат/канал (каждая с новой строки)</label>
+               <textarea name="linkedChatsRaw" rows="2" placeholder="https://t.me/channel" style="margin-top:4px"></textarea>
              </div>
              <div style="margin-top:10px">
-               <label>Ссылки на чат/канал (каждая с новой строки)</label>
-               <textarea name="linkedChatsRaw" rows="2" placeholder="https://t.me/channel&#10;https://t.me/joinchat/xxx"></textarea>
+               <label class="small">Описание (ru)</label>
+               <textarea name="descriptionRu" rows="2" style="margin-top:4px"></textarea>
              </div>
-             <div style="margin-top:10px">
-               <label>Description (ru)</label>
-               <textarea name="descriptionRu" rows="3"></textarea>
-             </div>
-             <button type="submit" style="margin-top:10px">Создать</button>
+             <button type="submit" style="margin-top:12px">Создать</button>
            </form>
 
-           <div style="margin-top:16px">
-             ${products.length ? products.map((p) => {
+           <div class="section-title">Существующие продукты</div>
+           ${products.length ? products.map((p) => {
                 const ruLoc = p.localizations.find((l: any) => l.languageCode === "ru") ?? p.localizations[0];
-               return `<div style="margin-top:12px; padding:10px; border:1px solid rgba(255,255,255,0.12); border-radius:12px">
-                <div><b>${escapeHtml(ruLoc?.title ?? p.code)}</b> <span class="small">(${escapeHtml(p.code)})</span></div>
-                 <div class="small" style="margin-top:4px">price: <code>${escapeHtml(String(p.price))}</code> ${escapeHtml(p.currency)} · ${p.billingType}${(p as any).durationMinutes ? ` · ${(p as any).durationMinutes} мин (тест)` : p.durationDays ? ` · ${p.durationDays} дн.` : ""}</div>
-                 <div class="small" style="margin-top:4px">isActive: <code>${p.isActive ? "true" : "false"}</code>${Array.isArray(p.linkedChats) && (p.linkedChats as any[]).length > 0 ? ` · чатов: ${(p.linkedChats as any[]).length}` : ""}</div>
-                 <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/archive" style="margin-top:8px">
-                   <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Архивировать</button>
-                 </form>
-                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/update" style="margin-top:10px">
+                const durMin = (p as any).durationMinutes;
+                const testActive = durMin != null && String(durMin).trim() !== "";
+                return `<div class="product-card">
+                <div class="product-card-header">
+                  <span><b>${escapeHtml(ruLoc?.title ?? p.code)}</b></span>
+                  <span class="small">${escapeHtml(String(p.price))} ${escapeHtml(p.currency)} · ${p.billingType === "TEMPORARY" ? (p.durationDays ? `${p.durationDays} дн.` : "") : "Разовая"}${testActive ? ` · ${durMin} мин` : ""}</span>
+                  ${testActive ? '<span class="test-badge">🧪 ТЕСТ ВКЛ</span>' : ""}
+                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/archive" style="margin-left:auto">
+                    <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Архивировать</button>
+                  </form>
+                </div>
+                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/update">
+                  <div class="section-title">Основные параметры</div>
                   <div class="product-form-grid">
-                    <div class="field-wrap">
-                      <label class="small">Title (ru)</label>
-                      <input name="titleRu" type="text" required value="${escapeHtml(ruLoc?.title ?? "")}" style="width:100%; box-sizing:border-box" />
-                    </div>
-                    <div class="field-wrap">
-                      <label class="small">Pay button text (ru)</label>
-                      <input name="payButtonTextRu" type="text" required value="${escapeHtml(ruLoc?.payButtonText ?? "")}" style="width:100%; box-sizing:border-box" />
-                    </div>
-                    <div class="field-wrap">
-                      <label class="small">Price</label>
-                      <input name="price" type="text" required value="${escapeHtml(String(p.price ?? ""))}" style="width:100%; box-sizing:border-box" />
-                    </div>
-                    <div class="field-wrap">
-                      <label class="small">Currency</label>
-                      <input name="currency" type="text" required value="${escapeHtml(p.currency ?? "USDT")}" style="width:100%; box-sizing:border-box" />
-                    </div>
-                    <div class="field-wrap">
-                      <label class="small">Тип</label>
+                    <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required value="${escapeHtml(ruLoc?.title ?? "")}" style="width:100%; box-sizing:border-box" /></div>
+                    <div class="field-wrap"><label class="small">Текст кнопки (ru)</label><input name="payButtonTextRu" type="text" required value="${escapeHtml(ruLoc?.payButtonText ?? "")}" style="width:100%; box-sizing:border-box" /></div>
+                    <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="${escapeHtml(String(p.price ?? ""))}" style="width:100%; box-sizing:border-box" /></div>
+                    <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="${escapeHtml(p.currency ?? "USDT")}" style="width:100%; box-sizing:border-box" /></div>
+                    <div class="field-wrap"><label class="small">Тип</label>
                       <select name="billingType" style="width:100%; box-sizing:border-box">
                         <option value="ONE_TIME" ${p.billingType === "ONE_TIME" ? "selected" : ""}>Разовая</option>
                         <option value="TEMPORARY" ${p.billingType === "TEMPORARY" ? "selected" : ""}>Подписка</option>
                       </select>
                     </div>
-                    <div class="field-wrap">
-                      <label class="small">Дней (подписка)</label>
-                      <input name="durationDays" type="number" min="1" value="${p.durationDays ?? ""}" placeholder="30" style="width:100%; box-sizing:border-box" />
-                    </div>
+                    <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" value="${p.durationDays ?? ""}" placeholder="30" style="width:100%; box-sizing:border-box" /></div>
                   </div>
+
+                  <div class="section-title">🧪 Тестовый режим</div>
                   <div class="test-block">
-                    <div class="small" style="margin-bottom:6px; color:rgba(251,191,36,0.9)">🧪 Тест (для разработчика)</div>
-                    <div class="field-wrap" style="max-width:180px">
-                      <label class="small">Минуты вместо дней</label>
+                    <div class="field-wrap" style="max-width:200px">
+                      <label class="small">Минуты вместо дней ${testActive ? '<span class="test-badge" style="margin-left:8px">ВКЛ</span>' : ""}</label>
                       <input name="durationMinutes" type="number" min="1" max="1440" value="${p.durationMinutes ?? ""}" placeholder="пусто = дни" style="width:100%; box-sizing:border-box" title="1–5 мин для быстрой проверки подписки" />
                     </div>
-                    <div class="small" style="margin-top:4px">Укажите 1 или 5 — подписка истечёт через минуты. Напоминания (3/2/1 день) не отправятся.</div>
-                    <div style="margin-top:12px; padding-top:12px; border-top:1px solid rgba(251,191,36,0.2)">
-                      <label class="small">Симулировать оплату</label>
-                      <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/simulate-payment" class="form-row" style="margin-top:6px">
-                        <div class="field" style="min-width:200px; max-width:280px">
-                          <select name="userId" required style="width:100%; box-sizing:border-box">
-                            <option value="">— Выберите пользователя —</option>
-                            ${userSelectOptions}
-                          </select>
-                        </div>
-                        <div class="btn"><button type="submit" class="secondary">Выполнить тест-оплату</button></div>
-                      </form>
-                      <div class="small" style="margin-top:4px">Проверка без реального платежа: выдаст доступ, отправит в чат/канал (если настроено), через N минут исключит.</div>
-                    </div>
+                    <div class="small" style="margin-top:6px">Укажите 1 или 5 — подписка истечёт через минуты. Напоминания (3/2/1 день) не отправятся.</div>
                   </div>
-                  <div style="margin-top:10px">
-                    <label class="small">Ссылки на чат/канал (каждая с новой строки)</label>
-                    <textarea name="linkedChatsRaw" rows="3" placeholder="https://t.me/channel&#10;https://t.me/joinchat/xxx&#10;-1001234567890" title="Вставьте ссылки: t.me/channel, t.me/+invite, или ID. Бот исключит при истечении подписки.">${formatLinkedChatsForEdit(p.linkedChats)}</textarea>
-                    <div class="small" style="margin-top:4px">Поддерживаются: t.me/channel, t.me/+invite, ID. После оплаты появятся кнопки перехода.</div>
-                  </div>
-                  <div style="margin-top:10px">
-                    <label class="small">Description (ru)</label>
-                    <textarea name="descriptionRu" rows="2">${escapeHtml(ruLoc?.description ?? "")}</textarea>
-                  </div>
-                  <button type="submit" style="margin-top:10px">Сохранить</button>
+
+                  <div class="section-title">Ссылки на чат/канал</div>
+                  <textarea name="linkedChatsRaw" rows="2" placeholder="https://t.me/channel&#10;https://t.me/joinchat/xxx" style="width:100%; box-sizing:border-box">${formatLinkedChatsForEdit(p.linkedChats)}</textarea>
+                  <div class="small" style="margin-top:4px">t.me/channel, t.me/+invite или ID. После оплаты появятся кнопки перехода.</div>
+
+                  <div class="section-title">Описание (ru)</div>
+                  <textarea name="descriptionRu" rows="2" style="width:100%; box-sizing:border-box">${escapeHtml(ruLoc?.description ?? "")}</textarea>
+
+                  <button type="submit" style="margin-top:16px">Сохранить</button>
                 </form>
+
+                <div class="section-title">Симуляция оплаты</div>
+                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/simulate-payment" class="form-row">
+                  <div class="field" style="min-width:200px; max-width:300px">
+                    <select name="userId" required style="width:100%; box-sizing:border-box">
+                      <option value="">— Выберите пользователя —</option>
+                      ${userSelectOptions}
+                    </select>
+                  </div>
+                  <div class="btn"><button type="submit" class="secondary">Выполнить тест-оплату</button></div>
+                </form>
+                <div class="small" style="margin-top:4px">Без реального платежа: выдаст доступ, отправит в чат/канал, через N минут исключит.</div>
                </div>`;
              }).join("") : `<div class="small">Нет продуктов. Создайте первый в форме выше.</div>`}
            </div>
