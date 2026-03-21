@@ -134,8 +134,10 @@ function renderPage(title: string, body: string): string {
       .form-row label { margin-bottom: 0; }
       .form-row .field { flex: 0 1 auto; min-width: 0; }
       .form-row select.field { width: auto; min-width: 140px; max-width: 280px; }
-      .product-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 16px; align-items: start; }
+      .product-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; align-items: start; }
       .product-form-grid .field-wrap { min-width: 0; }
+      .product-form-grid .field-wrap input,
+      .product-form-grid .field-wrap select { width: 100%; box-sizing: border-box; }
       @media (max-width: 560px) { .product-form-grid { grid-template-columns: 1fr; } }
       .test-block { margin-top: 12px; padding: 12px; border-radius: 10px; border: 1px dashed rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.06); }
       .form-row .btn { flex-shrink: 0; }
@@ -149,6 +151,7 @@ function renderPage(title: string, body: string): string {
       .paid-table tr:last-child td { border-bottom: none; }
       .product-card { margin-top: 20px; padding: 18px; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; background: rgba(0,0,0,0.12); }
       .product-card:first-of-type { margin-top: 12px; }
+      .products-existing-block { margin-top: 28px; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.15); }
       .product-card-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
       .test-badge { display: inline-block; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.5); color: #fbbf24; }
     </style>
@@ -1806,7 +1809,7 @@ export async function registerBackofficeRoutes(
              <div class="product-form-grid">
                <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required /></div>
                <div class="field-wrap"><label class="small">Текст кнопки (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить" /></div>
-               <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="49.00" /></div>
+               <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="10" /></div>
                <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="USDT" /></div>
                <div class="field-wrap"><label class="small">Тип</label>
                  <select name="billingType" style="width:100%; box-sizing:border-box">
@@ -1831,6 +1834,7 @@ export async function registerBackofficeRoutes(
              <button type="submit" style="margin-top:12px">Создать</button>
            </form>
 
+           <div class="products-existing-block">
            <div class="section-title">Существующие продукты</div>
            ${products.length ? products.map((p) => {
                 const ruLoc = p.localizations.find((l: any) => l.languageCode === "ru") ?? p.localizations[0];
@@ -1893,6 +1897,7 @@ export async function registerBackofficeRoutes(
                 <div class="small" style="margin-top:4px">Без реального платежа: выдаст доступ, отправит в чат/канал, через N минут исключит.</div>
                </div>`;
              }).join("") : `<div class="small">Нет продуктов. Создайте первый в форме выше.</div>`}
+           </div>
            </div>
          </div>
 
