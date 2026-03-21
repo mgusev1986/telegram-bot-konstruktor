@@ -11,7 +11,7 @@ const PREFIX = "drip_btns";
 type Phase = "menu" | "choose_type" | "add_label" | "add_url" | "add_system_label";
 
 const SYSTEM_TARGETS: { kind: DripSystemKind; labelRu: string }[] = [
-  { kind: "partner_register", labelRu: "Стать партнёром" },
+  { kind: "partner_register", labelRu: "Зарегистрироваться / Стать партнёром" },
   { kind: "mentor_contact", labelRu: "Связаться с наставником" },
   { kind: "main_menu", labelRu: "В главное меню" }
 ];
