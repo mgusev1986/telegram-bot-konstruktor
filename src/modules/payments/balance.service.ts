@@ -2,7 +2,14 @@
  * Balance-based payment flow: internal ledger, deposits, product purchases.
  */
 import { Prisma } from "@prisma/client";
-import type { BillingType, PaymentNetwork, PrismaClient, Product, User } from "@prisma/client";
+import type {
+  BillingType,
+  DepositTransactionStatus,
+  PaymentNetwork,
+  PrismaClient,
+  Product,
+  User
+} from "@prisma/client";
 import { randomUUID } from "node:crypto";
 import type { AuditService } from "../audit/audit.service";
 import type { CrmService } from "../crm/crm.service";
@@ -10,9 +17,40 @@ import type { NotificationService } from "../notifications/notification.service"
 import type { SchedulerService } from "../jobs/scheduler.service";
 import type { SubscriptionChannelService } from "../subscription-channel/subscription-channel.service";
 import { env } from "../../config/env";
+import { logger } from "../../common/logger";
 import { NowPaymentsAdapter } from "./nowpayments.adapter";
 
 const PROVIDER = "nowpayments";
+const NOWPAYMENTS_FINAL_SUCCESS_STATUSES = new Set(["finished"]);
+const NOWPAYMENTS_FAILURE_STATUSES = new Set(["failed", "refunded", "expired"]);
+
+type NowPaymentsProcessSource = "ipn" | "status_sync";
+type NowPaymentsProcessResult = {
+  ok: boolean;
+  credited?: boolean;
+  duplicate?: boolean;
+  status?: string;
+  error?: string;
+};
+
+function normalizeNowPaymentsStatus(status: unknown): string {
+  return String(status ?? "").trim().toLowerCase();
+}
+
+function mapNowPaymentsStatusToDepositStatus(status: string): DepositTransactionStatus {
+  if (NOWPAYMENTS_FINAL_SUCCESS_STATUSES.has(status)) {
+    return "CONFIRMED";
+  }
+  if (NOWPAYMENTS_FAILURE_STATUSES.has(status)) {
+    return "FAILED";
+  }
+  return "PENDING";
+}
+
+function readNowPaymentsAmount(value: unknown, fallback: number): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
 
 export interface DepositIntent {
   depositId: string;
@@ -85,6 +123,12 @@ export class BalanceService {
     const payCurrency = NowPaymentsAdapter.payCurrencyFromNetwork(network);
 
     const ipnUrl = env.NOWPAYMENTS_IPN_CALLBACK_URL?.trim() || undefined;
+    if (!ipnUrl) {
+      logger.warn(
+        { userId: user.id, provider: PROVIDER, orderId },
+        "NOWPayments createDepositIntent: ipn_callback_url is not configured; status polling will be the only confirmation path"
+      );
+    }
 
     const resp = await this.nowPayments.createPayment({
       priceAmount: amount,
@@ -129,29 +173,48 @@ export class BalanceService {
   async processNowPaymentsIpn(
     rawBody: string,
     signature: string | undefined
-  ): Promise<{ ok: boolean; credited?: boolean; duplicate?: boolean }> {
+  ): Promise<NowPaymentsProcessResult> {
     const secret = env.NOWPAYMENTS_IPN_SECRET?.trim();
     if (!secret) {
-      return { ok: false };
+      logger.warn({ provider: PROVIDER }, "NOWPayments IPN rejected: secret is not configured");
+      return { ok: false, error: "ipn_secret_missing" };
     }
     if (!(await NowPaymentsAdapter.verifyIpnSignature(rawBody, signature, secret))) {
-      return { ok: false };
+      logger.warn({ provider: PROVIDER }, "NOWPayments IPN rejected: invalid signature");
+      return { ok: false, error: "invalid_signature" };
     }
 
     let payload: Record<string, unknown>;
     try {
       payload = JSON.parse(rawBody) as Record<string, unknown>;
     } catch {
-      return { ok: false };
+      logger.warn({ provider: PROVIDER }, "NOWPayments IPN rejected: invalid JSON");
+      return { ok: false, error: "invalid_json" };
     }
 
+    return this.processTrustedNowPaymentsPayload(payload, "ipn");
+  }
+
+  private async processTrustedNowPaymentsPayload(
+    payload: Record<string, unknown>,
+    source: NowPaymentsProcessSource
+  ): Promise<NowPaymentsProcessResult> {
     const paymentId = String(payload.payment_id ?? "");
-    const paymentStatus = String(payload.payment_status ?? "");
+    const paymentStatus = normalizeNowPaymentsStatus(payload.payment_status);
     const orderId = String(payload.order_id ?? "");
 
-    if (!paymentId || !orderId) {
-      return { ok: false };
+    if (!paymentId || !orderId || !paymentStatus) {
+      logger.warn(
+        { provider: PROVIDER, source, paymentId, orderId, paymentStatus },
+        "NOWPayments event rejected: missing required fields"
+      );
+      return { ok: false, error: "invalid_payload" };
     }
+
+    logger.info(
+      { provider: PROVIDER, source, paymentId, orderId, paymentStatus },
+      "NOWPayments event received"
+    );
 
     const eventLog = await this.prisma.providerEventLog.upsert({
       where: {
@@ -165,17 +228,22 @@ export class BalanceService {
         status: "processing"
       },
       update: {
+        orderId,
         rawPayload: payload as object
       }
     });
 
     if (eventLog.status === "processed") {
-      return { ok: true, duplicate: true };
+      logger.info(
+        { provider: PROVIDER, source, paymentId, orderId, paymentStatus },
+        "NOWPayments event already processed"
+      );
+      return { ok: true, duplicate: true, status: paymentStatus };
     }
 
     const deposit = await this.prisma.depositTransaction.findUnique({
       where: { orderId },
-      include: { user: true, account: true }
+      include: { user: true }
     });
 
     if (!deposit) {
@@ -183,33 +251,110 @@ export class BalanceService {
         where: { id: eventLog.id },
         data: { status: "ignored", errorMessage: "Deposit not found for orderId" }
       });
-      return { ok: true };
+      logger.warn(
+        { provider: PROVIDER, source, paymentId, orderId, paymentStatus },
+        "NOWPayments event ignored: deposit not found"
+      );
+      return { ok: true, status: paymentStatus };
     }
 
-    if (deposit.status === "CONFIRMED") {
+    if (deposit.providerPaymentId && deposit.providerPaymentId !== paymentId) {
       await this.prisma.providerEventLog.update({
         where: { id: eventLog.id },
-        data: { status: "processed", processedAt: new Date() }
+        data: { status: "ignored", errorMessage: "Payment id mismatch for orderId" }
       });
-      return { ok: true, duplicate: true };
+      logger.warn(
+        {
+          provider: PROVIDER,
+          source,
+          paymentId,
+          orderId,
+          paymentStatus,
+          expectedPaymentId: deposit.providerPaymentId
+        },
+        "NOWPayments event ignored: payment id mismatch"
+      );
+      return { ok: true, status: paymentStatus };
     }
 
-    if (paymentStatus !== "finished") {
-      await this.prisma.providerEventLog.update({
-        where: { id: eventLog.id },
-        data: { status: "received", errorMessage: `Status ${paymentStatus} - not finished` }
-      });
-      return { ok: true };
-    }
-
-    const creditAmount =
-      typeof payload.price_amount === "number"
-        ? payload.price_amount
-        : Number(payload.price_amount ?? deposit.amount);
+    const mappedStatus = mapNowPaymentsStatusToDepositStatus(paymentStatus);
+    const payloadObject = payload as object;
+    const processedAt = new Date();
+    let credited = false;
+    let duplicate = false;
+    let ignored = false;
 
     await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT 1 FROM deposit_transactions WHERE id = ${deposit.id} FOR UPDATE`
+      );
+
+      const lockedDeposit = await tx.depositTransaction.findUniqueOrThrow({
+        where: { id: deposit.id }
+      });
+
+      if (lockedDeposit.providerPaymentId && lockedDeposit.providerPaymentId !== paymentId) {
+        ignored = true;
+        await tx.providerEventLog.update({
+          where: { id: eventLog.id },
+          data: { status: "ignored", errorMessage: "Payment id mismatch for locked deposit" }
+        });
+        return;
+      }
+
+      if (lockedDeposit.status === "CONFIRMED") {
+        duplicate = true;
+        await tx.providerEventLog.update({
+          where: { id: eventLog.id },
+          data: { status: "processed", processedAt, errorMessage: null }
+        });
+        return;
+      }
+
+      if (mappedStatus === "FAILED") {
+        await tx.depositTransaction.update({
+          where: { id: lockedDeposit.id },
+          data: {
+            status: "FAILED",
+            providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
+            rawPayload: payloadObject
+          }
+        });
+
+        await tx.providerEventLog.update({
+          where: { id: eventLog.id },
+          data: {
+            status: "received",
+            errorMessage: `Status ${paymentStatus}`
+          }
+        });
+        return;
+      }
+
+      if (mappedStatus === "PENDING") {
+        await tx.depositTransaction.update({
+          where: { id: lockedDeposit.id },
+          data: {
+            status: "PENDING",
+            providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
+            rawPayload: payloadObject
+          }
+        });
+
+        await tx.providerEventLog.update({
+          where: { id: eventLog.id },
+          data: {
+            status: "received",
+            errorMessage: `Status ${paymentStatus}`
+          }
+        });
+        return;
+      }
+
+      const creditAmount = readNowPaymentsAmount(payload.price_amount, Number(lockedDeposit.amount));
+
       const account = await tx.userBalanceAccount.update({
-        where: { id: deposit.accountId },
+        where: { id: lockedDeposit.accountId },
         data: {
           balance: { increment: creditAmount }
         }
@@ -217,52 +362,106 @@ export class BalanceService {
 
       const entry = await tx.balanceLedgerEntry.create({
         data: {
-          accountId: deposit.accountId,
+          accountId: lockedDeposit.accountId,
           type: "CREDIT",
           amount: creditAmount,
           balanceAfter: account.balance,
           referenceType: "deposit",
-          referenceId: deposit.id
+          referenceId: lockedDeposit.id
         }
       });
 
       await tx.depositTransaction.update({
-        where: { id: deposit.id },
+        where: { id: lockedDeposit.id },
         data: {
           status: "CONFIRMED",
-          creditedAt: new Date(),
+          providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
+          creditedAt: processedAt,
           ledgerEntryId: entry.id,
-          rawPayload: payload as object
+          rawPayload: payloadObject
         }
       });
 
       await tx.providerEventLog.update({
         where: { id: eventLog.id },
-        data: { status: "processed", processedAt: new Date() }
+        data: { status: "processed", processedAt, errorMessage: null }
       });
+
+      credited = true;
     });
 
-    const owner = await this.prisma.user.findFirst({
-      where: { role: "ALPHA_OWNER" }
-    });
-
-    await this.notifications.sendText(
-      deposit.user,
-      "PAYMENT_CONFIRMED",
-      deposit.user.selectedLanguage === "en"
-        ? `Deposit confirmed. ${creditAmount} ${deposit.currency} credited to your balance.`
-        : `Пополнение подтверждено. ${creditAmount} ${deposit.currency} зачислено на баланс.`,
-      { depositId: deposit.id }
-    );
-
-    if (owner) {
-      await this.audit.log(owner.id, "deposit_credited", "deposit_transaction", deposit.id, {
-        amount: creditAmount,
-        userId: deposit.userId
-      });
+    if (ignored) {
+      logger.warn(
+        { provider: PROVIDER, source, paymentId, orderId, paymentStatus },
+        "NOWPayments event ignored during locked processing"
+      );
+      return { ok: true, status: paymentStatus };
     }
 
-    return { ok: true, credited: true };
+    if (duplicate) {
+      logger.info(
+        { provider: PROVIDER, source, paymentId, orderId, paymentStatus, depositId: deposit.id },
+        "NOWPayments event finished but deposit was already confirmed"
+      );
+      return { ok: true, duplicate: true, status: paymentStatus };
+    }
+
+    if (!credited) {
+      const logLevel = mappedStatus === "FAILED" ? "warn" : "info";
+      logger[logLevel](
+        { provider: PROVIDER, source, paymentId, orderId, paymentStatus, depositId: deposit.id },
+        mappedStatus === "FAILED"
+          ? "NOWPayments event marked deposit as failed"
+          : "NOWPayments event stored without credit"
+      );
+      return { ok: true, status: paymentStatus };
+    }
+
+    const creditedAmount = readNowPaymentsAmount(payload.price_amount, Number(deposit.amount));
+
+    logger.info(
+      {
+        provider: PROVIDER,
+        source,
+        paymentId,
+        orderId,
+        paymentStatus,
+        depositId: deposit.id,
+        amount: creditedAmount,
+        currency: deposit.currency,
+        userId: deposit.userId
+      },
+      "NOWPayments deposit credited"
+    );
+
+    void (async () => {
+      await this.notifications.sendText(
+        deposit.user,
+        "PAYMENT_CONFIRMED",
+        deposit.user.selectedLanguage === "en"
+          ? `Deposit confirmed. ${creditedAmount} ${deposit.currency} credited to your balance.`
+          : `Пополнение подтверждено. ${creditedAmount} ${deposit.currency} зачислено на баланс.`,
+        { depositId: deposit.id }
+      );
+
+      const owner = await this.prisma.user.findFirst({
+        where: { role: "ALPHA_OWNER" }
+      });
+
+      if (owner) {
+        await this.audit.log(owner.id, "deposit_credited", "deposit_transaction", deposit.id, {
+          amount: creditedAmount,
+          userId: deposit.userId
+        });
+      }
+    })().catch((err: unknown) => {
+      logger.warn(
+        { provider: PROVIDER, source, paymentId, orderId, depositId: deposit.id, err },
+        "NOWPayments follow-up notification/audit failed"
+      );
+    });
+
+    return { ok: true, credited: true, status: paymentStatus };
   }
 
   /**
@@ -428,19 +627,25 @@ export class BalanceService {
       if (paymentId) {
         try {
           const st = await this.nowPayments.getPaymentStatus(paymentId);
-          if (st.payment_status === "finished") {
-            await this.processNowPaymentsIpn(
-              JSON.stringify({
-                payment_id: st.payment_id,
-                payment_status: st.payment_status,
-                order_id: deposit.orderId,
-                price_amount: st.price_amount
-              }),
-              undefined
-            );
+          const result = await this.processTrustedNowPaymentsPayload(
+            {
+              payment_id: st.payment_id,
+              payment_status: st.payment_status,
+              order_id: deposit.orderId,
+              price_amount: st.price_amount,
+              pay_amount: st.pay_amount,
+              pay_currency: st.pay_currency,
+              pay_address: st.pay_address,
+              outcome_amount: st.outcome_amount,
+              outcome_currency: st.outcome_currency
+            },
+            "status_sync"
+          );
+
+          if (result.credited || result.duplicate || st.payment_status === "finished") {
             return { status: "confirmed", credited: true };
           }
-          return { status: st.payment_status };
+          return { status: result.status ?? normalizeNowPaymentsStatus(st.payment_status) };
         } catch {
           return { status: deposit.status };
         }

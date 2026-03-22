@@ -34,6 +34,10 @@ NOWPAYMENTS_IPN_CALLBACK_URL=https://admin.botzik.pp.ua/webhooks/payments/nowpay
 - `NOWPAYMENTS_IPN_SECRET` — IPN Secret из NOWPayments → Settings → IPN
 - `NOWPAYMENTS_IPN_CALLBACK_URL` — оставьте как есть (ваш backoffice URL)
 
+Важно: если `admin.botzik.pp.ua` защищён через Cloudflare Access, webhook-путь
+`/webhooks/payments/nowpayments` нужно вынести в **Bypass**. Иначе NOWPayments будет
+получать редирект на `botzik.cloudflareaccess.com`, а не ваш webhook.
+
 Сохраните (Ctrl+O, Enter, Ctrl+X).
 
 Перезапустите бота:
@@ -52,8 +56,13 @@ docker compose -f docker-compose.prod.yml restart bot
    ```
    https://admin.botzik.pp.ua/webhooks/payments/nowpayments
    ```
-3. Сохраните
-4. Скопируйте **IPN Secret** и вставьте в `NOWPAYMENTS_IPN_SECRET` в `.env` на сервере
+3. Если в Cloudflare Access есть общий login для `admin.botzik.pp.ua`, создайте отдельный
+   **Bypass** для пути:
+   ```
+   admin.botzik.pp.ua/webhooks/payments/nowpayments*
+   ```
+4. Сохраните настройки
+5. Скопируйте **IPN Secret** и вставьте в `NOWPAYMENTS_IPN_SECRET` в `.env` на сервере
 
 ---
 
@@ -113,13 +122,41 @@ docker compose -f docker-compose.prod.yml restart bot
 
 ## Проверка webhook
 
-После реальной оплаты проверьте логи:
+### 1. Проверка самого route из приложения
+
+На сервере:
+
+```bash
+curl -s http://localhost:3000/webhooks/payments/nowpayments
+```
+
+Ожидаемо:
+
+```json
+{"ok":true,"provider":"nowpayments","route":"/webhooks/payments/nowpayments",...}
+```
+
+### 2. Проверка публичного HTTPS через tunnel
+
+Снаружи:
+
+```bash
+curl -i https://admin.botzik.pp.ua/webhooks/payments/nowpayments
+```
+
+Ожидаемо: `HTTP/2 200`.
+
+Если видите `302` и редирект на `botzik.cloudflareaccess.com`, значит Bypass для webhook
+ещё не настроен и NOWPayments не сможет отправлять IPN.
+
+### 3. После реальной оплаты проверьте логи
 
 ```bash
 ssh root@77.42.79.54 "docker compose -f /opt/telegram-bot-konstruktor/docker-compose.prod.yml logs bot --tail 50"
 ```
 
-Ищите строки с `nowpayments` или `webhook`.
+Ищите строки с `NOWPayments webhook request received`, `NOWPayments event received`,
+`NOWPayments deposit credited`.
 
 ---
 
@@ -128,5 +165,6 @@ ssh root@77.42.79.54 "docker compose -f /opt/telegram-bot-konstruktor/docker-com
 | Проблема | Решение |
 |----------|---------|
 | Кнопки «Пополнить» не появляются | Проверьте NOWPAYMENTS_API_KEY и NOWPAYMENTS_IPN_SECRET в .env, перезапустите бота |
-| Оплата прошла, баланс не зачислился | Проверьте NOWPAYMENTS_IPN_CALLBACK_URL в .env и в NOWPayments — должны совпадать |
-| 404 на webhook | Убедитесь, что backoffice доступен по https://admin.botzik.pp.ua (Cloudflare Tunnel) |
+| Оплата прошла, баланс не зачислился | Проверьте NOWPAYMENTS_IPN_CALLBACK_URL в `.env`, в NOWPayments и убедитесь, что Cloudflare Access не перехватывает `/webhooks/payments/nowpayments` |
+| 302 на webhook | Для `admin.botzik.pp.ua/webhooks/payments/nowpayments*` нет Bypass policy/app в Cloudflare Access |
+| 404 на webhook | Проверьте, что tunnel ведёт на `localhost:3000`, а приложение отвечает на `GET /webhooks/payments/nowpayments` |

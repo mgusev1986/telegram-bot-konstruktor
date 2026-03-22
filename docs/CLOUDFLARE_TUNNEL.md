@@ -79,6 +79,30 @@
 
 После этого tunnel в Dashboard будет в статусе "Pending" до тех пор, пока cloudflared не подключится на сервере.
 
+## Шаг 1.4: Если backoffice защищён Cloudflare Access — исключить webhook из login flow
+
+Если вы защищаете `admin.MY_DOMAIN.com` через Cloudflare Access, **не пускайте NOWPayments
+через общий login challenge**. Для webhook нужен публичный POST без email-кода.
+
+Сделайте отдельное правило/app для пути:
+
+```text
+admin.MY_DOMAIN.com/webhooks/payments/nowpayments*
+```
+
+Рекомендуемый вариант:
+
+1. **Zero Trust** → **Access** → **Applications**
+2. Создайте отдельное Self-hosted приложение для
+   `admin.MY_DOMAIN.com/webhooks/payments/nowpayments*`
+3. Политика: **Bypass**
+4. Убедитесь, что это правило стоит **выше** общего приложения на `admin.MY_DOMAIN.com/*`
+
+Итог:
+
+- `https://admin.MY_DOMAIN.com/backoffice` остаётся под Cloudflare Access
+- `https://admin.MY_DOMAIN.com/webhooks/payments/nowpayments` доступен публично для NOWPayments
+
 ---
 
 # Часть 2: Установка и настройка на сервере
@@ -225,6 +249,7 @@ https://admin.MY_DOMAIN.com/webhooks/payments/nowpayments
 ```
 
 Убедитесь, что `NOWPAYMENTS_IPN_CALLBACK_URL` в .env совпадает.
+Также убедитесь, что этот путь **не редиректит** на `botzik.cloudflareaccess.com`.
 
 ---
 

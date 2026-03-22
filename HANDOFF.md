@@ -3,12 +3,26 @@
 Один snapshot проекта для переноса контекста в новый чат или онбординга разработчика. Обновляйте этот файл после крупных изменений.
 
 ### Last checkpoint
-Дата: 2026-03-21
-Снапшот: `snapshot-2026-03-21_16-15-43.tar.gz`
-SHA256: `6d04ff8bd8ff516a28a7c28d55d15559aad89fbcc3baccadfd03160a0f75adb5`
+Дата: 2026-03-22
+Снапшот: `.snapshots/snapshot-2026-03-22_18-11-04_full-project.tar.gz`
+SHA256: `e5b0069b44156d579866181c9071aca865fb81f7673265da34de1a3325008013`
+HEAD: `08489d2eb3658d4147273a128822248d56d3fd8a`
+Ветка: `main`
 Сборка: `npm run build` (pass), `npm run lint:types` (pass)
 Деплой: Hetzner VPS (77.42.79.54), Docker Compose
-Тесты: 208 passed, 7 failed (интеграционные — требуют postgres)
+Тесты: targeted feature tests (pass, 61/61), full `npm test` = 240 passed, 6 failed (known unrelated failures / postgres required for part of suite)
+
+### Checkpoint notes (2026-03-22) — user management, onboarding ru-default, external-link buttons, full local snapshot
+
+- **Full local snapshot created:** `.snapshots/snapshot-2026-03-22_18-11-04_full-project.tar.gz` (230M), metadata: `.snapshots/snapshot-2026-03-22_18-11-04_full-project.meta.txt`, SHA256 above. Snapshot was taken from clean worktree on `main`.
+- **Telegram admin user management upgraded:** `OWNER` and `ALPHA_OWNER` now see `👤 Управление пользователем`; user card shows username, Telegram ID, display name, internal ID and role in current bot; added assign admin / revoke admin / list admins / protected delete flow; `OWNER` and `ALPHA_OWNER` are protected from demotion/deletion; callback payloads use short ids.
+- **Bot-scoped role logic reused instead of parallel architecture:** changes concentrated in `src/bot/register-bot.ts`, `src/bot/keyboards.ts`, `src/modules/bot-roles/bot-role-assignment.service.ts`, `src/modules/users/user.service.ts`, `src/modules/menu/menu.service.ts`.
+- **Onboarding wizard start simplified:** initial language picker removed; wizard now starts directly with base language `ru` via `src/bot/helpers/onboarding-start.ts`; `adminUiLanguageCode` / `editingContentLanguageCode` split preserved.
+- **Button creation now supports external links:** after entering button title, flow now asks whether button should lead to an existing page or an external link; supported links are `http://`, `https://`, `https://t.me/...`, `http://t.me/...`, `tg://...`; invalid links are rejected gracefully with retry prompt.
+- **Native Telegram URL button rendering added:** external menu buttons are stored as `EXTERNAL_LINK` and rendered as native URL buttons in user menu; locked items still stay behind existing access checks; stale callback flow has a safe fallback screen with URL button.
+- **Prisma / schema state:** `MenuItemType.EXTERNAL_LINK` is present in `prisma/schema.prisma`; minimal migration exists in `prisma/migrations/20260326000000_add_external_link_type/migration.sql`; Prisma client was regenerated with `npx prisma generate`.
+- **Tests added/updated for this checkpoint:** `tests/create-button-link.scene.test.ts`, `tests/create-button-link.scene.locale-split.test.ts`, `tests/keyboards.test.ts`, `tests/menu-create-section-link.test.ts`, plus earlier user-management / onboarding tests from the same commit.
+- **Known failing full-suite tests at this checkpoint:** `tests/bot-role-pending-binding.test.ts` (2), `tests/export-scope.test.ts` (1), `tests/user-directory.service.test.ts` (3, requires reachable postgres at `postgres:5432`).
 
 ### Checkpoint notes (2026-03-21) — subscription channel, drip buttons, backup, backoffice
 
@@ -63,7 +77,7 @@ SHA256: `6d04ff8bd8ff516a28a7c28d55d15559aad89fbcc3baccadfd03160a0f75adb5`
 **Ключевые договорённости:**
 - Один активный шаблон презентации (PresentationTemplate isActive: true).
 - Root = главная страница (контент из PresentationLocalization.welcome*, кнопки = MenuItem с parentId null).
-- «Добавить новый раздел» = новая страница + кнопка на текущей; «Добавить новую кнопку» = только кнопка (SECTION_LINK) на существующую страницу.
+- «Добавить новый раздел» = новая страница + кнопка на текущей; «Добавить новую кнопку» = кнопка либо на существующую страницу (`SECTION_LINK`), либо на внешний ресурс (`EXTERNAL_LINK`).
 - Все кнопки в интерфейсе бота — вертикально (одна в ряд).
 - «↩️ Назад» ведёт на реальную предыдущую страницу с контентом; «🗂 В главное меню» = тот же экран, что /start.
 
@@ -200,9 +214,9 @@ Telegram Bot - Konstruktor/
 ## 4. Логика конструктора
 
 - **Страница (раздел):** экран с контентом (текст; фото/видео/документ с подписью или только файл). Хранится как MenuItem + MenuItemLocalization (title, contentText, mediaType, mediaFileId).
-- **Кнопка:** пункт меню, ведущий на страницу. Обычный раздел = одна запись MenuItem (type TEXT/PHOTO/VIDEO/DOCUMENT/SUBMENU), показывается как кнопка с callback `menu:open:<id>`. Доп. кнопка на существующую страницу = type SECTION_LINK, targetMenuItemId = id целевой страницы.
+- **Кнопка:** пункт меню, ведущий либо на страницу, либо на внешний ресурс. Обычный раздел = одна запись MenuItem (type TEXT/PHOTO/VIDEO/DOCUMENT/SUBMENU), показывается как кнопка с callback `menu:open:<id>`. Доп. кнопка на существующую страницу = type SECTION_LINK, `targetMenuItemId` = id целевой страницы. Внешняя кнопка = type `EXTERNAL_LINK`, URL хранится в localization `externalUrl`, а в пользовательском меню рендерится как native Telegram URL button.
 - **«Добавить новый раздел»:** сцена create-section (или переход в неё из онбординга): запрос названия кнопки → запрос контента одним сообщением → createMenuItem с parentId текущей страницы → кнопка появляется на текущей странице автоматически.
-- **«Добавить новую кнопку»:** сцена create-button-link: выбор целевой страницы + название кнопки → createMenuItem type SECTION_LINK с targetMenuItemId.
+- **«Добавить новую кнопку»:** сцена `create-button-link`: ввод названия → выбор типа действия (`существующая страница` / `внешняя ссылка`) → либо `createMenuItem type SECTION_LINK`, либо `createMenuItem type EXTERNAL_LINK`.
 - **Подраздел:** дочерняя страница (parentId = id страницы, из которой вызвали «Добавить новый раздел»). Контекст в сценах задаётся через section_hint_inside_page / section_hint_on_root.
 
 ---
@@ -210,7 +224,7 @@ Telegram Bot - Konstruktor/
 ## 5. Логика навигации
 
 - **Root:** Виртуальная страница «root». Контент = `getWelcome(user)` из PresentationLocalization активного шаблона. Кнопки = `getMenuItemsForParent(user, null)`.
-- **Открытие страницы:** callback `menu:open:<id>`. Если id = SECTION_LINK с targetMenuItemId — показывается контент целевой страницы, parent для «Назад» = родитель ссылки. Иначе — getMenuItemContent(user, id), getMenuItemsForParent(user, id); если есть дети или type SUBMENU — экран «подменю» (title+content + кнопки детей), иначе — контент + buildContentScreenKeyboard.
+- **Открытие страницы:** callback `menu:open:<id>`. Если id = `SECTION_LINK` с `targetMenuItemId` — показывается контент целевой страницы, parent для «Назад» = родитель ссылки. Если id = `EXTERNAL_LINK` из старого/stale callback-flow — бот показывает fallback-экран с URL-кнопкой и навигацией. В обычном рендере `EXTERNAL_LINK` сразу отдаётся как native URL button без callback. Иначе — `getMenuItemContent(user, id)`, `getMenuItemsForParent(user, id)`; если есть дети или type `SUBMENU` — экран «подменю» (title+content + кнопки детей), иначе — контент + `buildContentScreenKeyboard`.
 - **«↩️ Назад»:** В меню контента callback `menu:back:<parentId>` (parentId или "root") → sendMenuPage(ctx, parentId ?? null). В редакторе страницы callback `page_edit:back:<pageId>`: если pageId root → sendRootWithWelcome; иначе — переход на родителя или showPageEditor(parentId).
 - **«🗂 В главное меню»:** callback `nav:root` → sendRootWithWelcome. Должен совпадать с экраном по /start.
 - **Редактор страницы:** «🛠 Настроить страницу» = `page_edit:open:<currentPageId>`, чтобы редактор открывался именно для текущей страницы. В редакторе: изменить контент, добавить раздел/кнопку, управление кнопками, предпросмотр, удаление (не для root), Назад, В главное меню.
@@ -219,7 +233,7 @@ Telegram Bot - Konstruktor/
 
 ## 6. Логика страниц / кнопок / подразделов
 
-- **MenuItem:** id, templateId, parentId (null = корневой уровень), key (уникальный), type (TEXT, PHOTO, VIDEO, DOCUMENT, LINK, SUBMENU, SECTION_LINK), sortOrder, isActive, targetMenuItemId (для SECTION_LINK). Локализации в MenuItemLocalization (languageCode, title, contentText, mediaType, mediaFileId).
+- **MenuItem:** id, templateId, parentId (null = корневой уровень), key (уникальный), type (TEXT, PHOTO, VIDEO, DOCUMENT, LINK, SUBMENU, SECTION_LINK, EXTERNAL_LINK), sortOrder, isActive, targetMenuItemId (для SECTION_LINK). Локализации в `MenuItemLocalization` (languageCode, title, contentText, mediaType, mediaFileId, externalUrl).
 - **Кнопки на экране:** Собираются в keyboards.ts. buildMenuKeyboard — по одной кнопке в ряд (вертикально); каждая пункт меню = `menu:open:<item.id>`; в конце строки навигации (menu:back:<parentId>, nav:root), для админа — «Настроить страницу» (page_edit:open:<currentPageId>).
 - **Подразделы:** Родитель = страница с parentId; её дети = getMenuItemsForParent(user, parentId). «Назад» с дочерней страницы = sendMenuPage(ctx, parentId).
 
@@ -253,7 +267,7 @@ Telegram Bot - Konstruktor/
 - **PostgreSQL**, подключение через `DATABASE_URL`.
 - **Ключевые модели:** User, PresentationTemplate, PresentationLocalization, MenuItem, MenuItemLocalization, DripCampaign, DripStep, DripStepLocalization, UserDripProgress, Broadcast, Product, Payment, AccessRule, AdminPermission, ReferralEvent, Tag, Badge и др.
 - **Один активный шаблон:** `PresentationTemplate` с `isActive: true`. У него — welcome в PresentationLocalization и все MenuItem с этим templateId.
-- **MenuItem:** parentId null = кнопки на главной; иначе — дочерние к странице parentId. SECTION_LINK — targetMenuItemId указывает на страницу, на которую ведёт кнопка.
+- **MenuItem:** `parentId null` = кнопки на главной; иначе — дочерние к странице `parentId`. `SECTION_LINK` — `targetMenuItemId` указывает на страницу, на которую ведёт кнопка. `EXTERNAL_LINK` — внешний URL в `MenuItemLocalization.externalUrl`.
 - Миграции: `prisma migrate deploy` / `prisma migrate dev`. Сид базовый: `prisma/seed.ts`. Демо-структура: `prisma/seed-demo-structure.ts` (главная, разделы, подразделы «О продукте» → Продукт 1–3, drip 3 шага по 1 мин, ON_REGISTRATION).
 
 ---

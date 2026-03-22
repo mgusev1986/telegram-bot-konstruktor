@@ -1,0 +1,297 @@
+import crypto from "node:crypto";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("../src/config/env", () => ({
+  env: {
+    NOWPAYMENTS_API_KEY: "test-api-key",
+    NOWPAYMENTS_IPN_SECRET: "test-ipn-secret",
+    NOWPAYMENTS_BASE_URL: "https://api.nowpayments.io/v1",
+    NOWPAYMENTS_IPN_CALLBACK_URL: "https://admin.botzik.pp.ua/webhooks/payments/nowpayments"
+  }
+}));
+
+vi.mock("../src/common/logger", () => ({
+  logger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn()
+  }
+}));
+
+import { BalanceService } from "../src/modules/payments/balance.service";
+
+function signPayload(payload: Record<string, unknown>, secret: string): string {
+  const sortedEntries = Object.entries(payload).sort(([left], [right]) => left.localeCompare(right));
+  const sorted = Object.fromEntries(sortedEntries);
+  return crypto.createHmac("sha512", secret).update(JSON.stringify(sorted)).digest("hex");
+}
+
+function flushAsyncWork(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function createBalanceHarness() {
+  const state = {
+    user: {
+      id: "user-1",
+      selectedLanguage: "ru",
+      telegramUserId: 111n
+    },
+    deposit: {
+      id: "dep-1",
+      userId: "user-1",
+      accountId: "acc-1",
+      provider: "nowpayments",
+      providerPaymentId: "payment-1",
+      orderId: "order-1",
+      amount: 10,
+      currency: "USDT",
+      status: "PENDING",
+      rawPayload: {},
+      ledgerEntryId: null as string | null,
+      creditedAt: null as Date | null
+    },
+    account: {
+      id: "acc-1",
+      userId: "user-1",
+      balance: 0
+    },
+    eventLogs: new Map<string, any>(),
+    ledgerEntries: [] as any[]
+  };
+
+  const notifications = {
+    sendText: vi.fn().mockResolvedValue(undefined)
+  };
+  const audit = {
+    log: vi.fn().mockResolvedValue(undefined)
+  };
+
+  const providerEventLog = {
+    upsert: vi.fn(async ({ where, create, update }: any) => {
+      const key = where.provider_providerTxId.providerTxId;
+      const existing = state.eventLogs.get(key);
+      if (existing) {
+        Object.assign(existing, update);
+        return { ...existing };
+      }
+      const row = {
+        id: `event-${key}`,
+        ...create
+      };
+      state.eventLogs.set(key, row);
+      return { ...row };
+    }),
+    update: vi.fn(async ({ where, data }: any) => {
+      const existing = Array.from(state.eventLogs.values()).find((item) => item.id === where.id);
+      if (!existing) {
+        throw new Error(`Unknown provider event log ${where.id}`);
+      }
+      Object.assign(existing, data);
+      return { ...existing };
+    })
+  };
+
+  const depositTransaction = {
+    findUnique: vi.fn(async ({ where, include }: any) => {
+      if (where.orderId && where.orderId === state.deposit.orderId) {
+        return include?.user ? { ...state.deposit, user: state.user } : { ...state.deposit };
+      }
+      if (where.id && where.id === state.deposit.id) {
+        return include?.user ? { ...state.deposit, user: state.user } : { ...state.deposit };
+      }
+      return null;
+    }),
+    findFirst: vi.fn(async ({ where }: any) => {
+      const matches = where.OR?.some(
+        (item: any) => item.id === state.deposit.id || item.orderId === state.deposit.orderId
+      );
+      return matches ? { ...state.deposit } : null;
+    }),
+    findUniqueOrThrow: vi.fn(async ({ where }: any) => {
+      const match =
+        (where.id && where.id === state.deposit.id) ||
+        (where.orderId && where.orderId === state.deposit.orderId);
+      if (!match) {
+        throw new Error("Deposit not found");
+      }
+      return { ...state.deposit };
+    }),
+    update: vi.fn(async ({ where, data }: any) => {
+      if (where.id !== state.deposit.id) {
+        throw new Error("Deposit not found");
+      }
+      Object.assign(state.deposit, data);
+      return { ...state.deposit };
+    })
+  };
+
+  const userBalanceAccount = {
+    update: vi.fn(async ({ where, data }: any) => {
+      if (where.id !== state.account.id) {
+        throw new Error("Account not found");
+      }
+      const increment = Number(data.balance.increment ?? 0);
+      state.account.balance += increment;
+      return { ...state.account };
+    })
+  };
+
+  const balanceLedgerEntry = {
+    create: vi.fn(async ({ data }: any) => {
+      const row = {
+        id: `ledger-${state.ledgerEntries.length + 1}`,
+        ...data
+      };
+      state.ledgerEntries.push(row);
+      return row;
+    })
+  };
+
+  const prismaTx: any = {
+    $executeRaw: vi.fn(async () => 1),
+    providerEventLog,
+    depositTransaction,
+    userBalanceAccount,
+    balanceLedgerEntry
+  };
+
+  const prisma: any = {
+    providerEventLog,
+    depositTransaction,
+    userBalanceAccount,
+    balanceLedgerEntry,
+    user: {
+      findFirst: vi.fn(async () => ({ id: "owner-1", role: "ALPHA_OWNER" }))
+    },
+    $executeRaw: vi.fn(async () => 1),
+    $transaction: vi.fn(async (callback: (tx: any) => Promise<unknown>) => callback(prismaTx))
+  };
+
+  const service = new BalanceService(
+    prisma,
+    notifications as any,
+    audit as any,
+    { assignTag: vi.fn().mockResolvedValue(undefined) } as any
+  );
+
+  return {
+    service,
+    prisma,
+    notifications,
+    audit,
+    state
+  };
+}
+
+describe("BalanceService NOWPayments flow", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("credits a deposit exactly once for a valid signed IPN", async () => {
+    const { service, notifications, audit, state } = createBalanceHarness();
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "finished",
+      price_amount: 10
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const result = await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        credited: true,
+        status: "finished"
+      })
+    );
+    expect(state.deposit.status).toBe("CONFIRMED");
+    expect(state.deposit.ledgerEntryId).toBe("ledger-1");
+    expect(state.account.balance).toBe(10);
+    expect(state.ledgerEntries).toHaveLength(1);
+    expect(notifications.sendText).toHaveBeenCalledTimes(1);
+    expect(audit.log).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats duplicate webhook delivery as idempotent and does not double-credit", async () => {
+    const { service, state } = createBalanceHarness();
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "finished",
+      price_amount: 10
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const first = await service.processNowPaymentsIpn(rawBody, signature);
+    const second = await service.processNowPaymentsIpn(rawBody, signature);
+
+    expect(first.credited).toBe(true);
+    expect(second).toEqual(
+      expect.objectContaining({
+        ok: true,
+        duplicate: true
+      })
+    );
+    expect(state.account.balance).toBe(10);
+    expect(state.ledgerEntries).toHaveLength(1);
+  });
+
+  it("maps terminal failed NOWPayments statuses to FAILED without crediting", async () => {
+    const { service, state, notifications } = createBalanceHarness();
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "expired",
+      price_amount: 10
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const result = await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        status: "expired"
+      })
+    );
+    expect(state.deposit.status).toBe("FAILED");
+    expect(state.account.balance).toBe(0);
+    expect(notifications.sendText).not.toHaveBeenCalled();
+  });
+
+  it("confirms a pending deposit through trusted status polling without IPN signature", async () => {
+    const { service, state } = createBalanceHarness();
+    (service as any).nowPayments = {
+      getPaymentStatus: vi.fn().mockResolvedValue({
+        payment_id: state.deposit.providerPaymentId,
+        payment_status: "finished",
+        pay_address: "wallet-address",
+        price_amount: 10,
+        price_currency: "usdt",
+        pay_amount: 10.25,
+        pay_currency: "usdtbsc",
+        order_id: state.deposit.orderId,
+        outcome_amount: 9.8,
+        outcome_currency: "usdt"
+      })
+    };
+
+    const result = await service.checkDepositStatus(state.deposit.id);
+    await flushAsyncWork();
+
+    expect(result).toEqual({ status: "confirmed", credited: true });
+    expect(state.deposit.status).toBe("CONFIRMED");
+    expect(state.account.balance).toBe(10);
+    expect(state.ledgerEntries).toHaveLength(1);
+  });
+});

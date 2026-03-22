@@ -55,22 +55,56 @@ export function addPaymentWebhookRoute(
     }
   );
 
+  server.get("/webhooks/payments/nowpayments", async (_request, reply) => {
+    reply.header("cache-control", "no-store");
+    return {
+      ok: true,
+      provider: "nowpayments",
+      route: "/webhooks/payments/nowpayments",
+      servicesReady: Boolean(getServices()),
+      timestamp: new Date().toISOString()
+    };
+  });
+
   server.post<{
     Body: Record<string, unknown>;
     RawBody?: string;
   }>("/webhooks/payments/nowpayments", async (request, reply) => {
     const services = getServices();
     if (!services) {
+      logger.warn({ route: "/webhooks/payments/nowpayments" }, "NOWPayments webhook rejected: services not ready");
       reply.code(503);
       return { ok: false, error: "Services not ready" };
     }
     const rawBody = (request as any).rawBody ?? JSON.stringify(request.body ?? {});
-    const sig = (request.headers["x-nowpayments-sig"] as string) ?? undefined;
+    const signatureHeader = request.headers["x-nowpayments-sig"];
+    const sig = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+    logger.info(
+      {
+        route: "/webhooks/payments/nowpayments",
+        contentLength: request.headers["content-length"] ?? null,
+        hasSignature: Boolean(sig)
+      },
+      "NOWPayments webhook request received"
+    );
     const result = await services.balance.processNowPaymentsIpn(rawBody, sig);
     if (!result.ok) {
+      logger.warn(
+        { route: "/webhooks/payments/nowpayments", error: result.error ?? "invalid_request" },
+        "NOWPayments webhook request rejected"
+      );
       reply.code(400);
-      return { ok: false };
+      return { ok: false, error: result.error ?? "invalid_request" };
     }
+    logger.info(
+      {
+        route: "/webhooks/payments/nowpayments",
+        credited: Boolean(result.credited),
+        duplicate: Boolean(result.duplicate),
+        status: result.status ?? null
+      },
+      "NOWPayments webhook request processed"
+    );
     return { ok: true, credited: result.credited, duplicate: result.duplicate };
   });
 
