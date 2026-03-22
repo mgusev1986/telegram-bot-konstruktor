@@ -1016,6 +1016,25 @@ export class MenuService {
     });
   }
 
+  /**
+   * Resolve menu item by full id or short id (first 12 chars of UUID).
+   * Used for callback payloads where full UUID exceeds Telegram's 64-byte limit.
+   */
+  public async findMenuItemByIdOrShort(
+    idOrShort: string
+  ): Promise<(MenuItem & { localizations: MenuItemLocalization[] }) | null> {
+    const full = await this.findMenuItemById(idOrShort);
+    if (full) return full;
+    if (idOrShort.length !== 12 || !/^[a-f0-9]+$/i.test(idOrShort)) return null;
+    const baseWhere = this.botInstanceId
+      ? { template: { botInstanceId: this.botInstanceId }, id: { startsWith: idOrShort } }
+      : { id: { startsWith: idOrShort } };
+    return this.prisma.menuItem.findFirst({
+      where: baseWhere,
+      include: { localizations: true }
+    });
+  }
+
   /** Returns id of system target MenuItem (e.g. __sys_target_partner_register) or null if not found. */
   public async getSystemTargetMenuItemId(kind: SystemTargetKind): Promise<string | null> {
     const template = await this.prisma.presentationTemplate.findFirst({

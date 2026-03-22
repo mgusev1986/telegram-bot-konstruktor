@@ -137,8 +137,14 @@ const bootstrap = async (): Promise<void> => {
       let botInstance = existingBot;
       if (!botInstance) {
         try {
-          botInstance = await prisma.botInstance.create({
-            data: {
+          botInstance = await prisma.botInstance.upsert({
+            where: { telegramBotTokenHash: tokenHash },
+            update: {
+              telegramBotUsername: env.BOT_USERNAME,
+              status: "ACTIVE",
+              telegramBotTokenEncrypted: encryptTelegramBotToken(env.BOT_TOKEN!, env.BOT_TOKEN_ENCRYPTION_KEY)
+            },
+            create: {
               ownerBackofficeUserId: null,
               name: "Default Bot",
               telegramBotTokenEncrypted: encryptTelegramBotToken(env.BOT_TOKEN!, env.BOT_TOKEN_ENCRYPTION_KEY),
@@ -309,13 +315,14 @@ const bootstrap = async (): Promise<void> => {
   logger.info({ count: activeBots.length, ids: activeBots.map((b) => b.id) }, "Starting active bots");
 
   let primaryRuntime: Awaited<ReturnType<BotRuntimeManager["startBotInstance"]>> | null = null;
+  const totalBots = activeBots.length;
   const launchedBotIds: string[] = [];
 
   const results = await Promise.allSettled(
     activeBots.map((bot, idx) => {
       logger.info(
-        { botInstanceId: bot.id, username: bot.telegramBotUsername, index: idx + 1, total: activeBots.length },
-        "Launching bot..."
+        { botInstanceId: bot.id, username: bot.telegramBotUsername, index: idx + 1, total: totalBots },
+        "Starting bot X/Y..."
       );
       return runtimeManager
         .startBotInstance(bot.id, { launch: true })

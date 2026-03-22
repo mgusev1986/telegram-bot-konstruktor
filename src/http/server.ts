@@ -16,6 +16,9 @@ export function createHealthServer(): FastifyInstance {
     ok: true,
     timestamp: new Date().toISOString()
   }));
+  server.get("/", async (_req, reply) => {
+    return reply.redirect("/health", 302);
+  });
   return server;
 }
 
@@ -25,6 +28,7 @@ export function createHealthServer(): FastifyInstance {
 export async function startHttpServer(server: FastifyInstance): Promise<void> {
   await server.listen({ port: env.HTTP_PORT, host: "0.0.0.0" });
   logger.info({ port: env.HTTP_PORT }, "HTTP server started");
+  logger.info("/health route enabled (GET /health and GET / redirect)");
 }
 
 /**

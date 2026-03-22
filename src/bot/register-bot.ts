@@ -1,7 +1,7 @@
 import { Markup, Scenes, Telegraf, session } from "telegraf";
 import type { PaymentNetwork } from "@prisma/client";
 
-import { makeCallbackData, splitCallbackData } from "../common/callback-data";
+import { makeCallbackData, splitCallbackData, toShortId } from "../common/callback-data";
 import { logger } from "../common/logger";
 import { ForbiddenError } from "../common/errors";
 import { applyPersonalization } from "../common/personalization";
@@ -2075,7 +2075,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             text: "🗑 Удалить напоминание? Это действие нельзя отменить."
           },
           Markup.inlineKeyboard([
-            [Markup.button.callback("🗑 Да, удалить", makeCallbackData("page_edit", "rem_del", ruleId, triggerPageId))],
+            [Markup.button.callback("🗑 Да, удалить", makeCallbackData("page_edit", "rem_del", ruleId))],
             [Markup.button.callback(services.i18n.t(locale, "back"), makeCallbackData("page_edit", "rem_list", triggerPageId))]
           ])
         );
@@ -2102,7 +2102,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       }
 
       if (action === "reminders_delete_confirm" && value && extra) {
-        // Old format: value=ruleId, extra=triggerPageId
+        // Old format: value=ruleId, extra=triggerPageId — use ruleId only to stay under 64 chars
         const triggerPageId = extra;
         await services.navigation.replaceScreen(
           user,
@@ -2112,7 +2112,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             text: "🗑 Удалить напоминание? Это действие нельзя отменить."
           },
           Markup.inlineKeyboard([
-            [Markup.button.callback("🗑 Да, удалить", makeCallbackData("page_edit", "rem_del", value, triggerPageId))],
+            [Markup.button.callback("🗑 Да, удалить", makeCallbackData("page_edit", "rem_del", value))],
             [Markup.button.callback(services.i18n.t(locale, "back"), makeCallbackData("page_edit", "rem_list", triggerPageId))]
           ])
         );
@@ -2121,7 +2121,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
       if (action === "rem_del" && value && extra) {
         const ruleId = value;
-        const triggerPageId = extra;
+        const rule = await services.inactivityReminders.getRuleById(ruleId);
+        const triggerPageId = rule?.triggerPageId ?? extra;
         await services.inactivityReminders.deleteRule(ruleId);
         await showRemindersActive(triggerPageId);
         return;
@@ -2282,7 +2283,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           return;
         }
         const rows = sections.map((s) => [
-          Markup.button.callback(s.title, makeCallbackData("page_edit", "set_link", value, s.id))
+          Markup.button.callback(s.title, makeCallbackData("page_edit", "set_link", toShortId(value), toShortId(s.id)))
         ]);
         await services.navigation.replaceScreen(
           user,
@@ -2301,9 +2302,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       }
 
       if (action === "set_link" && value && extra) {
-        const item = await services.menu.findMenuItemById(value);
-        if (item) {
-          await services.menu.updateMenuItemTarget(value, extra, user.id);
+        const item = await services.menu.findMenuItemByIdOrShort(value);
+        const target = await services.menu.findMenuItemByIdOrShort(extra);
+        if (item && target) {
+          await services.menu.updateMenuItemTarget(item.id, target.id, user.id);
           await showButtonManagement(item.parentId ?? "root");
         }
         return;
