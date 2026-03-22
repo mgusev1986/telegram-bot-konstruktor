@@ -28,7 +28,7 @@ describe("subscription access policy", () => {
     ]);
   });
 
-  it("flags invite-only linked chats as non-removable for expiring products", () => {
+  it("keeps live expiring products blocked when linked chats are invite-only", () => {
     const error = validateLinkedChatsForExpiringAccess({
       billingType: "TEMPORARY",
       durationDays: 30,
@@ -36,6 +36,23 @@ describe("subscription access policy", () => {
     });
 
     expect(error).toContain("invite/display links");
+    expect(getLinkedChatDiagnostics([{ link: "https://t.me/+secretInvite" }])).toEqual(
+      expect.objectContaining({
+        hasLinkedChats: true,
+        removalReady: false,
+        banIdentifierCount: 0
+      })
+    );
+  });
+
+  it("allows test products to save invite-only linked chats for fast lifecycle checks", () => {
+    const error = validateLinkedChatsForExpiringAccess({
+      billingType: "TEMPORARY",
+      durationMinutes: 5,
+      linkedChats: [{ link: "https://t.me/+secretInvite" }]
+    });
+
+    expect(error).toBeNull();
     expect(getLinkedChatDiagnostics([{ link: "https://t.me/+secretInvite" }])).toEqual(
       expect.objectContaining({
         hasLinkedChats: true,

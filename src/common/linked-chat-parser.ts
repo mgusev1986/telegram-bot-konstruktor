@@ -8,7 +8,7 @@ export interface LinkedChatEntry {
   identifier?: string;
 }
 
-export function parseLinkedChatInput(raw: string): LinkedChatEntry | null {
+function parseSingleLinkedChatInput(raw: string): LinkedChatEntry | null {
   const s = raw.trim();
   if (!s) return null;
 
@@ -64,6 +64,48 @@ export function parseLinkedChatInput(raw: string): LinkedChatEntry | null {
   }
 
   return null;
+}
+
+function isInviteLink(link: string | undefined): boolean {
+  return typeof link === "string" && /^https:\/\/t\.me\/(?:\+|joinchat\/)/i.test(link);
+}
+
+function isPrivateMessageLink(link: string | undefined): boolean {
+  return typeof link === "string" && /^https:\/\/t\.me\/c\/\d+(?:\/\d+)?$/i.test(link);
+}
+
+function chooseDisplayLink(current: string | undefined, candidate: string | undefined): string | undefined {
+  if (!candidate) return current;
+  if (!current) return candidate;
+  if (isInviteLink(candidate) && !isInviteLink(current)) return candidate;
+  if (isPrivateMessageLink(current) && !isPrivateMessageLink(candidate)) return candidate;
+  return current;
+}
+
+/**
+ * Допускает составной формат:
+ *   https://t.me/+invite | https://t.me/c/1234567890/1
+ *   https://t.me/+invite | -1001234567890
+ * чтобы использовать invite-link для входа и identifier для ban/unban.
+ */
+export function parseLinkedChatInput(raw: string): LinkedChatEntry | null {
+  const parts = raw
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length <= 1) return parseSingleLinkedChatInput(raw);
+
+  const merged: LinkedChatEntry = {};
+  for (const part of parts) {
+    const parsed = parseSingleLinkedChatInput(part);
+    if (!parsed) continue;
+    merged.link = chooseDisplayLink(merged.link, parsed.link);
+    if (!merged.identifier && parsed.identifier) merged.identifier = parsed.identifier;
+    if (!merged.label && parsed.label) merged.label = parsed.label;
+  }
+
+  return merged.link || merged.identifier ? merged : null;
 }
 
 export function parseLinkedChatsFromForm(rawLines: string): LinkedChatEntry[] {

@@ -199,7 +199,10 @@ function renderPage(title: string, body: string): string {
 function formatLinkedChatsForEdit(linkedChats: unknown): string {
   if (!Array.isArray(linkedChats)) return "";
   return (linkedChats as Array<{ link?: string; identifier?: string }>)
-    .map((e) => e.link ?? e.identifier ?? "")
+    .map((e) => {
+      if (e.link && e.identifier) return `${e.link} | ${e.identifier}`;
+      return e.link ?? e.identifier ?? "";
+    })
     .filter(Boolean)
     .join("\n");
 }
@@ -2158,7 +2161,7 @@ export async function registerBackofficeRoutes(
       const loc = productLoc(product);
       const diagnostics = getLinkedChatDiagnostics(product.linkedChats);
       const sections = boundSectionsByProduct.get(product.id) ?? [];
-      const removalWarning = validateLinkedChatsForExpiringAccess(product);
+      const removalWarning = isTemporaryAccessProduct(product) ? diagnostics.issue : null;
 
       return `<div class="product-card">
         <div class="product-card-header">
@@ -2202,8 +2205,8 @@ export async function registerBackofficeRoutes(
           </div>
           <div style="margin-top:12px">
             <label class="small">linked chats / channels</label>
-            <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/channel">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
-            <div class="small" style="margin-top:4px">Для auto-removal по expiry используйте @username, numeric chat id или private message link вида <code>https://t.me/c/1234567890/1</code>. Invite-only ссылки <code>https://t.me/+...</code> подойдут для кнопок доступа, но не для удаления.</div>
+            <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890&#10;https://t.me/channel">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
+            <div class="small" style="margin-top:4px">Для приватного чата можно хранить и ссылку для входа, и identifier для ban/unban в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда пользователь войдёт по invite-link, а бот сможет удалить его по expiry.</div>
           </div>
           <div style="margin-top:12px">
             <label class="small">Описание (ru)</label>
@@ -2414,8 +2417,8 @@ export async function registerBackofficeRoutes(
                  </div>
                  <div style="margin-top:12px">
                    <label class="small">linked chats / channels</label>
-                   <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/channel"></textarea>
-                   <div class="small" style="margin-top:4px">Для auto-removal по expiry используйте @username, numeric chat id или private message link вида <code>https://t.me/c/1234567890/1</code>. Invite-only link <code>https://t.me/+...</code> не даст боту удалить пользователя.</div>
+                   <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890&#10;https://t.me/channel"></textarea>
+                   <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
                  </div>
                  <div style="margin-top:12px">
                    <label class="small">Описание (ru)</label>
@@ -2451,7 +2454,7 @@ export async function registerBackofficeRoutes(
                </div>
                <div style="margin-top:12px">
                  <label class="small">linked chats / channels</label>
-                 <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1"></textarea>
+                 <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890"></textarea>
                </div>
                <div style="margin-top:12px">
                  <label class="small">Описание (ru)</label>
@@ -2459,7 +2462,7 @@ export async function registerBackofficeRoutes(
                </div>
                <button type="submit" style="margin-top:12px">Создать тестовый продукт</button>
              </form>
-             <div class="small" style="margin-top:8px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats → ошибка видна в Access Audit, если бот не смог удалить. Для приватного чата вставьте ссылку на сообщение вида <code>https://t.me/c/1234567890/1</code>, а не invite-only <code>https://t.me/+...</code>.</div>
+             <div class="small" style="margin-top:8px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats. Для приватного чата используйте либо <code>https://t.me/c/1234567890/1</code>, либо комбинированный формат <code>https://t.me/+inviteHash | -1001234567890</code>. Тогда пользователь войдёт по invite-link, а бан/unban пойдёт по identifier.</div>
            </div>
            <div class="products-existing-block">
              <div class="section-title">Тестовые продукты</div>

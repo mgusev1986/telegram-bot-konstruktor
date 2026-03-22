@@ -77,6 +77,7 @@ export function getLinkedChatDiagnostics(linkedChats: unknown): {
 
 export function validateLinkedChatsForExpiringAccess(product: ProductTimingLike | null | undefined): string | null {
   if (!isTemporaryAccessProduct(product)) return null;
+  if (isTestProduct(product)) return null;
   const diagnostics = getLinkedChatDiagnostics(product?.linkedChats);
   if (!diagnostics.hasLinkedChats) return null;
   if (diagnostics.removalReady) return null;
