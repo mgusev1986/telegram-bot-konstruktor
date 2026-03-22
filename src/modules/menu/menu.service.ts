@@ -651,6 +651,25 @@ export class MenuService {
   }
 
   /**
+   * Язык контента: используем язык пользователя только если в боте есть полная версия.
+   * Иначе — base (ru). Так пользователи с укр/англ и т.д. получают русский, пока перевод не готов.
+   */
+  private getEffectiveContentLanguage(
+    template: { baseLanguageCode: string; localizations: Array<{ languageCode: string; welcomeText?: string | null; welcomeMediaFileId?: string | null }> } | null,
+    userSelectedLanguage: string
+  ): string {
+    if (!template) return env.DEFAULT_LANGUAGE;
+    const base = (template.baseLanguageCode || env.DEFAULT_LANGUAGE).toLowerCase();
+    if (userSelectedLanguage.toLowerCase() === base) return userSelectedLanguage;
+    const baseLoc = template.localizations.find((l) => l.languageCode.toLowerCase() === base);
+    const userLoc = template.localizations.find((l) => l.languageCode.toLowerCase() === userSelectedLanguage.toLowerCase());
+    if (!userLoc) return base;
+    const baseHasContent = Boolean(baseLoc?.welcomeText?.trim() || baseLoc?.welcomeMediaFileId);
+    const userHasFullContent = Boolean(userLoc.welcomeText?.trim()) && (baseLoc?.welcomeMediaFileId ? Boolean(userLoc.welcomeMediaFileId) : true);
+    return baseHasContent && !userHasFullContent ? base : userSelectedLanguage;
+  }
+
+  /**
    * @param telegramFrom — fallback for firstName/lastName when User has empty fields (e.g. migrated or cross-bot).
    */
   public async getWelcome(
@@ -662,8 +681,9 @@ export class MenuService {
       include: { localizations: true }
     });
 
+    const contentLang = this.getEffectiveContentLanguage(template, user.selectedLanguage);
     let localization = template
-      ? this.i18n.pickLocalized(template.localizations, user.selectedLanguage)
+      ? this.i18n.pickLocalized(template.localizations, contentLang)
       : null;
 
     // Если у выбранной локализации welcome есть mediaType, но нет welcomeMediaFileId,
@@ -693,7 +713,7 @@ export class MenuService {
     }
 
     const abVariant = await this.abTests.resolveVariant("welcome_text", user.id);
-    const welcomeText = String(abVariant?.text ?? localization?.welcomeText ?? this.i18n.t(user.selectedLanguage, "welcome_default"));
+    const welcomeText = String(abVariant?.text ?? localization?.welcomeText ?? this.i18n.t(contentLang, "welcome_default"));
 
     const profile =
       telegramFrom && (!user.firstName?.trim() || !user.fullName?.trim())
@@ -775,18 +795,25 @@ export class MenuService {
           where: { id: menuItemId, template: { botInstanceId: this.botInstanceId } },
           include: {
             localizations: true,
-            product: { include: { localizations: true } }
+            product: { include: { localizations: true } },
+            template: { select: { baseLanguageCode: true } }
           }
         })
       : await this.prisma.menuItem.findUniqueOrThrow({
           where: { id: menuItemId },
           include: {
             localizations: true,
-            product: { include: { localizations: true } }
+            product: { include: { localizations: true } },
+            template: { select: { baseLanguageCode: true } }
           }
         });
 
-    let localization = this.localizeMenuItem(item, user.selectedLanguage);
+    const base = ((item as any).template?.baseLanguageCode || env.DEFAULT_LANGUAGE).toLowerCase();
+    const userLoc = item.localizations.find((l) => l.languageCode.toLowerCase() === user.selectedLanguage.toLowerCase());
+    const userHasContent = userLoc && (Boolean(userLoc.contentText?.trim()) || Boolean(userLoc.mediaFileId));
+    const contentLang = user.selectedLanguage.toLowerCase() !== base && !userHasContent ? base : user.selectedLanguage;
+
+    let localization = this.localizeMenuItem(item, contentLang);
 
     if (!localization) {
       throw new Error("Localization is missing");

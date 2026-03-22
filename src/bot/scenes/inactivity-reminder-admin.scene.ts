@@ -158,7 +158,10 @@ async function openRootMenu(ctx: Scenes.WizardContext & BotContext) {
   const items = await ctx.services.menu.getMenuItemsForParent(user, null);
   const rootSlotOrder = await ctx.services.menu.getEffectiveSlotOrder("root", items.map((i) => i.id));
   const externalPartnerUrl = await ctx.services.cabinet.getPartnerRegisterLinkForUser(user);
-  const partnerRegisterTargetId = await ctx.services.menu.getSystemTargetMenuItemId("partner_register");
+  const [partnerRegisterTargetId, mentorContactTargetId] = await Promise.all([
+    ctx.services.menu.getSystemTargetMenuItemId("partner_register"),
+    ctx.services.menu.getSystemTargetMenuItemId("mentor_contact")
+  ]);
 
   await ctx.services.navigation.replaceScreen(
     user,
@@ -175,7 +178,8 @@ async function openRootMenu(ctx: Scenes.WizardContext & BotContext) {
       rootSlotOrder,
       mentorUsername,
       externalPartnerUrl,
-      partnerRegisterTargetId
+      partnerRegisterTargetId,
+      mentorContactTargetId
     )
   );
 

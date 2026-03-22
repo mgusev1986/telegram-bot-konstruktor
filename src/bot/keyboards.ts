@@ -277,6 +277,8 @@ export const buildMenuKeyboard = (
   externalPartnerUrl?: string | null,
   /** Id of __sys_target_partner_register. When item is SECTION_LINK to this target: if externalPartnerUrl use url button, else hide. */
   partnerRegisterTargetId?: string | null,
+  /** Id of __sys_target_mentor_contact. When item is SECTION_LINK to this: if mentorUsername use url button (direct to chat), else callback. */
+  mentorContactTargetId?: string | null,
   /** Кнопки «Ссылка на чат/канал» — показываются в подменю после оплаты */
   productChatLinks?: Array<{ link: string; label: string }>
 ) => {
@@ -297,6 +299,9 @@ export const buildMenuKeyboard = (
   const isPartnerRegisterLink = (item: { type?: string; targetMenuItemId?: string | null }): boolean =>
     item.type === "SECTION_LINK" && partnerRegisterTargetId != null && item.targetMenuItemId === partnerRegisterTargetId;
 
+  const isMentorContactLink = (item: { type?: string; targetMenuItemId?: string | null }): boolean =>
+    item.type === "SECTION_LINK" && mentorContactTargetId != null && item.targetMenuItemId === mentorContactTargetId;
+
   const buildRowForItem = (item: (typeof items)[number]) => {
     const localization = i18n.pickLocalized(item.localizations, languageCode);
     const title = localization?.title ?? item.id;
@@ -304,6 +309,9 @@ export const buildMenuKeyboard = (
     if (isPartnerRegisterLink(item)) {
       if (externalPartnerUrl) return [Markup.button.url(label, externalPartnerUrl)];
       return null;
+    }
+    if (isMentorContactLink(item) && mentorUsername?.trim()) {
+      return [Markup.button.url(label, `https://t.me/${mentorUsername.trim()}`)];
     }
     return [Markup.button.callback(label, makeCallbackData("menu", "open", item.id))];
   };

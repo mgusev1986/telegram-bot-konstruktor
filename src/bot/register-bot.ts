@@ -526,7 +526,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const items = await services.menu.getMenuItemsForParent(user, null);
     const rootSlotOrder = await services.menu.getEffectiveSlotOrder("root", items.map((i) => i.id));
     const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
-    const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+    const [partnerRegisterTargetId, mentorContactTargetId] = await Promise.all([
+      services.menu.getSystemTargetMenuItemId("partner_register"),
+      services.menu.getSystemTargetMenuItemId("mentor_contact")
+    ]);
     await services.navigation.replaceScreen(
       user,
       ctx.telegram,
@@ -542,7 +545,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         rootSlotOrder,
         mentorUsername,
         externalPartnerUrl,
-        partnerRegisterTargetId
+        partnerRegisterTargetId,
+        mentorContactTargetId
       )
     );
 
@@ -591,7 +595,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const mentorUsername =
       user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
     const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
-    const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+    const [partnerRegisterTargetId, mentorContactTargetId] = await Promise.all([
+      services.menu.getSystemTargetMenuItemId("partner_register"),
+      services.menu.getSystemTargetMenuItemId("mentor_contact")
+    ]);
     await services.navigation.replaceScreen(
       user,
       ctx.telegram,
@@ -607,7 +614,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         slotOrder,
         mentorUsername,
         externalPartnerUrl,
-        partnerRegisterTargetId
+        partnerRegisterTargetId,
+        mentorContactTargetId
       )
     );
   };
@@ -666,7 +674,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       const mentorUsername =
         user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
       const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
-      const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+      const [partnerRegisterTargetId, mentorContactTargetId] = await Promise.all([
+        services.menu.getSystemTargetMenuItemId("partner_register"),
+        services.menu.getSystemTargetMenuItemId("mentor_contact")
+      ]);
       const productChatLinks =
         content.item.productId && content.item.product?.linkedChats
           ? await services.subscriptionChannel.resolveProductLinksForDisplay(
@@ -696,6 +707,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           mentorUsername,
           externalPartnerUrl,
           partnerRegisterTargetId,
+          mentorContactTargetId,
           productChatLinks.length ? productChatLinks : undefined
         )
       );
@@ -2347,7 +2359,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           const mentorUsername =
             user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
           const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
-          const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+          const [partnerRegisterTargetId, mentorContactTargetId] = await Promise.all([
+            services.menu.getSystemTargetMenuItemId("partner_register"),
+            services.menu.getSystemTargetMenuItemId("mentor_contact")
+          ]);
           await services.navigation.replaceScreen(
             user,
             ctx.telegram,
@@ -2363,7 +2378,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
               rootSlotOrder,
               mentorUsername,
               externalPartnerUrl,
-              partnerRegisterTargetId
+              partnerRegisterTargetId,
+              mentorContactTargetId
             )
           );
           await services.inactivityReminders.scheduleForPageOpen(user, "root", { shouldSchedule: false });
@@ -2540,7 +2556,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           const mentorUsername =
             user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
           const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
-          const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+          const [partnerRegisterTargetId, mentorContactTargetId] = await Promise.all([
+            services.menu.getSystemTargetMenuItemId("partner_register"),
+            services.menu.getSystemTargetMenuItemId("mentor_contact")
+          ]);
           const linkProductChatLinks =
             content.item.productId && content.item.product?.linkedChats
               ? await services.subscriptionChannel.resolveProductLinksForDisplay(
@@ -2570,6 +2589,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
               mentorUsername,
               externalPartnerUrl,
               partnerRegisterTargetId,
+              mentorContactTargetId,
               linkProductChatLinks.length ? linkProductChatLinks : undefined
             )
           );
@@ -2653,7 +2673,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         const mentorUsername =
           user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
         const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
-        const partnerRegisterTargetId = await services.menu.getSystemTargetMenuItemId("partner_register");
+        const [partnerRegisterTargetId, mentorContactTargetId] = await Promise.all([
+          services.menu.getSystemTargetMenuItemId("partner_register"),
+          services.menu.getSystemTargetMenuItemId("mentor_contact")
+        ]);
         const cbProductChatLinks =
           content.item.productId && content.item.product?.linkedChats
             ? await services.subscriptionChannel.resolveProductLinksForDisplay(
@@ -2683,6 +2706,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             mentorUsername,
             externalPartnerUrl,
             partnerRegisterTargetId,
+            mentorContactTargetId,
             cbProductChatLinks.length ? cbProductChatLinks : undefined
           )
         );
