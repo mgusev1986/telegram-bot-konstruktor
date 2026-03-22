@@ -25,6 +25,11 @@ const envSchema = z.object({
   BACKOFFICE_ADMIN_PASSWORD: z.string().min(6).optional(),
   /** Email of backoffice user with platform-wide ALPHA_OWNER access (global user directory, etc.). Optional. */
   BACKOFFICE_ALPHA_EMAIL: z.string().email().optional(),
+  /**
+   * If true, users who are not yet in the database must open the bot via a referral link
+   * (?start=<telegramUserId>). Direct /start without valid payload is rejected (except super-admin and pending owner invite by username).
+   */
+  REQUIRE_REFERRAL_LINK_FOR_NEW_USERS: z.coerce.boolean().default(true),
   DEFAULT_LANGUAGE: z.string().min(2).default("ru"),
   APP_TIMEZONE: z.string().min(1).default("UTC"),
   PAYMENT_PROVIDER_MODE: z.enum(["crypto", "manual"]).default("crypto"),

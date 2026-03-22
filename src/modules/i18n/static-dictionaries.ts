@@ -19,6 +19,8 @@ export const dictionaries = {
     mentor_not_assigned: "Наставник пока не назначен.",
     mentor_not_found: "Наставник не найден.",
     mentor_request_sent: "Запрос наставнику отправлен.",
+    registration_requires_referral_link:
+      "Чтобы пользоваться ботом, перейдите по пригласительной ссылке от партнёра (она выглядит как ссылка на этого бота с параметром start). Прямой вход без ссылки недоступен.",
     registration_notification: "По вашей ссылке зарегистрировался новый человек в первую линию: {{full_name}}.",
     registration_notification_prefix: "По вашей ссылке зарегистрировался новый человек в первую линию: ",
     access_locked: "Этот раздел сейчас закрыт. Доступ откроется после выполнения условий или оплаты.",
@@ -646,6 +648,8 @@ export const dictionaries = {
     mentor_not_assigned: "Mentor is not assigned yet.",
     mentor_not_found: "Mentor not found.",
     mentor_request_sent: "Request sent to mentor.",
+    registration_requires_referral_link:
+      "To use this bot, open the invite link from your partner (a link to this bot that includes a start parameter). Direct access without that link is not available.",
     registration_notification: "A new person registered through your link in your first line: {{full_name}}.",
     registration_notification_prefix: "A new person registered through your link in your first line: ",
     access_locked: "This section is available after meeting conditions or payment.",

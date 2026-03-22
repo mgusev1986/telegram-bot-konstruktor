@@ -214,7 +214,6 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       ctx.message && "text" in ctx.message && ctx.message.text.startsWith("/start")
         ? extractCommandArgument(ctx.message.text)
         : "";
-    const referralCode = services.referrals.parseReferralPayload(commandArg);
 
     const isStart = ctx.message && "text" in ctx.message && (ctx.message as { text: string }).text.trim().toLowerCase().startsWith("/start");
     if (isStart && ctx.chat?.id) {
@@ -227,7 +226,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
     const [existing, inviter] = await Promise.all([
       services.users.findByTelegramId(BigInt(ctx.from.id)),
-      services.referrals.resolveInviterByCode(referralCode)
+      services.referrals.resolveInviterByPayload(commandArg)
     ]);
 
     let resolvedInviter = inviter;
@@ -239,6 +238,21 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
     const telegramLanguageCode = (ctx.from as { language_code?: string })?.language_code;
     const preferredLanguage = services.i18n.resolveLanguage(telegramLanguageCode);
+
+    if (
+      env.REQUIRE_REFERRAL_LINK_FOR_NEW_USERS &&
+      !existing &&
+      BigInt(ctx.from.id) !== env.SUPER_ADMIN_TELEGRAM_ID &&
+      !resolvedInviter
+    ) {
+      const invitedAsOwner = await services.permissions.hasPendingBotRoleAssignmentForTelegramUsername(
+        ctx.from.username
+      );
+      if (!invitedAsOwner) {
+        await ctx.reply(services.i18n.t(preferredLanguage, "registration_requires_referral_link"));
+        return;
+      }
+    }
 
     const result = await services.users.ensureTelegramUser(
       ctx.from,

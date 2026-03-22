@@ -57,7 +57,8 @@ export class CabinetService {
   }
 
   public getReferralLink(user: User): string {
-    return `https://t.me/${this.botUsername}?start=ref_${user.referralCode}`;
+    const username = (this.botUsername || "").replace(/^@/, "").trim();
+    return `https://t.me/${username}?start=${user.telegramUserId}`;
   }
 
   /**

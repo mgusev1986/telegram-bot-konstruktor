@@ -56,6 +56,7 @@ Copy [.env.example](/Users/maksimgusev/Desktop/Автоматизация/Telegr
 - `SUPER_ADMIN_TELEGRAM_ID`
 - `BOT_USERNAME`
 - `DEFAULT_LANGUAGE`
+- `REQUIRE_REFERRAL_LINK_FOR_NEW_USERS` (default `true`): new Telegram users must open the bot via `https://t.me/<bot>?start=<telegramUserId>`. Set to `false` for open registration (e.g. local dev). Exceptions: `SUPER_ADMIN_TELEGRAM_ID`, and users with a **PENDING** bot role assignment matching their Telegram @username (back-office owner invite).
 - `APP_TIMEZONE`
 - `PAYMENT_PROVIDER_MODE`
 - `USDT_TRC20_WALLET`

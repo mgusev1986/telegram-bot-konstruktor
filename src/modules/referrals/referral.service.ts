@@ -32,21 +32,46 @@ export class ReferralService {
     private readonly botInstanceId?: string
   ) {}
 
+  /**
+   * @deprecated Use resolveInviterByPayload instead.
+   */
   public parseReferralPayload(payload: string | undefined): string | null {
     if (!payload?.startsWith("ref_")) {
       return null;
     }
-
     return payload.replace(/^ref_/, "").trim() || null;
   }
 
+  /**
+   * @deprecated Use resolveInviterByPayload instead.
+   */
   public async resolveInviterByCode(referralCode: string | null): Promise<User | null> {
-    if (!referralCode) {
-      return null;
+    return referralCode ? this.prisma.user.findUnique({ where: { referralCode } }) : null;
+  }
+
+  /**
+   * Resolves the inviter from /start payload.
+   * - New format: ?start=<telegramUserId> — lookup by telegram_user_id
+   * - Legacy format: ?start=ref_<code> — lookup by referral_code (backward compat for existing links)
+   */
+  public async resolveInviterByPayload(payload: string | undefined): Promise<User | null> {
+    const raw = payload?.trim();
+    if (!raw) return null;
+
+    // Legacy: ref_<referralCode>
+    if (raw.startsWith("ref_")) {
+      const code = raw.replace(/^ref_/, "").trim();
+      return code ? this.prisma.user.findUnique({ where: { referralCode: code } }) : null;
     }
 
-    return this.prisma.user.findUnique({
-      where: { referralCode }
+    // New format: plain Telegram user ID
+    if (!/^\d+$/.test(raw)) return null;
+    const telegramUserId = BigInt(raw);
+    return this.prisma.user.findFirst({
+      where: {
+        telegramUserId,
+        ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {})
+      }
     });
   }
 

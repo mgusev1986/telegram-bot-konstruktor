@@ -233,7 +233,16 @@ export class PermissionService {
       select: { username: true }
     });
     if (!user?.username?.trim()) return false;
-    const normalized = user.username.trim().replace(/^@/, "").toLowerCase();
+    return this.hasPendingBotRoleAssignmentForTelegramUsername(user.username);
+  }
+
+  /**
+   * True if this Telegram @username has a PENDING BotRoleAssignment for this bot (owner/admin pre-invite).
+   * Used before user row exists so invited owners can /start without a referral link.
+   */
+  public async hasPendingBotRoleAssignmentForTelegramUsername(username: string | undefined | null): Promise<boolean> {
+    if (!this.botInstanceId || !username?.trim()) return false;
+    const normalized = username.trim().replace(/^@/, "").toLowerCase();
     if (!/^[a-z0-9_]{5,32}$/.test(normalized)) return false;
     const row = await this.prisma.botRoleAssignment.findFirst({
       where: {

@@ -662,9 +662,35 @@ export class MenuService {
       include: { localizations: true }
     });
 
-    const localization = template
+    let localization = template
       ? this.i18n.pickLocalized(template.localizations, user.selectedLanguage)
       : null;
+
+    // Если у выбранной локализации welcome есть mediaType, но нет welcomeMediaFileId,
+    // подставляем медиа из другой локализации (например, ru), чтобы главная страница показывала контент полностью.
+    if (
+      localization &&
+      (localization.welcomeMediaType === "VIDEO" ||
+        localization.welcomeMediaType === "PHOTO" ||
+        localization.welcomeMediaType === "DOCUMENT") &&
+      !localization.welcomeMediaFileId &&
+      template
+    ) {
+      const fallbackLoc = template.localizations.find(
+        (l) =>
+          (l.welcomeMediaType === "VIDEO" ||
+            l.welcomeMediaType === "PHOTO" ||
+            l.welcomeMediaType === "DOCUMENT") &&
+          Boolean(l.welcomeMediaFileId)
+      );
+      if (fallbackLoc) {
+        localization = {
+          ...localization,
+          welcomeMediaFileId: fallbackLoc.welcomeMediaFileId,
+          welcomeMediaType: fallbackLoc.welcomeMediaType
+        };
+      }
+    }
 
     const abVariant = await this.abTests.resolveVariant("welcome_text", user.id);
     const welcomeText = String(abVariant?.text ?? localization?.welcomeText ?? this.i18n.t(user.selectedLanguage, "welcome_default"));
@@ -760,10 +786,40 @@ export class MenuService {
           }
         });
 
-    const localization = this.localizeMenuItem(item, user.selectedLanguage);
+    let localization = this.localizeMenuItem(item, user.selectedLanguage);
 
     if (!localization) {
       throw new Error("Localization is missing");
+    }
+
+    // Если у выбранной локализации есть mediaType, но нет mediaFileId (например, uk без видео),
+    // подставляем медиа из другой локализации (ru или первой с медиа), чтобы контент был полным.
+    const needsMediaFallback =
+      (localization.mediaType === "VIDEO" ||
+        localization.mediaType === "PHOTO" ||
+        localization.mediaType === "DOCUMENT") &&
+      !localization.mediaFileId;
+    // Если contentText пустой — показываем текст из другой локализации, чтобы раздел не был пустым.
+    const needsTextFallback = !localization.contentText?.trim();
+    if (needsMediaFallback || needsTextFallback) {
+      const mediaFallback = needsMediaFallback
+        ? item.localizations.find(
+            (l) =>
+              (l.mediaType === "VIDEO" || l.mediaType === "PHOTO" || l.mediaType === "DOCUMENT") &&
+              Boolean(l.mediaFileId)
+          )
+        : null;
+      const textFallback = needsTextFallback
+        ? item.localizations.find((l) => l.contentText?.trim())
+        : null;
+      localization = {
+        ...localization,
+        ...(mediaFallback && {
+          mediaFileId: mediaFallback.mediaFileId,
+          mediaType: mediaFallback.mediaType
+        }),
+        ...(textFallback?.contentText?.trim() && { contentText: textFallback.contentText })
+      };
     }
 
     const allowedByRule = await this.accessRules.evaluate(item.accessRuleId, user, {
