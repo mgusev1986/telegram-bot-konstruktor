@@ -2190,8 +2190,8 @@ export async function registerBackofficeRoutes(
           </div>
           <div style="margin-top:12px">
             <label class="small">linked chats / channels</label>
-            <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/channel">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
-            <div class="small" style="margin-top:4px">Используйте @username или numeric chat id, если нужен auto-removal по expiry. Invite-only ссылки подойдут для кнопок доступа, но не для удаления.</div>
+            <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/channel">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
+            <div class="small" style="margin-top:4px">Для auto-removal по expiry используйте @username, numeric chat id или private message link вида <code>https://t.me/c/1234567890/1</code>. Invite-only ссылки <code>https://t.me/+...</code> подойдут для кнопок доступа, но не для удаления.</div>
           </div>
           <div style="margin-top:12px">
             <label class="small">Описание (ru)</label>
@@ -2402,8 +2402,8 @@ export async function registerBackofficeRoutes(
                  </div>
                  <div style="margin-top:12px">
                    <label class="small">linked chats / channels</label>
-                   <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/channel"></textarea>
-                   <div class="small" style="margin-top:4px">Для auto-removal по expiry используйте @username или numeric chat id. Invite-only link не даст боту удалить пользователя.</div>
+                   <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/channel"></textarea>
+                   <div class="small" style="margin-top:4px">Для auto-removal по expiry используйте @username, numeric chat id или private message link вида <code>https://t.me/c/1234567890/1</code>. Invite-only link <code>https://t.me/+...</code> не даст боту удалить пользователя.</div>
                  </div>
                  <div style="margin-top:12px">
                    <label class="small">Описание (ru)</label>
@@ -2439,7 +2439,7 @@ export async function registerBackofficeRoutes(
                </div>
                <div style="margin-top:12px">
                  <label class="small">linked chats / channels</label>
-                 <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890"></textarea>
+                 <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1"></textarea>
                </div>
                <div style="margin-top:12px">
                  <label class="small">Описание (ru)</label>
@@ -2447,7 +2447,7 @@ export async function registerBackofficeRoutes(
                </div>
                <button type="submit" style="margin-top:12px">Создать тестовый продукт</button>
              </form>
-             <div class="small" style="margin-top:8px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats → ошибка видна в Access Audit, если бот не смог удалить.</div>
+             <div class="small" style="margin-top:8px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats → ошибка видна в Access Audit, если бот не смог удалить. Для приватного чата вставьте ссылку на сообщение вида <code>https://t.me/c/1234567890/1</code>, а не invite-only <code>https://t.me/+...</code>.</div>
            </div>
            <div class="products-existing-block">
              <div class="section-title">Тестовые продукты</div>

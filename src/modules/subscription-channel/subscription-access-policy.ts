@@ -63,7 +63,7 @@ export function getLinkedChatDiagnostics(linkedChats: unknown): {
   const removalReady = !hasLinkedChats || banIdentifierCount > 0;
   const issue =
     hasLinkedChats && banIdentifierCount === 0
-      ? "Есть только invite/display links без chat identifier. Кнопки доступа будут работать, но автоматическое удаление по expiry невозможно."
+      ? "Есть только invite/display links без chat identifier. Кнопки доступа будут работать, но автоматическое удаление по expiry невозможно. Для приватного чата/канала вставьте ссылку на сообщение вида https://t.me/c/1234567890/1 или укажите @username / numeric chat id."
       : null;
 
   return {
