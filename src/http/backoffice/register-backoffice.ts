@@ -539,6 +539,18 @@ export async function registerBackofficeRoutes(
 
   const userDirectory = new UserDirectoryService(prisma);
 
+  server.get("/backoffice/", async (_req, reply) => {
+    return reply.redirect("/backoffice", 302);
+  });
+
+  server.get("/backoffice/login/", async (_req, reply) => {
+    return reply.redirect("/backoffice/login", 302);
+  });
+
+  server.get("/backoffice/logout/", async (_req, reply) => {
+    return reply.redirect("/backoffice/logout", 302);
+  });
+
   server.get("/backoffice/login", async (_req, reply) => {
     return reply.type("text/html").send(
       renderPage(
