@@ -23,7 +23,7 @@ export interface CreateMenuItemInput {
   key?: string;
   title: string;
   contentText?: string;
-  type: "TEXT" | "PHOTO" | "VIDEO" | "DOCUMENT" | "LINK" | "SUBMENU" | "SECTION_LINK";
+  type: "TEXT" | "PHOTO" | "VIDEO" | "DOCUMENT" | "LINK" | "SUBMENU" | "SECTION_LINK" | "EXTERNAL_LINK";
   mediaType?: MediaType;
   mediaFileId?: string | null;
   externalUrl?: string | null;
@@ -61,6 +61,10 @@ export interface LocalizedContentSnapshot {
   externalUrl: string | null;
   exactMatch: boolean;
   source: "DRAFT" | "PUBLISHED";
+}
+
+function isButtonMenuItemType(type: string): type is "SECTION_LINK" | "EXTERNAL_LINK" {
+  return type === "SECTION_LINK" || type === "EXTERNAL_LINK";
 }
 
 export class MenuService {
@@ -565,7 +569,7 @@ export class MenuService {
       input.mediaType ??
       (input.type === "LINK"
         ? "LINK"
-        : input.type === "TEXT" || input.type === "SUBMENU" || input.type === "SECTION_LINK"
+        : input.type === "TEXT" || input.type === "SUBMENU" || input.type === "SECTION_LINK" || input.type === "EXTERNAL_LINK"
           ? "NONE"
           : (input.type as MediaType));
 
@@ -1017,7 +1021,7 @@ export class MenuService {
   }
 
   /**
-   * Resolve menu item by full id or short id (first 12 chars of UUID).
+   * Resolve menu item by full id or short id (first 12 chars of the id).
    * Used for callback payloads where full UUID exceeds Telegram's 64-byte limit.
    */
   public async findMenuItemByIdOrShort(
@@ -1025,7 +1029,7 @@ export class MenuService {
   ): Promise<(MenuItem & { localizations: MenuItemLocalization[] }) | null> {
     const full = await this.findMenuItemById(idOrShort);
     if (full) return full;
-    if (idOrShort.length !== 12 || !/^[a-f0-9]+$/i.test(idOrShort)) return null;
+    if (idOrShort.length !== 12) return null;
     const baseWhere = this.botInstanceId
       ? { template: { botInstanceId: this.botInstanceId }, id: { startsWith: idOrShort } }
       : { id: { startsWith: idOrShort } };
@@ -1354,8 +1358,10 @@ export class MenuService {
     const renderButton = (btn: MenuItem & { localizations: MenuItemLocalization[] }, depth: number): void => {
       const indent = "  ".repeat(depth);
       const title = this.getItemTitle(btn, languageCode);
-      const target = btn.targetMenuItemId ? byId.get(btn.targetMenuItemId) : null;
-      const targetTitle = target ? this.getItemTitle(target, languageCode) : "—";
+      const targetTitle =
+        btn.type === "SECTION_LINK"
+          ? (btn.targetMenuItemId ? (byId.get(btn.targetMenuItemId) ? this.getItemTitle(byId.get(btn.targetMenuItemId)!, languageCode) : "—") : "—")
+          : this.i18n.pickLocalized(btn.localizations, languageCode)?.externalUrl ?? "—";
       lines.push(`${indent}🔘 Кнопка: ${title} → ${targetTitle}`);
     };
 
@@ -1366,8 +1372,8 @@ export class MenuService {
       lines.push(`${indent}📄 Раздел: ${title}`);
 
       const children = byParent.get(page.id) ?? [];
-      const buttons = children.filter((c) => c.type === "SECTION_LINK") as Array<MenuItem & { localizations: MenuItemLocalization[] }>;
-      const pages = children.filter((c) => c.type !== "SECTION_LINK") as Array<MenuItem & { localizations: MenuItemLocalization[] }>;
+      const buttons = children.filter((c) => isButtonMenuItemType(c.type)) as Array<MenuItem & { localizations: MenuItemLocalization[] }>;
+      const pages = children.filter((c) => !isButtonMenuItemType(c.type)) as Array<MenuItem & { localizations: MenuItemLocalization[] }>;
 
       if (buttons.length > 0) {
         lines.push(`${"  ".repeat(depth + 1)}Кнопки:`);
@@ -1382,7 +1388,7 @@ export class MenuService {
 
     const rootChildren = byParent.get(null) ?? [];
     for (const item of rootChildren) {
-      if (item.type === "SECTION_LINK") {
+      if (isButtonMenuItemType(item.type)) {
         renderButton(item as any, 0);
       } else {
         renderPage(item as any, 0);
@@ -1422,7 +1428,7 @@ export class MenuService {
 
     const pageChildren = (
       list: (MenuItem & { localizations: MenuItemLocalization[] })[]
-    ): Array<MenuItem & { localizations: MenuItemLocalization[] }> => list.filter((x) => x.type !== "SECTION_LINK");
+    ): Array<MenuItem & { localizations: MenuItemLocalization[] }> => list.filter((x) => !isButtonMenuItemType(x.type));
 
     const rootSections = pageChildren(byParent.get(null) ?? []);
     const lines: string[] = [];
@@ -1473,6 +1479,9 @@ export class MenuService {
       if (c.type === "SECTION_LINK" && c.targetMenuItemId) {
         const target = await this.findMenuItemById(c.targetMenuItemId);
         buttons.push({ id: c.id, title, targetTitle: target ? this.getItemTitle(target, languageCode) : "—" });
+      } else if (c.type === "EXTERNAL_LINK") {
+        const loc = this.i18n.pickLocalized(c.localizations, languageCode);
+        buttons.push({ id: c.id, title, targetTitle: loc?.externalUrl ?? "—" });
       } else {
         childSections.push({ id: c.id, title });
         buttons.push({ id: c.id, title, targetTitle: title });
@@ -1524,9 +1533,15 @@ export class MenuService {
       for (const item of children) {
         const title = this.getItemTitle(item, languageCode);
         const status = item.isActive ? activeLabel : inactiveLabel;
-        if (item.type === "SECTION_LINK") {
-          const target = item.targetMenuItemId ? byId.get(item.targetMenuItemId) : null;
-          const targetTitle = target ? this.getItemTitle(target, languageCode) : "—";
+        if (isButtonMenuItemType(item.type)) {
+          const targetTitle =
+            item.type === "SECTION_LINK"
+              ? item.targetMenuItemId
+                ? byId.get(item.targetMenuItemId)
+                  ? this.getItemTitle(byId.get(item.targetMenuItemId)!, languageCode)
+                  : "—"
+                : "—"
+              : this.i18n.pickLocalized(item.localizations, languageCode)?.externalUrl ?? "—";
           buttons.push(`${indent}- ${title} → ${targetTitle} (${status})`);
         } else {
           sections.push(item);

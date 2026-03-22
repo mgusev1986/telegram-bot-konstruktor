@@ -12,7 +12,8 @@ export type MenuItemType =
   | "DOCUMENT"
   | "LINK"
   | "SUBMENU"
-  | "SECTION_LINK";
+  | "SECTION_LINK"
+  | "EXTERNAL_LINK";
 
 /** Minimal menu item shape for graph building (no Prisma dependency in validation). */
 export interface AuditMenuItem {

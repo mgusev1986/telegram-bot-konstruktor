@@ -41,10 +41,15 @@ describe("create-button-link.scene locale split", () => {
     const step0 = (createButtonLinkScene as any).steps[0];
     await step0(ctx, vi.fn());
 
-    // step1: consume title, then load section picker
+    // step1: consume title, then load action choice
     ctx.message = { text: "My button" };
     const step1 = (createButtonLinkScene as any).steps[1];
     await step1(ctx);
+
+    // step2: choose internal section flow and load picker
+    ctx.callbackQuery = { data: "create_btn:mode:section" };
+    const step2 = (createButtonLinkScene as any).steps[2];
+    await step2(ctx);
 
     expect(getContentSectionsForPicker).toHaveBeenCalledTimes(1);
     expect(getContentSectionsForPicker).toHaveBeenCalledWith("en");
@@ -54,4 +59,3 @@ describe("create-button-link.scene locale split", () => {
     expect(i18nT).not.toHaveBeenCalledWith("en", "choose_target_section");
   });
 });
-

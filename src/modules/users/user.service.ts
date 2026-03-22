@@ -44,6 +44,21 @@ export class UserService {
     return this.prisma.user.findUnique({ where: { id } });
   }
 
+  public async findByIdOrShort(idOrShort: string): Promise<User | null> {
+    const full = await this.prisma.user.findFirst({
+      where: this.botInstanceId
+        ? { id: idOrShort, botInstanceId: this.botInstanceId }
+        : { id: idOrShort }
+    });
+    if (full) return full;
+    if (idOrShort.length !== 12) return null;
+    return this.prisma.user.findFirst({
+      where: this.botInstanceId
+        ? { botInstanceId: this.botInstanceId, id: { startsWith: idOrShort } }
+        : { id: { startsWith: idOrShort } }
+    });
+  }
+
   public async findByTelegramId(telegramUserId: bigint): Promise<User | null> {
     return this.prisma.user.findFirst({
       where: this.botInstanceId ? { telegramUserId, botInstanceId: this.botInstanceId } : { telegramUserId }
@@ -56,7 +71,9 @@ export class UserService {
     if (/^@\w+$/i.test(normalized)) {
       const username = normalized.slice(1);
       return this.prisma.user.findFirst({
-        where: this.botInstanceId ? { username, botInstanceId: this.botInstanceId } : { username }
+        where: this.botInstanceId
+          ? { username: { equals: username, mode: "insensitive" }, botInstanceId: this.botInstanceId }
+          : { username: { equals: username, mode: "insensitive" } }
       });
     }
 

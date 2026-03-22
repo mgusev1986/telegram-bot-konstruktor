@@ -49,6 +49,11 @@ describe("Bot-scoped OWNER/ADMIN policy (PermissionService)", () => {
     await expect(service.canAssignBotAdmin("actor")).resolves.toBe(true);
   });
 
+  it("ALPHA_OWNER can canAssignBotAdmin", async () => {
+    const { service } = buildService({ actorUserRole: "ALPHA_OWNER", actorActiveBotRole: null });
+    await expect(service.canAssignBotAdmin("actor")).resolves.toBe(true);
+  });
+
   it("bot ADMIN cannot canAssignBotAdmin", async () => {
     const { service } = buildService({ actorUserRole: "USER", actorActiveBotRole: "ADMIN" });
     await expect(service.canAssignBotAdmin("actor")).resolves.toBe(false);
@@ -61,4 +66,3 @@ describe("Bot-scoped OWNER/ADMIN policy (PermissionService)", () => {
     await expect(ownerSvc.canRevokeBotOwner("actor")).resolves.toBe(false);
   });
 });
-

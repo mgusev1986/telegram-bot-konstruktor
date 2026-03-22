@@ -1,7 +1,7 @@
 import { Markup } from "telegraf";
 import type { MenuItem, MenuItemLocalization } from "@prisma/client";
 
-import { makeCallbackData } from "../common/callback-data";
+import { makeCallbackData, toShortId } from "../common/callback-data";
 import type { I18nService } from "../modules/i18n/i18n.service";
 import { isAdminAreaUser } from "../modules/permissions/capabilities";
 
@@ -264,7 +264,15 @@ export const isAdminRole = (role?: string): boolean => isAdminAreaUser(role as a
  * Otherwise: content items in array order, then nav row(s) at the end.
  */
 export const buildMenuKeyboard = (
-  items: Array<(MenuItem & { locked: boolean; localizations: MenuItemLocalization[] }) | { id: string; locked: boolean; localizations: MenuItemLocalization[]; type?: string; targetMenuItemId?: string | null }>,
+  items: Array<
+    (MenuItem & { locked: boolean; localizations: MenuItemLocalization[] }) | {
+      id: string;
+      locked: boolean;
+      localizations: MenuItemLocalization[];
+      type?: string;
+      targetMenuItemId?: string | null;
+    }
+  >,
   languageCode: string,
   i18n: I18nService,
   parentId?: string | null,
@@ -306,12 +314,16 @@ export const buildMenuKeyboard = (
     const localization = i18n.pickLocalized(item.localizations, languageCode);
     const title = localization?.title ?? item.id;
     const label = item.locked ? `🔒 ${i18n.t(languageCode, "menu_item_locked")} · ${title}` : title;
+    const externalUrl = localization?.externalUrl?.trim();
     if (isPartnerRegisterLink(item)) {
       if (externalPartnerUrl) return [Markup.button.url(label, externalPartnerUrl)];
       return null;
     }
     if (isMentorContactLink(item) && mentorUsername?.trim()) {
       return [Markup.button.url(label, `https://t.me/${mentorUsername.trim()}`)];
+    }
+    if (item.type === "EXTERNAL_LINK" && !item.locked && externalUrl) {
+      return [Markup.button.url(label, externalUrl)];
     }
     return [Markup.button.callback(label, makeCallbackData("menu", "open", item.id))];
   };
@@ -397,7 +409,7 @@ export type PageEditorChild = {
   id: string;
   title: string;
   isActive: boolean;
-  type: "SUBMENU" | "TEXT" | "PHOTO" | "VIDEO" | "DOCUMENT" | "LINK" | "SECTION_LINK";
+  type: "SUBMENU" | "TEXT" | "PHOTO" | "VIDEO" | "DOCUMENT" | "LINK" | "SECTION_LINK" | "EXTERNAL_LINK";
 };
 
 /** Submenu with content-editing options (replace text/photo/video/document, full replace, attach video). */
@@ -851,6 +863,88 @@ export const buildAdminKeyboard = (
   return Markup.inlineKeyboard(rows);
 };
 
+export const buildUserManagementPromptKeyboard = (languageCode: string, i18n: I18nService) =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback(i18n.t(languageCode, "usermgmt_view_admins_btn"), makeCallbackData("usermgmt", "list_admins"))],
+    [Markup.button.callback(i18n.t(languageCode, "back"), makeCallbackData("admin", "open"))],
+    [Markup.button.callback(i18n.t(languageCode, "to_main_menu"), NAV_ROOT_DATA)]
+  ]);
+
+export const buildUserManagementCardKeyboard = (
+  languageCode: string,
+  i18n: I18nService,
+  targetUserId: string,
+  opts?: {
+    source?: "search" | "admins";
+    canAssignAdmin?: boolean;
+    canRevokeAdmin?: boolean;
+    canDelete?: boolean;
+  }
+) => {
+  const source = opts?.source ?? "search";
+  const shortUserId = toShortId(targetUserId);
+  const rows: ReturnType<typeof Markup.button.callback>[][] = [];
+
+  if (opts?.canAssignAdmin) {
+    rows.push([
+      Markup.button.callback(i18n.t(languageCode, "usermgmt_assign_admin_btn"), makeCallbackData("usermgmt", "assign_admin", shortUserId, source))
+    ]);
+  }
+  if (opts?.canRevokeAdmin) {
+    rows.push([
+      Markup.button.callback(i18n.t(languageCode, "usermgmt_revoke_admin_btn"), makeCallbackData("usermgmt", "revoke_admin", shortUserId, source))
+    ]);
+  }
+  if (opts?.canDelete) {
+    rows.push([
+      Markup.button.callback(i18n.t(languageCode, "usermgmt_delete_btn"), makeCallbackData("usermgmt", "delete", shortUserId, source))
+    ]);
+  }
+
+  rows.push(
+    [Markup.button.callback(i18n.t(languageCode, "usermgmt_view_admins_btn"), makeCallbackData("usermgmt", "list_admins"))],
+    [Markup.button.callback(i18n.t(languageCode, "back"), makeCallbackData("usermgmt", source === "admins" ? "list_admins" : "prompt"))],
+    [Markup.button.callback(i18n.t(languageCode, "to_main_menu"), NAV_ROOT_DATA)]
+  );
+
+  return Markup.inlineKeyboard(rows);
+};
+
+export const buildUserManagementAdminListKeyboard = (
+  languageCode: string,
+  i18n: I18nService,
+  admins: Array<{ id: string; label: string }>
+) => {
+  const rows: ReturnType<typeof Markup.button.callback>[][] = admins.map((admin) => [
+    Markup.button.callback(admin.label, makeCallbackData("usermgmt", "view", toShortId(admin.id), "admins"))
+  ]);
+
+  rows.push(
+    [Markup.button.callback(i18n.t(languageCode, "usermgmt_prompt_btn"), makeCallbackData("usermgmt", "prompt"))],
+    [Markup.button.callback(i18n.t(languageCode, "back"), makeCallbackData("admin", "open"))],
+    [Markup.button.callback(i18n.t(languageCode, "to_main_menu"), NAV_ROOT_DATA)]
+  );
+
+  return Markup.inlineKeyboard(rows);
+};
+
+export const buildUserManagementDeleteConfirmKeyboard = (
+  languageCode: string,
+  i18n: I18nService,
+  targetUserId: string,
+  source: "search" | "admins" = "search"
+) =>
+  Markup.inlineKeyboard([
+    [
+      Markup.button.callback(
+        i18n.t(languageCode, "usermgmt_delete_confirm_btn"),
+        makeCallbackData("usermgmt", "delete_confirm", toShortId(targetUserId), source)
+      )
+    ],
+    [Markup.button.callback(i18n.t(languageCode, "back"), makeCallbackData("usermgmt", "view", toShortId(targetUserId), source))],
+    [Markup.button.callback(i18n.t(languageCode, "to_main_menu"), NAV_ROOT_DATA)]
+  ]);
+
 export const buildLanguageVersionHubKeyboard = (
   uiLanguageCode: string,
   i18n: I18nService,
@@ -967,17 +1061,6 @@ export const buildOnboardingWelcomeKeyboard = (languageCode: string, i18n: I18nS
       Markup.button.callback(i18n.t(languageCode, "to_main_menu"), NAV_ROOT_DATA)
     ]
   ]);
-
-/** Step 0: choose base language of the bot (Русский / English). */
-export const buildOnboardingBaseLanguageKeyboard = (languageCode: string, i18n: I18nService) => {
-  const langs = i18n.availableLanguages();
-  const rows = langs.map((l) => [Markup.button.callback(l.label, makeCallbackData(ONBOARDING_PREFIX, "lang", l.code))]);
-  rows.push([
-    Markup.button.callback(i18n.t(languageCode, "cancel_btn"), makeCallbackData(ONBOARDING_PREFIX, "cancel")),
-    Markup.button.callback(i18n.t(languageCode, "to_main_menu"), NAV_ROOT_DATA)
-  ]);
-  return Markup.inlineKeyboard(rows);
-};
 
 export const buildOnboardingStep1CompleteKeyboard = (languageCode: string, i18n: I18nService) =>
   Markup.inlineKeyboard([

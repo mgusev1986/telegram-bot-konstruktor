@@ -8,6 +8,7 @@ import { AccessRuleService } from "../modules/access/access-rule.service";
 import { AnalyticsService } from "../modules/analytics/analytics.service";
 import { AuditService } from "../modules/audit/audit.service";
 import { BroadcastService } from "../modules/broadcasts/broadcast.service";
+import { BotRoleAssignmentService } from "../modules/bot-roles/bot-role-assignment.service";
 import { CabinetService } from "../modules/cabinet/cabinet.service";
 import { CrmService } from "../modules/crm/crm.service";
 import { DripService } from "../modules/drip/drip.service";
@@ -34,6 +35,7 @@ export interface AppServices {
   audit: AuditService;
   rateLimit: RateLimitService;
   users: UserService;
+  botRoles: BotRoleAssignmentService;
   permissions: PermissionService;
   notifications: NotificationService;
   referrals: ReferralService;
@@ -94,6 +96,7 @@ export const buildServices = (
   const drips = new DripService(prisma, scheduler, i18n, audit, botInstanceId, cabinet);
   const exports = new ExportService(prisma, referrals);
   const permissions = new PermissionService(prisma, users, audit, botInstanceId);
+  const botRoles = new BotRoleAssignmentService(prisma, botInstanceId ?? "", permissions, audit);
   const mediaLibrary = new MediaLibraryService(prisma);
   const inactivityReminders = new InactivityReminderService(prisma, scheduler, botInstanceId);
   const languageGenerationTasks = new LanguageGenerationTaskService(prisma, i18n);
@@ -103,6 +106,7 @@ export const buildServices = (
     audit,
     rateLimit,
     users,
+    botRoles,
     permissions,
     notifications,
     referrals,

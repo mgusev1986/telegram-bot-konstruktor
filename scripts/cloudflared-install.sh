@@ -30,7 +30,8 @@ mkdir -p /etc/cloudflared
 echo "TUNNEL_TOKEN=$TUNNEL_TOKEN" > /etc/cloudflared/tunnel-token.env
 chmod 600 /etc/cloudflared/tunnel-token.env
 
-cat > /etc/systemd/system/cloudflared-tunnel.service << 'SERVICE'
+# Имя cloudflared для удобства (часто ищут именно его)
+cat > /etc/systemd/system/cloudflared.service << 'SERVICE'
 [Unit]
 Description=Cloudflare Tunnel for Telegram Bot Konstruktor
 After=network-online.target docker.service
@@ -48,11 +49,11 @@ WantedBy=multi-user.target
 SERVICE
 
 systemctl daemon-reload
-systemctl enable cloudflared-tunnel
-systemctl start cloudflared-tunnel
+systemctl enable cloudflared
+systemctl start cloudflared
 
 echo ""
 echo "✓ Cloudflare Tunnel service создан и запущен"
-echo "  Статус: systemctl status cloudflared-tunnel"
-echo "  Логи:   journalctl -u cloudflared-tunnel -f"
+echo "  Статус: systemctl status cloudflared"
+echo "  Логи:   journalctl -u cloudflared -f"
 echo ""

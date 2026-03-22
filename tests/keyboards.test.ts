@@ -15,6 +15,10 @@ import {
   buildLanguageVersionHubKeyboard,
   buildLanguageVersionPageActionsKeyboard,
   buildLanguageVersionPreviewConfirmKeyboard,
+  buildUserManagementPromptKeyboard,
+  buildUserManagementCardKeyboard,
+  buildUserManagementAdminListKeyboard,
+  buildUserManagementDeleteConfirmKeyboard,
   NAV_ROOT_DATA,
   NAV_BACK_DATA,
   NAV_SLOT_BACK,
@@ -24,7 +28,7 @@ import { createMockI18n } from "./helpers/mock-i18n";
 
 type InlineKeyboardMarkup = { inline_keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>> };
 
-function getInlineKeyboardRows(kb: { reply_markup: InlineKeyboardMarkup }): Array<Array<{ text: string; callback_data?: string }>> {
+function getInlineKeyboardRows(kb: { reply_markup: InlineKeyboardMarkup }): Array<Array<{ text: string; callback_data?: string; url?: string }>> {
   return kb.reply_markup.inline_keyboard;
 }
 
@@ -205,6 +209,41 @@ describe("Keyboards: menu keyboard", () => {
       expect(row.length).toBe(1);
     });
   });
+
+  it("renders external menu item as native URL button when unlocked", () => {
+    const items = [
+      {
+        id: "external-1",
+        type: "EXTERNAL_LINK",
+        locked: false,
+        localizations: [{ languageCode: "ru", title: "Docs", externalUrl: "https://example.com/docs" }]
+      }
+    ];
+
+    const kb = buildMenuKeyboard(items as any, lang, i18n, null, "USER", undefined);
+    const rows = getInlineKeyboardRows(kb as any);
+
+    expect(rows[0]?.[0]?.url).toBe("https://example.com/docs");
+    expect(rows[0]?.[0]?.callback_data).toBeUndefined();
+    expect(rows[0]).toHaveLength(1);
+  });
+
+  it("keeps locked external menu item as callback button for access checks", () => {
+    const items = [
+      {
+        id: "external-locked",
+        type: "EXTERNAL_LINK",
+        locked: true,
+        localizations: [{ languageCode: "ru", title: "Docs", externalUrl: "https://example.com/docs" }]
+      }
+    ];
+
+    const kb = buildMenuKeyboard(items as any, lang, i18n, null, "USER", undefined);
+    const rows = getInlineKeyboardRows(kb as any);
+
+    expect(rows[0]?.[0]?.callback_data).toBe("menu:open:external-locked");
+    expect(rows[0]?.[0]?.url).toBeUndefined();
+  });
 });
 
 describe("Keyboards: content screen (leaf page)", () => {
@@ -312,6 +351,78 @@ describe("Keyboards: admin", () => {
     const kb = buildAdminKeyboard(lang, i18n);
     const callbacks = getAllCallbackData(kb as any);
     expect(callbacks).not.toContain("admin:publish");
+  });
+
+  it("shows user management entry when canManageUsers=true (OWNER / ALPHA_OWNER UI)", () => {
+    const kb = buildAdminKeyboard(lang, i18n, { canManageUsers: true } as any);
+    const callbacks = getAllCallbackData(kb as any);
+    expect(callbacks).toContain("admin:manage_user");
+  });
+
+  it("hides user management entry when canManageUsers=false (ADMIN UI)", () => {
+    const kb = buildAdminKeyboard(lang, i18n, { canManageUsers: false } as any);
+    const callbacks = getAllCallbackData(kb as any);
+    expect(callbacks).not.toContain("admin:manage_user");
+  });
+});
+
+describe("Keyboards: user management", () => {
+  it("search prompt keyboard is vertical", () => {
+    const kb = buildUserManagementPromptKeyboard(lang, i18n);
+    const rows = getInlineKeyboardRows(kb as any);
+    rows.forEach((row) => expect(row.length).toBe(1));
+  });
+
+  it("user card keyboard toggles assign/revoke buttons and keeps callbacks short", () => {
+    const assignKb = buildUserManagementCardKeyboard(lang, i18n, "11111111-1111-1111-1111-111111111111", {
+      source: "search",
+      canAssignAdmin: true,
+      canDelete: true
+    });
+    const assignCallbacks = getAllCallbackData(assignKb as any);
+    expect(assignCallbacks).toContain("usermgmt:assign_admin:11111111-111:search");
+    expect(assignCallbacks).toContain("usermgmt:delete:11111111-111:search");
+    expect(assignCallbacks).not.toContain("usermgmt:revoke_admin:11111111-111:search");
+    getInlineKeyboardRows(assignKb as any).forEach((row) => expect(row.length).toBe(1));
+    assignCallbacks.forEach((callback) => expect(callback.length).toBeLessThanOrEqual(64));
+
+    const revokeKb = buildUserManagementCardKeyboard(lang, i18n, "22222222-2222-2222-2222-222222222222", {
+      source: "admins",
+      canRevokeAdmin: true
+    });
+    const revokeCallbacks = getAllCallbackData(revokeKb as any);
+    expect(revokeCallbacks).toContain("usermgmt:revoke_admin:22222222-222:admins");
+    expect(revokeCallbacks).not.toContain("usermgmt:assign_admin:22222222-222:admins");
+    revokeCallbacks.forEach((callback) => expect(callback.length).toBeLessThanOrEqual(64));
+  });
+
+  it("admin list keyboard is clickable, vertical, and callback-safe", () => {
+    const kb = buildUserManagementAdminListKeyboard(lang, i18n, [
+      { id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", label: "@alpha_admin" },
+      { id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", label: "No username" }
+    ]);
+    const rows = getInlineKeyboardRows(kb as any);
+    rows.forEach((row) => expect(row.length).toBe(1));
+
+    const callbacks = getAllCallbackData(kb as any);
+    expect(callbacks).toContain("usermgmt:view:aaaaaaaa-aaa:admins");
+    expect(callbacks).toContain("usermgmt:view:bbbbbbbb-bbb:admins");
+    callbacks.forEach((callback) => expect(callback.length).toBeLessThanOrEqual(64));
+  });
+
+  it("delete confirm keyboard uses second-step confirm and stays vertical", () => {
+    const kb = buildUserManagementDeleteConfirmKeyboard(
+      lang,
+      i18n,
+      "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "search"
+    );
+    const rows = getInlineKeyboardRows(kb as any);
+    rows.forEach((row) => expect(row.length).toBe(1));
+
+    const callbacks = getAllCallbackData(kb as any);
+    expect(callbacks).toContain("usermgmt:delete_confirm:cccccccc-ccc:search");
+    callbacks.forEach((callback) => expect(callback.length).toBeLessThanOrEqual(64));
   });
 });
 

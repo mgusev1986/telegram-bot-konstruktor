@@ -8,7 +8,7 @@ const callbackSchema = z.string().min(1).max(64).regex(/^[a-z_]+:[a-z0-9_\-:]+$/
 export const CALLBACK_DATA_MAX_LENGTH = 64;
 
 /**
- * Shorten UUID to first 12 hex chars for callback payloads.
+ * Shorten a long id to the first 12 characters for callback payloads.
  * Use resolveShortId in handlers to look up by prefix (collision risk is negligible).
  */
 export const toShortId = (id: string): string => {

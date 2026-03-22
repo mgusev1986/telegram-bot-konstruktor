@@ -58,6 +58,7 @@ enum MenuItemType {
   LINK
   SUBMENU
   SECTION_LINK
+  EXTERNAL_LINK
 }
 
 enum VisibilityMode {

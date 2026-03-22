@@ -14,6 +14,7 @@ describe("BotRoleAssignmentService", () => {
       },
       botRoleAssignment: {
         findFirst: vi.fn().mockResolvedValue(null),
+        findMany: vi.fn().mockResolvedValue([]),
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({ id: "a1" }),
         update: vi.fn().mockResolvedValue({ id: "a1" })
@@ -167,5 +168,272 @@ describe("BotRoleAssignmentService", () => {
     );
     expect(audit.log).toHaveBeenCalled();
   });
-});
 
+  it("getUserManagementTarget resolves USER role and allows assign/delete", async () => {
+    const { service } = makeService({
+      prisma: {
+        user: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "u1",
+            botInstanceId,
+            telegramUserId: BigInt("100"),
+            username: "user_one",
+            firstName: "User",
+            lastName: "One",
+            fullName: "User One",
+            role: "USER"
+          })
+        },
+        botRoleAssignment: {
+          findFirst: vi.fn().mockResolvedValue(null)
+        }
+      }
+    });
+
+    const target = await service.getUserManagementTarget("u1");
+
+    expect(target?.role).toBe("USER");
+    expect(target?.canAssignAdmin).toBe(true);
+    expect(target?.canRevokeAdmin).toBe(false);
+    expect(target?.canDeleteFromBase).toBe(true);
+  });
+
+  it("getUserManagementTarget resolves OWNER and protects delete/revoke", async () => {
+    const findFirst = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "u2",
+        botInstanceId,
+        telegramUserId: BigInt("200"),
+        username: "owner_user",
+        firstName: "Owner",
+        lastName: "User",
+        fullName: "Owner User",
+        role: "USER"
+      })
+      .mockResolvedValueOnce({
+        id: "a-owner",
+        role: "OWNER",
+        status: "ACTIVE",
+        telegramUsernameRaw: "owner_user",
+        telegramUsernameNormalized: "owner_user"
+      });
+
+    const { service } = makeService({
+      prisma: {
+        user: { findFirst },
+        botRoleAssignment: { findFirst }
+      }
+    });
+
+    const target = await service.getUserManagementTarget("u2");
+
+    expect(target?.role).toBe("OWNER");
+    expect(target?.canAssignAdmin).toBe(false);
+    expect(target?.canRevokeAdmin).toBe(false);
+    expect(target?.canDeleteFromBase).toBe(false);
+  });
+
+  it("getUserManagementTarget resolves ALPHA_OWNER and protects delete/revoke", async () => {
+    const { service } = makeService({
+      prisma: {
+        user: {
+          findFirst: vi.fn().mockResolvedValue({
+            id: "alpha-user",
+            botInstanceId,
+            telegramUserId: BigInt("999"),
+            username: "alpha_owner",
+            firstName: "Alpha",
+            lastName: "Owner",
+            fullName: "Alpha Owner",
+            role: "ALPHA_OWNER"
+          })
+        },
+        botRoleAssignment: {
+          findFirst: vi.fn().mockResolvedValue(null)
+        }
+      }
+    });
+
+    const target = await service.getUserManagementTarget("alpha-user");
+
+    expect(target?.role).toBe("ALPHA_OWNER");
+    expect(target?.canAssignAdmin).toBe(false);
+    expect(target?.canRevokeAdmin).toBe(false);
+    expect(target?.canDeleteFromBase).toBe(false);
+  });
+
+  it("assignAdminToUser creates ACTIVE assignment even when user has no username", async () => {
+    const userFindFirst = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "u3",
+        botInstanceId,
+        telegramUserId: BigInt("333333"),
+        username: null,
+        firstName: "No",
+        lastName: "Username",
+        fullName: "No Username",
+        role: "USER"
+      })
+      .mockResolvedValueOnce(null);
+
+    const assignmentFindFirst = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null);
+
+    const { prisma, permissions, service } = makeService({
+      prisma: {
+        user: { findFirst: userFindFirst },
+        botRoleAssignment: {
+          findFirst: assignmentFindFirst,
+          create: vi.fn().mockResolvedValue({ id: "a-no-username" })
+        }
+      }
+    });
+
+    await service.assignAdminToUser({ actorUserId: "owner", targetUserId: "u3" });
+
+    expect(permissions.canAssignBotAdmin).toHaveBeenCalledWith("owner");
+    expect(prisma.botRoleAssignment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: "u3",
+          role: "ADMIN",
+          status: "ACTIVE",
+          telegramUsernameRaw: null,
+          telegramUsernameNormalized: "tgid_333333"
+        })
+      })
+    );
+  });
+
+  it("revokeAdminFromUser revokes active ADMIN assignment", async () => {
+    const userFindFirst = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "u4",
+        botInstanceId,
+        telegramUserId: BigInt("444"),
+        username: "admin_user",
+        firstName: "Admin",
+        lastName: "User",
+        fullName: "Admin User",
+        role: "USER"
+      });
+
+    const assignmentFindFirst = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "a4",
+        role: "ADMIN",
+        status: "ACTIVE",
+        telegramUsernameRaw: "admin_user",
+        telegramUsernameNormalized: "admin_user"
+      })
+      .mockResolvedValueOnce({ id: "a4" });
+
+    const { prisma, permissions, service } = makeService({
+      prisma: {
+        user: { findFirst: userFindFirst },
+        botRoleAssignment: {
+          findFirst: assignmentFindFirst,
+          update: vi.fn().mockResolvedValue({ id: "a4" })
+        }
+      }
+    });
+
+    await service.revokeAdminFromUser({ actorUserId: "owner", targetUserId: "u4" });
+
+    expect(permissions.canRevokeBotAdmin).toHaveBeenCalledWith("owner");
+    expect(prisma.botRoleAssignment.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "a4" },
+        data: expect.objectContaining({ status: "REVOKED" })
+      })
+    );
+  });
+
+  it("revokeAdminFromUser rejects OWNER target", async () => {
+    const findFirst = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "u5",
+        botInstanceId,
+        telegramUserId: BigInt("555"),
+        username: "owner_user",
+        firstName: "Owner",
+        lastName: "User",
+        fullName: "Owner User",
+        role: "USER"
+      })
+      .mockResolvedValueOnce({
+        id: "a5",
+        role: "OWNER",
+        status: "ACTIVE",
+        telegramUsernameRaw: "owner_user",
+        telegramUsernameNormalized: "owner_user"
+      });
+
+    const { service } = makeService({
+      prisma: {
+        user: { findFirst },
+        botRoleAssignment: { findFirst }
+      }
+    });
+
+    await expect(service.revokeAdminFromUser({ actorUserId: "alpha", targetUserId: "u5" })).rejects.toThrow();
+  });
+
+  it("listActiveAdmins returns bot admins including records without username", async () => {
+    const { service } = makeService({
+      prisma: {
+        botRoleAssignment: {
+          findMany: vi.fn().mockResolvedValue([
+            {
+              id: "a1",
+              role: "ADMIN",
+              status: "ACTIVE",
+              telegramUsernameRaw: "alpha_admin",
+              telegramUsernameNormalized: "alpha_admin",
+              user: {
+                id: "u1",
+                botInstanceId,
+                telegramUserId: BigInt("111"),
+                username: "alpha_admin",
+                firstName: "Alpha",
+                lastName: "Admin",
+                fullName: "Alpha Admin",
+                role: "USER"
+              }
+            },
+            {
+              id: "a2",
+              role: "ADMIN",
+              status: "ACTIVE",
+              telegramUsernameRaw: null,
+              telegramUsernameNormalized: "tgid_222",
+              user: {
+                id: "u2",
+                botInstanceId,
+                telegramUserId: BigInt("222"),
+                username: null,
+                firstName: "No",
+                lastName: "Username",
+                fullName: "No Username",
+                role: "USER"
+              }
+            }
+          ])
+        }
+      }
+    });
+
+    const admins = await service.listActiveAdmins();
+
+    expect(admins).toHaveLength(2);
+    expect(admins[0]?.role).toBe("ADMIN");
+    expect(admins[1]?.user.username).toBeNull();
+  });
+});

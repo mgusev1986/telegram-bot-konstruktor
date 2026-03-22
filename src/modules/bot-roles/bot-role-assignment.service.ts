@@ -14,6 +14,31 @@ export type BotRoleAssignmentFilters = {
   status?: BotRoleAssignmentStatus | "ALL";
 };
 
+export type ManagedBotUserRole = "ALPHA_OWNER" | "OWNER" | "ADMIN" | "USER";
+
+export type UserManagementTarget = {
+  user: Pick<User, "id" | "botInstanceId" | "telegramUserId" | "username" | "firstName" | "lastName" | "fullName" | "role">;
+  role: ManagedBotUserRole;
+  canAssignAdmin: boolean;
+  canRevokeAdmin: boolean;
+  canDeleteFromBase: boolean;
+};
+
+type ManagedUserRecord = Pick<
+  User,
+  "id" | "botInstanceId" | "telegramUserId" | "username" | "firstName" | "lastName" | "fullName" | "role"
+>;
+
+type ActiveAssignmentRecord = {
+  id: string;
+  role: BotScopedRole;
+  status: BotRoleAssignmentStatus;
+  telegramUsernameRaw: string | null;
+  telegramUsernameNormalized: string;
+};
+
+const TELEGRAM_ID_ASSIGNMENT_PREFIX = "tgid_";
+
 function normalizeTelegramUsernameInput(input: string): NormalizedTelegramUsername {
   const raw = String(input ?? "").trim().replace(/^@/, "");
   const normalized = raw.toLowerCase();
@@ -93,6 +118,236 @@ export class BotRoleAssignmentService {
       revokedAt: r.revokedAt,
       activatedAt: r.activatedAt
     }));
+  }
+
+  private normalizeAssignmentIdentity(
+    user: Pick<User, "username" | "telegramUserId">,
+    existingAssignment?: Pick<ActiveAssignmentRecord, "telegramUsernameRaw" | "telegramUsernameNormalized"> | null
+  ): {
+    telegramUsernameRaw: string | null;
+    telegramUsernameNormalized: string;
+  } {
+    if (existingAssignment?.telegramUsernameNormalized?.trim()) {
+      return {
+        telegramUsernameRaw: existingAssignment.telegramUsernameRaw ?? user.username ?? null,
+        telegramUsernameNormalized: existingAssignment.telegramUsernameNormalized
+      };
+    }
+
+    const rawUsername = String(user.username ?? "").trim().replace(/^@/, "");
+    if (rawUsername) {
+      return {
+        telegramUsernameRaw: rawUsername,
+        telegramUsernameNormalized: rawUsername.toLowerCase()
+      };
+    }
+
+    return {
+      telegramUsernameRaw: null,
+      telegramUsernameNormalized: `${TELEGRAM_ID_ASSIGNMENT_PREFIX}${String(user.telegramUserId)}`
+    };
+  }
+
+  private buildManagedRole(
+    user: Pick<User, "role">,
+    activeAssignment: Pick<ActiveAssignmentRecord, "role"> | null
+  ): ManagedBotUserRole {
+    if (user.role === "ALPHA_OWNER") return "ALPHA_OWNER";
+    if (activeAssignment?.role === "OWNER") return "OWNER";
+    if (activeAssignment?.role === "ADMIN") return "ADMIN";
+    return "USER";
+  }
+
+  private buildUserManagementTarget(
+    user: ManagedUserRecord,
+    activeAssignment: ActiveAssignmentRecord | null
+  ): UserManagementTarget {
+    const role = this.buildManagedRole(user, activeAssignment);
+    return {
+      user,
+      role,
+      canAssignAdmin: role === "USER",
+      canRevokeAdmin: role === "ADMIN",
+      canDeleteFromBase: role === "USER"
+    };
+  }
+
+  public async getUserManagementTarget(userId: string): Promise<UserManagementTarget | null> {
+    const user = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+        botInstanceId: this.botInstanceId
+      },
+      select: {
+        id: true,
+        botInstanceId: true,
+        telegramUserId: true,
+        username: true,
+        firstName: true,
+        lastName: true,
+        fullName: true,
+        role: true
+      }
+    });
+
+    if (!user) return null;
+
+    const activeAssignment = await this.prisma.botRoleAssignment.findFirst({
+      where: {
+        botInstanceId: this.botInstanceId,
+        userId: user.id,
+        status: "ACTIVE"
+      },
+      select: {
+        id: true,
+        role: true,
+        status: true,
+        telegramUsernameRaw: true,
+        telegramUsernameNormalized: true
+      }
+    });
+
+    return this.buildUserManagementTarget(user, activeAssignment);
+  }
+
+  public async listActiveAdmins(): Promise<UserManagementTarget[]> {
+    const rows = await this.prisma.botRoleAssignment.findMany({
+      where: {
+        botInstanceId: this.botInstanceId,
+        status: "ACTIVE",
+        role: "ADMIN"
+      },
+      orderBy: { updatedAt: "asc" },
+      include: {
+        user: {
+          select: {
+            id: true,
+            botInstanceId: true,
+            telegramUserId: true,
+            username: true,
+            firstName: true,
+            lastName: true,
+            fullName: true,
+            role: true
+          }
+        }
+      }
+    });
+
+    return rows
+      .filter((row): row is typeof row & { user: ManagedUserRecord } => row.user != null)
+      .map((row) => this.buildUserManagementTarget(row.user, {
+        id: row.id,
+        role: row.role,
+        status: row.status,
+        telegramUsernameRaw: row.telegramUsernameRaw,
+        telegramUsernameNormalized: row.telegramUsernameNormalized
+      }))
+      .sort((left, right) => {
+        const leftLabel = left.user.username ?? left.user.fullName ?? String(left.user.telegramUserId);
+        const rightLabel = right.user.username ?? right.user.fullName ?? String(right.user.telegramUserId);
+        return leftLabel.localeCompare(rightLabel, "en", { sensitivity: "base" });
+      });
+  }
+
+  public async assignAdminToUser(input: { actorUserId: string; targetUserId: string }): Promise<void> {
+    const { actorUserId, targetUserId } = input;
+    if (!(await this.permissions.canAssignBotAdmin(actorUserId))) {
+      throw new ForbiddenError();
+    }
+
+    const target = await this.getUserManagementTarget(targetUserId);
+    if (!target) throw new NotFoundError("User not found");
+    if (target.role === "ALPHA_OWNER" || target.role === "OWNER") {
+      throw new ForbiddenError("Protected users cannot be downgraded to ADMIN.");
+    }
+    if (target.role === "ADMIN") return;
+
+    const existingAssignment = await this.prisma.botRoleAssignment.findFirst({
+      where: {
+        botInstanceId: this.botInstanceId,
+        OR: [
+          { userId: target.user.id },
+          { telegramUsernameNormalized: this.normalizeAssignmentIdentity(target.user).telegramUsernameNormalized }
+        ]
+      },
+      orderBy: { updatedAt: "desc" },
+      select: {
+        id: true,
+        telegramUsernameRaw: true,
+        telegramUsernameNormalized: true
+      }
+    });
+
+    const identity = this.normalizeAssignmentIdentity(target.user, existingAssignment);
+    const now = new Date();
+
+    const assignment = existingAssignment
+      ? await this.prisma.botRoleAssignment.update({
+          where: { id: existingAssignment.id },
+          data: {
+            telegramUsernameRaw: identity.telegramUsernameRaw,
+            telegramUsernameNormalized: identity.telegramUsernameNormalized,
+            role: "ADMIN",
+            status: "ACTIVE",
+            userId: target.user.id,
+            revokedAt: null,
+            activatedAt: now
+          }
+        })
+      : await this.prisma.botRoleAssignment.create({
+          data: {
+            botInstanceId: this.botInstanceId,
+            telegramUsernameRaw: identity.telegramUsernameRaw,
+            telegramUsernameNormalized: identity.telegramUsernameNormalized,
+            role: "ADMIN",
+            status: "ACTIVE",
+            userId: target.user.id,
+            activatedAt: now
+          }
+        });
+
+    await this.audit.log(actorUserId, "bot_role_assignment_admin_granted_by_user", "bot_role_assignment", assignment.id, {
+      targetUserId: target.user.id
+    });
+  }
+
+  public async revokeAdminFromUser(input: { actorUserId: string; targetUserId: string }): Promise<void> {
+    const { actorUserId, targetUserId } = input;
+    if (!(await this.permissions.canRevokeBotAdmin(actorUserId))) {
+      throw new ForbiddenError();
+    }
+
+    const target = await this.getUserManagementTarget(targetUserId);
+    if (!target) throw new NotFoundError("User not found");
+    if (target.role === "ALPHA_OWNER" || target.role === "OWNER") {
+      throw new ForbiddenError("Protected users cannot be demoted.");
+    }
+    if (target.role !== "ADMIN") return;
+
+    const activeAssignment = await this.prisma.botRoleAssignment.findFirst({
+      where: {
+        botInstanceId: this.botInstanceId,
+        userId: target.user.id,
+        status: "ACTIVE",
+        role: "ADMIN"
+      },
+      select: { id: true }
+    });
+
+    if (!activeAssignment) return;
+
+    await this.prisma.botRoleAssignment.update({
+      where: { id: activeAssignment.id },
+      data: {
+        status: "REVOKED",
+        revokedAt: new Date()
+      }
+    });
+
+    await this.audit.log(actorUserId, "bot_role_assignment_admin_revoked_by_user", "bot_role_assignment", activeAssignment.id, {
+      targetUserId: target.user.id
+    });
   }
 
   public async assignRoleByTelegramUsername(input: {
@@ -405,4 +660,3 @@ export class BotRoleAssignmentService {
     });
   }
 }
-

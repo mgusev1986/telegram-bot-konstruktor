@@ -17,6 +17,7 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:migrate:local": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/telegram_bot_konstruktor?schema=public prisma migrate deploy",
     "prisma:dev": "prisma migrate dev",
+    "prisma:dev:local": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/telegram_bot_konstruktor?schema=public prisma migrate dev",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:seed-demo": "tsx prisma/seed-demo-structure.ts",
     "deploy": "bash scripts/deploy.sh",

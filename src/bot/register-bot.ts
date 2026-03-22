@@ -42,7 +42,6 @@ import {
   buildScheduledBroadcastListKeyboard,
   buildScheduledBroadcastDetailKeyboard,
   buildOnboardingWelcomeKeyboard,
-  buildOnboardingBaseLanguageKeyboard,
   buildOnboardingStep1CompleteKeyboard,
   buildOnboardingStep2CompleteKeyboard,
   buildOnboardingStep3CompleteKeyboard,
@@ -53,12 +52,17 @@ import {
   buildOnboardingStep6Keyboard,
   buildOnboardingEmptyStateKeyboard,
   buildResetConfirmKeyboard,
+  buildUserManagementAdminListKeyboard,
+  buildUserManagementCardKeyboard,
+  buildUserManagementDeleteConfirmKeyboard,
+  buildUserManagementPromptKeyboard,
   isAdminRole,
   NAV_ROOT_DATA,
   SCENE_CANCEL_DATA
 } from "./keyboards";
 import { canManageLanguages } from "../modules/permissions/capabilities";
 import { isLanguageManagementAction } from "./language-management-actions";
+import { startOnboardingWithBaseLanguage } from "./helpers/onboarding-start";
 import { createBroadcastScene, createScheduledBroadcastScene, CREATE_BROADCAST_SCENE, CREATE_SCHEDULED_BROADCAST_SCENE } from "./scenes/create-broadcast.scene";
 import { createButtonLinkScene, CREATE_BUTTON_LINK_SCENE } from "./scenes/create-button-link.scene";
 import { createDripScene, CREATE_DRIP_SCENE } from "./scenes/create-drip-campaign.scene";
@@ -572,9 +576,162 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       canManageLanguages: canManageLanguages(effectiveUiRole as any),
       // System buttons (incl. language) can be hidden only by ALPHA_OWNER.
       canManageSystemButtons: effectiveUiRole === "ALPHA_OWNER",
-      // User management (revoke paid access, delete) only for ALPHA_OWNER.
-      canManageUsers: effectiveUiRole === "ALPHA_OWNER"
+      // User management is available for bot OWNER and ALPHA_OWNER.
+      canManageUsers: effectiveUiRole === "ALPHA_OWNER" || effectiveUiRole === "OWNER"
     };
+  };
+
+  const getUserManagementRoleLabel = (
+    locale: string,
+    role: import("../modules/bot-roles/bot-role-assignment.service").ManagedBotUserRole
+  ): string => {
+    switch (role) {
+      case "ALPHA_OWNER":
+        return services.i18n.t(locale, "usermgmt_role_alpha_owner");
+      case "OWNER":
+        return services.i18n.t(locale, "usermgmt_role_owner");
+      case "ADMIN":
+        return services.i18n.t(locale, "usermgmt_role_admin");
+      default:
+        return services.i18n.t(locale, "usermgmt_role_user");
+    }
+  };
+
+  const getUserDisplayName = (target: {
+    username?: string | null;
+    fullName?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    telegramUserId: bigint;
+  }): string => {
+    const fullName = target.fullName?.trim();
+    if (fullName) return fullName;
+    const name = [target.firstName?.trim(), target.lastName?.trim()].filter(Boolean).join(" ").trim();
+    if (name) return name;
+    if (target.username?.trim()) return `@${target.username.trim()}`;
+    return String(target.telegramUserId);
+  };
+
+  const buildUserManagementCardText = (
+    locale: string,
+    target: import("../modules/bot-roles/bot-role-assignment.service").UserManagementTarget
+  ): string => {
+    const username = target.user.username ? `@${target.user.username}` : "—";
+    const displayName = getUserDisplayName(target.user);
+    return [
+      services.i18n.t(locale, "usermgmt_card_title"),
+      "",
+      `${services.i18n.t(locale, "usermgmt_username_label")}: ${username}`,
+      `${services.i18n.t(locale, "usermgmt_telegram_id_label")}: ${String(target.user.telegramUserId)}`,
+      `${services.i18n.t(locale, "usermgmt_display_name_label")}: ${displayName || "—"}`,
+      `${services.i18n.t(locale, "usermgmt_internal_id_label")}: ${target.user.id}`,
+      `${services.i18n.t(locale, "usermgmt_role_label")}: ${getUserManagementRoleLabel(locale, target.role)}`
+    ].join("\n");
+  };
+
+  const renderUserManagementPrompt = async (
+    ctx: BotContext,
+    opts?: {
+      keepAwaiting?: boolean;
+      introKey?: "usermgmt_prompt" | "usermgmt_not_found_prompt" | "usermgmt_deleted_prompt";
+    }
+  ) => {
+    const user = ctx.currentUser!;
+    const locale = services.i18n.resolveLanguage(user.selectedLanguage);
+    const introKey = opts?.introKey ?? "usermgmt_prompt";
+    const s = ((ctx as unknown as { session?: ExtendedNavSession }).session ?? {}) as ExtendedNavSession;
+    (ctx as unknown as { session: ExtendedNavSession }).session = {
+      ...s,
+      awaitingUserLookup: opts?.keepAwaiting ?? true
+    };
+    await services.navigation.replaceScreen(
+      user,
+      ctx.telegram,
+      ctx.chat?.id ?? user.telegramUserId,
+      { text: services.i18n.t(locale, introKey) },
+      buildUserManagementPromptKeyboard(locale, services.i18n)
+    );
+  };
+
+  const renderUserManagementCard = async (
+    ctx: BotContext,
+    target: import("../modules/bot-roles/bot-role-assignment.service").UserManagementTarget,
+    source: "search" | "admins" = "search"
+  ) => {
+    const user = ctx.currentUser!;
+    const locale = services.i18n.resolveLanguage(user.selectedLanguage);
+    const s = ((ctx as unknown as { session?: ExtendedNavSession }).session ?? {}) as ExtendedNavSession;
+    (ctx as unknown as { session: ExtendedNavSession }).session = {
+      ...s,
+      awaitingUserLookup: false
+    };
+    await services.navigation.replaceScreen(
+      user,
+      ctx.telegram,
+      ctx.chat?.id ?? user.telegramUserId,
+      { text: buildUserManagementCardText(locale, target) },
+      buildUserManagementCardKeyboard(locale, services.i18n, target.user.id, {
+        source,
+        canAssignAdmin: target.canAssignAdmin,
+        canRevokeAdmin: target.canRevokeAdmin,
+        canDelete: target.canDeleteFromBase
+      })
+    );
+  };
+
+  const renderUserManagementAdminList = async (ctx: BotContext) => {
+    const user = ctx.currentUser!;
+    const locale = services.i18n.resolveLanguage(user.selectedLanguage);
+    const admins = await services.botRoles.listActiveAdmins();
+    const title = admins.length
+      ? [
+          services.i18n.t(locale, "usermgmt_admins_title"),
+          "",
+          ...admins.map((admin, index) => {
+            const username = admin.user.username ? `@${admin.user.username}` : services.i18n.t(locale, "usermgmt_no_username");
+            const displayName = getUserDisplayName(admin.user);
+            return `${index + 1}. ${username} · ${displayName} · ${String(admin.user.telegramUserId)}`;
+          })
+        ].join("\n")
+      : services.i18n.t(locale, "usermgmt_admins_empty");
+
+    const s = ((ctx as unknown as { session?: ExtendedNavSession }).session ?? {}) as ExtendedNavSession;
+    (ctx as unknown as { session: ExtendedNavSession }).session = {
+      ...s,
+      awaitingUserLookup: false
+    };
+
+    await services.navigation.replaceScreen(
+      user,
+      ctx.telegram,
+      ctx.chat?.id ?? user.telegramUserId,
+      { text: title },
+      buildUserManagementAdminListKeyboard(
+        locale,
+        services.i18n,
+        admins.map((admin) => ({
+          id: admin.user.id,
+          label: `${admin.user.username ? `@${admin.user.username}` : "👤"} · ${getUserDisplayName(admin.user)}`
+        }))
+      )
+    );
+  };
+
+  const getUserManagementBlockedMessage = (
+    locale: string,
+    target: import("../modules/bot-roles/bot-role-assignment.service").UserManagementTarget,
+    action: "assign" | "revoke" | "delete"
+  ): string => {
+    if (target.role === "ALPHA_OWNER") {
+      return services.i18n.t(locale, "usermgmt_blocked_alpha_owner");
+    }
+    if (target.role === "OWNER") {
+      return services.i18n.t(locale, "usermgmt_blocked_owner");
+    }
+    if (action === "delete" && target.role === "ADMIN") {
+      return services.i18n.t(locale, "usermgmt_blocked_delete_admin");
+    }
+    return services.i18n.t(locale, "permission_denied");
   };
 
   const sendRootMenu = async (ctx: BotContext, parentId: string | null = null) => {
@@ -861,52 +1018,36 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       }
     }
 
-    // Alpha Owner: awaiting user lookup (username or Telegram ID) for manage-user flow.
+    // OWNER / ALPHA_OWNER: awaiting user lookup (username or Telegram ID) for manage-user flow.
     if (
       ctx.message &&
       "text" in ctx.message &&
       ctx.currentUser &&
-      resolveEffectiveRole(ctx) === "ALPHA_OWNER"
+      (resolveEffectiveRole(ctx) === "ALPHA_OWNER" || resolveEffectiveRole(ctx) === "OWNER")
     ) {
       const s = (ctx as unknown as { session?: ExtendedNavSession }).session ?? ({} as ExtendedNavSession);
       if (s.awaitingUserLookup) {
         const text = (ctx.message as { text: string }).text.trim();
         const normalized = text.replace(/^@/, "").trim();
-        let targetUser: import("@prisma/client").User | null = null;
+        let targetUserId: string | null = null;
         try {
-          targetUser = await services.users.findByIdentifier(
+          const targetUser = await services.users.findByIdentifier(
             /^\d+$/.test(normalized) ? normalized : `@${normalized}`
           );
+          targetUserId = targetUser?.id ?? null;
         } catch {
-          targetUser = null;
+          targetUserId = null;
         }
-        (ctx as unknown as { session: ExtendedNavSession }).session = { ...s, awaitingUserLookup: false };
-        if (!targetUser || targetUser.id === ctx.currentUser.id) {
-          await ctx.reply(services.i18n.t(ctx.currentUser.selectedLanguage, "usermgmt_user_not_found"));
+        if (!targetUserId) {
+          await renderUserManagementPrompt(ctx, { keepAwaiting: true, introKey: "usermgmt_not_found_prompt" });
           return;
         }
-        const activeRights = await services.payments.getAccessSummary(targetUser.id);
-        const rows: ReturnType<typeof Markup.button.callback>[][] = [];
-        if (activeRights.paidStatus) {
-          rows.push([
-            Markup.button.callback(
-              services.i18n.t(ctx.currentUser.selectedLanguage, "usermgmt_revoke_btn"),
-              makeCallbackData("usermgmt", "revoke", targetUser.id)
-            )
-          ]);
+        const target = await services.botRoles.getUserManagementTarget(targetUserId);
+        if (!target) {
+          await renderUserManagementPrompt(ctx, { keepAwaiting: true, introKey: "usermgmt_not_found_prompt" });
+          return;
         }
-        rows.push([
-          Markup.button.callback(
-            services.i18n.t(ctx.currentUser.selectedLanguage, "usermgmt_delete_btn"),
-            makeCallbackData("usermgmt", "delete", targetUser.id)
-          )
-        ]);
-        rows.push(buildNavigationRow(services.i18n, ctx.currentUser.selectedLanguage, { toMain: true }));
-        const label = targetUser.username ? `@${targetUser.username}` : targetUser.fullName || String(targetUser.telegramUserId);
-        await ctx.reply(
-          `${label} (ID: ${targetUser.id.slice(0, 8)})`,
-          Markup.inlineKeyboard(rows)
-        );
+        await renderUserManagementCard(ctx, target, "search");
         return;
       }
     }
@@ -1562,13 +1703,16 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           } else {
             const c = children.find((x) => x.id === slotId);
             if (c) {
-                const title = services.i18n.pickLocalized(c.localizations, contentLanguageCode)?.title ?? c.key;
+              const localization = services.i18n.pickLocalized(c.localizations, contentLanguageCode);
+              const title = localization?.title ?? c.key;
               let targetTitle: string | undefined;
               if (c.type === "SECTION_LINK" && c.targetMenuItemId) {
                 const target = await services.menu.findMenuItemById(c.targetMenuItemId);
                 targetTitle = target
                   ? services.i18n.pickLocalized(target.localizations, contentLanguageCode)?.title ?? target.key
                   : undefined;
+              } else if (c.type === "EXTERNAL_LINK") {
+                targetTitle = localization?.externalUrl ?? undefined;
               }
               items.push({ id: c.id, title, isActive: c.isActive, type: c.type, targetTitle });
             }
@@ -2661,6 +2805,45 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       await services.inactivityReminders.cancelPendingForUserExcept(user.id, content.item.id);
       await services.menu.markViewed(user.id, content.item.id, user.selectedLanguage);
 
+      if (content.item.type === "EXTERNAL_LINK") {
+        const link = content.localization.externalUrl?.trim();
+        const titleText = content.localization.title ? renderPageContent(content.localization.title, user) : "";
+        const bodyText = content.localization.contentText ? renderPageContent(content.localization.contentText, user) : "";
+        const composedText = composeTitleBody(titleText, bodyText || link || "");
+        const rows: Array<Array<ReturnType<typeof Markup.button.callback> | ReturnType<typeof Markup.button.url>>> = [];
+        if (link) {
+          rows.push([
+            Markup.button.url(
+              content.localization.title || services.i18n.t(user.selectedLanguage, "open_external_link_btn"),
+              link
+            )
+          ]);
+        }
+        for (const btn of buildNavigationRow(services.i18n, user.selectedLanguage, {
+          back: makeCallbackData("menu", "back", content.item.parentId ?? "root"),
+          toMain: true
+        })) {
+          rows.push([btn]);
+        }
+        if (isAdminRole(resolveEffectiveRole(ctx))) {
+          rows.push([
+            Markup.button.callback(
+              services.i18n.t(user.selectedLanguage, "configure_page"),
+              makeCallbackData("page_edit", "open", content.item.id)
+            )
+          ]);
+        }
+        setNavBeforeShow(ctx, "menu:open:" + value);
+        await services.navigation.replaceScreen(
+          user,
+          ctx.telegram,
+          ctx.chat?.id ?? user.telegramUserId,
+          { text: composedText || link || services.i18n.t(user.selectedLanguage, "open_external_link_btn") },
+          Markup.inlineKeyboard(rows)
+        );
+        return;
+      }
+
       if (content.item.type === "SUBMENU" || children.length > 0) {
         setNavBeforeShow(ctx, "menu:open:" + value);
         const titleText = content.localization.title ? renderPageContent(content.localization.title, user) : "";
@@ -3103,43 +3286,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
       if (action === "lang" && value && ["ru", "en"].includes(value)) {
         await ctx.answerCbQuery();
-        await services.menu.ensureActiveTemplate(user.id, value);
-        await services.users.setOnboardingStep(user.id, 1);
-        const refreshed = await services.users.findById(user.id);
-        if (refreshed) ctx.currentUser = refreshed;
-        const text =
-          stepLabel(1) +
-          "\n\n" +
-          services.i18n.t(locale, "onboarding_step1_intro") +
-          "\n\n" +
-          services.i18n.t(locale, "personalization_hint");
-        await services.navigation.replaceScreen(
-          ctx.currentUser!,
-          ctx.telegram,
-          ctx.chat?.id ?? ctx.currentUser!.telegramUserId,
-          { text, resolvePlaceholders: false },
-          Markup.inlineKeyboard([buildNavigationRow(services.i18n, locale, { toMain: true })])
-        );
+        await startOnboardingWithBaseLanguage(ctx, services, user, value);
         return;
       }
 
       if (action === "open" || action === "start") {
         if (action === "start") {
-          const text =
-            stepLabel(0) +
-            " / " +
-            stepLabel(1) +
-            "\n\n" +
-            services.i18n.t(locale, "onboarding_step0_title") +
-            "\n\n" +
-            services.i18n.t(locale, "onboarding_step0_intro");
-          await services.navigation.replaceScreen(
-            user,
-            ctx.telegram,
-            ctx.chat?.id ?? user.telegramUserId,
-            { text },
-            buildOnboardingBaseLanguageKeyboard(locale, services.i18n)
-          );
+          await startOnboardingWithBaseLanguage(ctx, services, user, "ru");
           return;
         }
         const currentStep = user.onboardingStep ?? 0;
@@ -3414,32 +3567,100 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     }
 
     if (scope === "usermgmt") {
-      if (resolveEffectiveRole(ctx) !== "ALPHA_OWNER") {
+      if (!(await services.permissions.canAssignBotAdmin(user.id))) {
         await ctx.reply(services.i18n.t(user.selectedLanguage, "permission_denied"));
         return;
       }
-      const targetUserId = value;
-      if (!targetUserId) return;
-      const targetUser = await services.users.findById(targetUserId);
-      if (!targetUser || targetUser.botInstanceId !== user.botInstanceId) {
-        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_user_not_found"));
+
+      const locale = services.i18n.resolveLanguage(user.selectedLanguage);
+
+      if (action === "prompt") {
+        await renderUserManagementPrompt(ctx);
         return;
       }
+
+      if (action === "list_admins") {
+        await renderUserManagementAdminList(ctx);
+        return;
+      }
+
+      const source = extra === "admins" ? "admins" : "search";
+      const targetUser = value ? await services.users.findByIdOrShort(value) : null;
+      const target = targetUser ? await services.botRoles.getUserManagementTarget(targetUser.id) : null;
+
+      if (action === "view") {
+        if (!target) {
+          await renderUserManagementPrompt(ctx, { keepAwaiting: true, introKey: "usermgmt_not_found_prompt" });
+          return;
+        }
+        await renderUserManagementCard(ctx, target, source);
+        return;
+      }
+
       if (action === "revoke") {
-        await services.subscriptionChannel.revokeAllAccessForUser(targetUserId);
+        if (!targetUser) {
+          await renderUserManagementPrompt(ctx, { keepAwaiting: true, introKey: "usermgmt_not_found_prompt" });
+          return;
+        }
+        await services.subscriptionChannel.revokeAllAccessForUser(targetUser.id);
         await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_revoked"));
         return;
       }
+
+      if (!target) {
+        await renderUserManagementPrompt(ctx, { keepAwaiting: true, introKey: "usermgmt_not_found_prompt" });
+        return;
+      }
+
+      if (action === "assign_admin") {
+        if (!target.canAssignAdmin) {
+          await ctx.reply(getUserManagementBlockedMessage(locale, target, "assign"));
+          return;
+        }
+        await services.botRoles.assignAdminToUser({ actorUserId: user.id, targetUserId: target.user.id });
+        await ctx.reply(services.i18n.t(locale, "usermgmt_admin_assigned"));
+        const updated = await services.botRoles.getUserManagementTarget(target.user.id);
+        if (updated) {
+          await renderUserManagementCard(ctx, updated, source);
+        }
+        return;
+      }
+
+      if (action === "revoke_admin") {
+        if (!target.canRevokeAdmin) {
+          await ctx.reply(getUserManagementBlockedMessage(locale, target, "revoke"));
+          return;
+        }
+        await services.botRoles.revokeAdminFromUser({ actorUserId: user.id, targetUserId: target.user.id });
+        await ctx.reply(services.i18n.t(locale, "usermgmt_admin_revoked"));
+        const updated = await services.botRoles.getUserManagementTarget(target.user.id);
+        if (updated) {
+          await renderUserManagementCard(ctx, updated, source);
+        }
+        return;
+      }
+
       if (action === "delete") {
-        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_delete_confirm"), Markup.inlineKeyboard([
-          [Markup.button.callback(services.i18n.t(user.selectedLanguage, "usermgmt_delete_confirm_btn"), makeCallbackData("usermgmt", "delete_confirm", targetUserId))],
-          [Markup.button.callback(services.i18n.t(user.selectedLanguage, "cancel_btn"), NAV_ROOT_DATA)]
-        ]));
+        if (!target.canDeleteFromBase) {
+          await ctx.reply(getUserManagementBlockedMessage(locale, target, "delete"));
+          return;
+        }
+        await services.navigation.replaceScreen(
+          user,
+          ctx.telegram,
+          ctx.chat?.id ?? user.telegramUserId,
+          { text: services.i18n.t(locale, "usermgmt_delete_confirm") },
+          buildUserManagementDeleteConfirmKeyboard(locale, services.i18n, target.user.id, source)
+        );
         return;
       }
       if (action === "delete_confirm") {
-        await services.users.deleteUser(targetUserId);
-        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_deleted"));
+        if (!target.canDeleteFromBase) {
+          await ctx.reply(getUserManagementBlockedMessage(locale, target, "delete"));
+          return;
+        }
+        await services.users.deleteUser(target.user.id);
+        await renderUserManagementPrompt(ctx, { keepAwaiting: true, introKey: "usermgmt_deleted_prompt" });
         return;
       }
       return;
@@ -3448,13 +3669,11 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     if (scope === "admin") {
       const adminLocale = services.i18n.resolveLanguage(user.selectedLanguage);
       if (action === "manage_user") {
-        if (resolveEffectiveRole(ctx) !== "ALPHA_OWNER") {
+        if (!(await services.permissions.canAssignBotAdmin(user.id))) {
           await ctx.reply(services.i18n.t(user.selectedLanguage, "permission_denied"));
           return;
         }
-        const s = ((ctx as unknown as { session?: ExtendedNavSession }).session ?? {}) as ExtendedNavSession;
-        (ctx as unknown as { session: ExtendedNavSession }).session = { ...s, awaitingUserLookup: true };
-        await ctx.reply(services.i18n.t(user.selectedLanguage, "usermgmt_prompt"));
+        await renderUserManagementPrompt(ctx);
         return;
       }
       if (isLanguageManagementAction(action)) {
