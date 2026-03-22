@@ -7,13 +7,19 @@ import type { Telegram } from "telegraf";
 import type { SchedulerService } from "../jobs/scheduler.service";
 import { getBanIdentifiers, getDisplayLinks } from "../../common/linked-chat-parser";
 import { logger } from "../../common/logger";
-
-const REMINDER_DAYS = [3, 2, 1] as const;
+import type { NotificationService } from "../notifications/notification.service";
+import {
+  getReminderSchedule,
+  type ProductTimingLike
+} from "./subscription-access-policy";
 
 export class SubscriptionChannelService {
   private telegram: Telegram | null = null;
 
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(
+    private readonly prisma: PrismaClient,
+    private readonly notifications?: NotificationService
+  ) {}
 
   setTelegram(tg: Telegram): void {
     this.telegram = tg;
@@ -27,25 +33,32 @@ export class SubscriptionChannelService {
     accessRightId: string,
     activeUntil: Date,
     botInstanceId: string | null,
-    scheduler: SchedulerService
+    scheduler: SchedulerService,
+    product?: ProductTimingLike | null
   ): Promise<void> {
     const now = Date.now();
     const untilMs = activeUntil.getTime();
     const msPerDay = 24 * 60 * 60 * 1000;
+    const msPerMinute = 60 * 1000;
 
-    for (const daysLeft of REMINDER_DAYS) {
-      const remindAt = new Date(untilMs - daysLeft * msPerDay);
+    for (const reminder of getReminderSchedule(product)) {
+      const offsetMs = reminder.unit === "minutes" ? reminder.value * msPerMinute : reminder.value * msPerDay;
+      const remindAt = new Date(untilMs - offsetMs);
       if (remindAt.getTime() <= now) continue;
 
       try {
         await scheduler.schedule(
           "SEND_SUBSCRIPTION_REMINDER",
-          { accessRightId, daysLeft, botInstanceId: botInstanceId ?? undefined },
+          {
+            accessRightId,
+            botInstanceId: botInstanceId ?? undefined,
+            ...(reminder.unit === "minutes" ? { minutesLeft: reminder.value } : { daysLeft: reminder.value })
+          },
           remindAt,
-          `sub-rem:${accessRightId}:${daysLeft}d`
+          `sub-rem:${accessRightId}:${reminder.idempotencySuffix}`
         );
       } catch (e) {
-        logger.warn({ accessRightId, daysLeft, err: e }, "Failed to schedule subscription reminder");
+        logger.warn({ accessRightId, reminder, err: e }, "Failed to schedule subscription reminder");
       }
     }
 
@@ -64,7 +77,10 @@ export class SubscriptionChannelService {
   /**
    * Отправляет напоминание об истечении подписки.
    */
-  async sendReminder(accessRightId: string, daysLeft: number): Promise<void> {
+  async sendReminder(
+    accessRightId: string,
+    reminder: { daysLeft?: number; minutesLeft?: number }
+  ): Promise<void> {
     const right = await this.prisma.userAccessRight.findUnique({
       where: { id: accessRightId },
       include: { user: true, product: { include: { localizations: true } } }
@@ -74,20 +90,45 @@ export class SubscriptionChannelService {
     const loc = right.product.localizations.find((l) => l.languageCode === right.user.selectedLanguage)
       ?? right.product.localizations.find((l) => l.languageCode === "ru")
       ?? right.product.localizations[0];
+    const title = loc?.title ?? right.product.code;
+    const minutesLeft = reminder.minutesLeft && reminder.minutesLeft > 0 ? reminder.minutesLeft : null;
+    const daysLeft = reminder.daysLeft && reminder.daysLeft > 0 ? reminder.daysLeft : null;
     const msg =
-      daysLeft === 3
-        ? loc?.description?.includes("подписк") ? "Подписка истекает через 3 дня. Продлите, чтобы сохранить доступ к каналу и материалам." : "Your subscription expires in 3 days. Renew to keep access."
-        : daysLeft === 2
-          ? "Подписка истекает через 2 дня. Продлите оплату."
-          : "Подписка истекает завтра! Продлите, иначе доступ будет закрыт.";
+      right.user.selectedLanguage === "en"
+        ? minutesLeft
+          ? `Test access to "${title}" expires in ${minutesLeft} minute${minutesLeft === 1 ? "" : "s"}. Renew to keep access.`
+          : daysLeft === 1
+            ? `Access to "${title}" expires tomorrow. Renew to keep access.`
+            : `Access to "${title}" expires in ${daysLeft ?? 0} days. Renew to keep access.`
+        : right.user.selectedLanguage === "de"
+          ? minutesLeft
+            ? `Testzugang zu "${title}" endet in ${minutesLeft} Minute${minutesLeft === 1 ? "" : "n"}. Verlängern Sie den Zugang.`
+            : daysLeft === 1
+              ? `Der Zugang zu "${title}" endet morgen. Bitte verlängern Sie ihn.`
+              : `Der Zugang zu "${title}" endet in ${daysLeft ?? 0} Tagen. Bitte verlängern Sie ihn.`
+          : minutesLeft
+            ? `Тестовый доступ к «${title}» истекает через ${minutesLeft} мин. Продлите доступ, чтобы не потерять чат и материалы.`
+            : daysLeft === 1
+              ? `Доступ к «${title}» истекает завтра. Продлите оплату, чтобы сохранить чат и материалы.`
+              : `Доступ к «${title}» истекает через ${daysLeft ?? 0} дн. Продлите оплату, чтобы сохранить чат и материалы.`;
 
-    if (this.telegram) {
-      try {
-        await this.telegram.sendMessage(Number(right.user.telegramUserId), msg);
-      } catch (e) {
-        logger.warn({ accessRightId, userId: right.userId, err: e }, "Failed to send subscription reminder");
-      }
+    if (this.notifications) {
+      await this.notifications.sendText(
+        right.user,
+        "ACCESS_EXPIRING",
+        msg,
+        {
+          accessRightId,
+          productId: right.productId,
+          ...(minutesLeft ? { minutesLeft } : {}),
+          ...(daysLeft ? { daysLeft } : {})
+        }
+      );
+      return;
     }
+
+    if (!this.telegram) return;
+    await this.telegram.sendMessage(Number(right.user.telegramUserId), msg);
   }
 
   /**
@@ -106,30 +147,35 @@ export class SubscriptionChannelService {
       data: { status: "EXPIRED" }
     });
 
+    const removalIssues: string[] = [];
     const identifiers = getBanIdentifiers(right.product.linkedChats);
-    if (identifiers.length && this.telegram) {
-      const chatId = (id: string) => (id.startsWith("@") ? id : Number(id));
-      for (const ident of identifiers) {
-        try {
-          await this.telegram.banChatMember(chatId(ident), Number(right.user.telegramUserId));
-          logger.info({ accessRightId, userId: right.userId, chatId: ident }, "Banned user from subscription chat");
-        } catch (e) {
-          const errMsg = e instanceof Error ? e.message : String(e);
-          const hint =
-            /not enough rights|need admin|CHAT_ADMIN_REQUIRED|not an admin/i.test(errMsg)
-              ? " (бот не администратор в чате/канале или нет прав на бан)"
-              : "";
-          logger.warn(
-            { accessRightId, chatId: ident, err: e },
-            `Failed to ban user from chat${hint}`
-          );
+    if (Array.isArray(right.product.linkedChats) && (right.product.linkedChats as any[]).length > 0) {
+      if (!this.telegram) {
+        removalIssues.push("Telegram client is not configured for expiry removal");
+      } else if (identifiers.length === 0) {
+        removalIssues.push(
+          "linkedChats has no identifier entries (only invite links); cannot ban via API. Add chat identifier (numeric id or @username) for ban on expiry."
+        );
+      } else {
+        const chatId = (id: string) => (id.startsWith("@") ? id : Number(id));
+        for (const ident of identifiers) {
+          try {
+            await this.telegram.banChatMember(chatId(ident), Number(right.user.telegramUserId));
+            logger.info({ accessRightId, userId: right.userId, chatId: ident }, "Banned user from subscription chat");
+          } catch (e) {
+            const errMsg = e instanceof Error ? e.message : String(e);
+            const hint =
+              /not enough rights|need admin|CHAT_ADMIN_REQUIRED|not an admin/i.test(errMsg)
+                ? "бот не администратор в чате/канале или нет прав на бан"
+                : errMsg;
+            removalIssues.push(`${ident}: ${hint}`);
+            logger.warn(
+              { accessRightId, chatId: ident, err: e },
+              "Failed to ban user from chat on expiry"
+            );
+          }
         }
       }
-    } else if (identifiers.length === 0 && Array.isArray(right.product.linkedChats) && (right.product.linkedChats as any[]).length > 0) {
-      logger.warn(
-        { accessRightId, productId: right.productId },
-        "linkedChats has no identifier entries (only invite links); cannot ban via API. Add chat identifier (numeric id or @username) for ban on expiry."
-      );
     }
 
     const expiryMsg =
@@ -138,12 +184,28 @@ export class SubscriptionChannelService {
         : right.user.selectedLanguage === "de"
           ? "Ihr Zugang ist abgelaufen. Bitte verlängern Sie Ihr Abonnement."
           : "Ваш доступ истёк. Продлите подписку, чтобы снова получить доступ к чату и материалам.";
-    if (this.telegram) {
+
+    if (this.notifications) {
+      try {
+        await this.notifications.sendText(
+          right.user,
+          "SYSTEM_ALERT",
+          expiryMsg,
+          { accessRightId, productId: right.productId, event: "access_expired" }
+        );
+      } catch (e) {
+        logger.warn({ accessRightId, userId: right.userId, err: e }, "Failed to send expiry DM to user");
+      }
+    } else if (this.telegram) {
       try {
         await this.telegram.sendMessage(Number(right.user.telegramUserId), expiryMsg);
       } catch (e) {
         logger.warn({ accessRightId, userId: right.userId, err: e }, "Failed to send expiry DM to user");
       }
+    }
+
+    if (removalIssues.length > 0) {
+      throw new Error(`Expiry processed, but linked chat removal failed: ${removalIssues.join("; ")}`);
     }
   }
 
@@ -155,11 +217,16 @@ export class SubscriptionChannelService {
     productId: string,
     telegramUserId: bigint
   ): Promise<void> {
-    const product = await this.prisma.product.findUnique({
-      where: { id: productId }
-    });
+    const [product, user] = await Promise.all([
+      this.prisma.product.findUnique({
+        where: { id: productId }
+      }),
+      this.prisma.user.findUnique({
+        where: { id: userId }
+      })
+    ]);
     const linkedChats = product?.linkedChats as Array<{ link?: string; identifier?: string; label?: string }> | null;
-    if (!linkedChats?.length || !this.telegram) return;
+    if (!linkedChats?.length || !this.telegram || !user) return;
 
     const lines: string[] = [];
     const identifiers = getBanIdentifiers(linkedChats);
@@ -193,10 +260,19 @@ export class SubscriptionChannelService {
 
     if (lines.length) {
       try {
-        await this.telegram.sendMessage(
-          Number(telegramUserId),
-          `Оплата подтверждена. Ваши ссылки:\n\n${lines.join("\n\n")}`
-        );
+        if (this.notifications) {
+          await this.notifications.sendText(
+            user,
+            "ACCESS_GRANTED",
+            `Оплата подтверждена. Ваши ссылки:\n\n${lines.join("\n\n")}`,
+            { userId, productId, event: "access_granted_links" }
+          );
+        } else {
+          await this.telegram.sendMessage(
+            Number(telegramUserId),
+            `Оплата подтверждена. Ваши ссылки:\n\n${lines.join("\n\n")}`
+          );
+        }
       } catch (e) {
         logger.warn({ userId, productId, err: e }, "Failed to send invite links");
       }

@@ -133,8 +133,11 @@ export const startWorkers = ({
           case "SEND_SUBSCRIPTION_REMINDER": {
             const accessRightId = String(payload.accessRightId ?? "");
             const daysLeft = Number(payload.daysLeft ?? 1);
+            const minutesLeft = Number(payload.minutesLeft ?? 0);
             if (accessRightId) {
-              await runtime.services.subscriptionChannel.sendReminder(accessRightId, daysLeft);
+              await runtime.services.subscriptionChannel.sendReminder(accessRightId, {
+                ...(minutesLeft > 0 ? { minutesLeft } : { daysLeft })
+              });
             }
             break;
           }

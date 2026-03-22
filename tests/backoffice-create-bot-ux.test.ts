@@ -160,12 +160,15 @@ describe("Back-office create-bot UX", () => {
       };
       const html = renderDashboardBody({
         ...baseDashboardParams,
+        role: "ALPHA_OWNER",
+        email: "owner@test.com",
         bots: [bot]
       });
       expect(html).toContain("Bot One");
       expect(html).toContain("botone");
       expect(html).toContain("/backoffice/bots/b1/settings");
       expect(html).toContain("https://t.me/botone");
+      expect(html).toContain("Оплаты и доступ");
     });
   });
 });

@@ -3,7 +3,6 @@
  */
 import { Prisma } from "@prisma/client";
 import type {
-  BillingType,
   DepositTransactionStatus,
   PaymentNetwork,
   PrismaClient,
@@ -19,6 +18,7 @@ import type { SubscriptionChannelService } from "../subscription-channel/subscri
 import { env } from "../../config/env";
 import { logger } from "../../common/logger";
 import { NowPaymentsAdapter } from "./nowpayments.adapter";
+import { isTemporaryAccessProduct } from "../subscription-channel/subscription-access-policy";
 
 const PROVIDER = "nowpayments";
 const NOWPAYMENTS_FINAL_SUCCESS_STATUSES = new Set(["finished"]);
@@ -545,7 +545,6 @@ export class BalanceService {
         data: { balance: { decrement: price } }
       });
 
-      const accessType: BillingType = product.billingType;
       const durationMinutes = product.durationMinutes;
       const durationDays = product.durationDays;
       const activeUntil =
@@ -554,12 +553,13 @@ export class BalanceService {
           : durationDays && durationDays > 0
             ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000)
             : null;
+      const temporaryAccess = isTemporaryAccessProduct(product);
 
       const accessRight = await tx.userAccessRight.create({
         data: {
           userId: user.id,
           productId,
-          accessType: accessType === "ONE_TIME" ? "LIFETIME" : accessType === "TEMPORARY" ? "TEMPORARY" : "SUBSCRIPTION",
+          accessType: temporaryAccess ? "TEMPORARY" : product.billingType === "ONE_TIME" ? "LIFETIME" : "SUBSCRIPTION",
           activeFrom: new Date(),
           activeUntil
         }
@@ -587,7 +587,8 @@ export class BalanceService {
           result.accessRight.id,
           result.activeUntil,
           user.botInstanceId ?? null,
-          this.scheduler
+          this.scheduler,
+          product
         );
       }
 

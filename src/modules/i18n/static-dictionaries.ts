@@ -600,7 +600,7 @@ export const dictionaries = {
     onboarding_empty_intro: "Запустите мастер, чтобы быстро собрать первую структуру: главную страницу, раздел и кнопку.",
     onboarding_btn_launch_wizard: "Запустить мастер",
     onboarding_continue_setup: "Продолжить настройку",
-    onboarding_restart_wizard: "Запустить мастер заново",
+    onboarding_restart_wizard: "🔂 Запустить мастер заново",
     onboarding_steps_persistent: "Уже сохранённые шаги не будут потеряны.",
     langv_hub_title: "Редактор языковой версии",
     langv_context_editing_language: "Вы редактируете язык: {{lang}}",

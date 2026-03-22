@@ -22,6 +22,13 @@ import { SubscriptionChannelService } from "../../modules/subscription-channel/s
 import { logger } from "../../common/logger";
 import { parseLinkedChatsFromForm } from "../../common/linked-chat-parser";
 import { canPerform, canViewGlobalUserDirectory, type BackofficeAction } from "./backoffice-permissions";
+import {
+  getLinkedChatDiagnostics,
+  getProductModeLabel,
+  isTemporaryAccessProduct,
+  isTestProduct,
+  validateLinkedChatsForExpiringAccess
+} from "../../modules/subscription-channel/subscription-access-policy";
 
 const COOKIE_NAME = env.BACKOFFICE_COOKIE_NAME;
 const i18n = new I18nService((env.DEFAULT_LANGUAGE || "ru") as SupportedDictionaryLanguage);
@@ -156,6 +163,29 @@ function renderPage(title: string, body: string): string {
       .products-existing-block { margin-top: 40px; padding-top: 32px; border-top: 1px solid rgba(255,255,255,0.15); }
       .product-card-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
       .test-badge { display: inline-block; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.5); color: #fbbf24; }
+      .paid-nav { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+      .paid-nav a { text-decoration:none; }
+      .overview-grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:12px; margin-top:16px; }
+      .overview-card { padding:14px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); }
+      .overview-card .value { font-size:24px; font-weight:700; margin-top:4px; }
+      .subgrid { display:grid; grid-template-columns: 1.2fr 0.8fr; gap:14px; }
+      .status-badge { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; border:1px solid rgba(255,255,255,0.16); }
+      .status-live { background: rgba(34,197,94,0.16); color:#86efac; border-color: rgba(34,197,94,0.45); }
+      .status-test { background: rgba(251,191,36,0.16); color:#fde68a; border-color: rgba(251,191,36,0.45); }
+      .status-active { background: rgba(59,130,246,0.16); color:#93c5fd; border-color: rgba(59,130,246,0.45); }
+      .status-pending { background: rgba(250,204,21,0.14); color:#fde047; border-color: rgba(250,204,21,0.35); }
+      .status-expiring { background: rgba(249,115,22,0.14); color:#fdba74; border-color: rgba(249,115,22,0.35); }
+      .status-expired { background: rgba(239,68,68,0.14); color:#fca5a5; border-color: rgba(239,68,68,0.35); }
+      .status-failed { background: rgba(239,68,68,0.18); color:#fca5a5; border-color: rgba(239,68,68,0.45); }
+      .status-muted { background: rgba(148,163,184,0.14); color:#cbd5e1; border-color: rgba(148,163,184,0.25); }
+      .flow-list { margin:0; padding-left:18px; color:#cbd5e1; }
+      .flow-list li { margin:6px 0; }
+      .warning-card { padding:12px; border-radius:12px; border:1px solid rgba(249,115,22,0.4); background:rgba(249,115,22,0.08); color:#fed7aa; }
+      .danger-card { padding:12px; border-radius:12px; border:1px solid rgba(239,68,68,0.4); background:rgba(239,68,68,0.08); color:#fecaca; }
+      .mono-list { margin:0; padding-left:18px; }
+      .mono-list li code { color:#e2e8f0; }
+      @media (max-width: 880px) { .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .subgrid { grid-template-columns: 1fr; } }
+      @media (max-width: 560px) { .overview-grid { grid-template-columns: 1fr; } }
     </style>
   </head>
   <body>
@@ -172,6 +202,52 @@ function formatLinkedChatsForEdit(linkedChats: unknown): string {
     .map((e) => e.link ?? e.identifier ?? "")
     .filter(Boolean)
     .join("\n");
+}
+
+function formatMoney(value: unknown): string {
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric.toString() : "0";
+}
+
+function formatIsoDate(value: Date | string | null | undefined): string {
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toISOString().slice(0, 16).replace("T", " ");
+}
+
+function formatProductDuration(product: { billingType?: string | null; durationDays?: number | null; durationMinutes?: number | null }): string {
+  if (Number(product.durationMinutes ?? 0) > 0) {
+    return `${product.durationMinutes} мин`;
+  }
+  if (Number(product.durationDays ?? 0) > 0) {
+    return `${product.durationDays} дн`;
+  }
+  return product.billingType === "ONE_TIME" ? "Без expiry" : "Без срока";
+}
+
+function renderStatusBadge(label: string, tone: "live" | "test" | "active" | "pending" | "expiring" | "expired" | "failed" | "muted" = "muted"): string {
+  return `<span class="status-badge status-${tone}">${escapeHtml(label)}</span>`;
+}
+
+function renderProductModeBadge(product: { durationMinutes?: number | null }): string {
+  return getProductModeLabel(product) === "TEST"
+    ? renderStatusBadge("TEST", "test")
+    : renderStatusBadge("LIVE", "live");
+}
+
+function renderLinkedChatReadiness(product: { linkedChats?: unknown; billingType?: string | null; durationDays?: number | null; durationMinutes?: number | null }): string {
+  const diagnostics = getLinkedChatDiagnostics(product.linkedChats);
+  if (!diagnostics.hasLinkedChats) {
+    return renderStatusBadge("Нет linked chats", "muted");
+  }
+  if (!isTemporaryAccessProduct(product)) {
+    return renderStatusBadge(`Ссылки: ${diagnostics.displayLinkCount}`, "active");
+  }
+  if (!diagnostics.removalReady) {
+    return renderStatusBadge("REMOVAL UNAVAILABLE", "failed");
+  }
+  return renderStatusBadge(`Удаление готово (${diagnostics.banIdentifierCount})`, "active");
 }
 
 function escapeHtml(input: string): string {
@@ -268,7 +344,7 @@ export function renderDashboardBody(params: DashboardParams): string {
         ? `<a href="/backoffice/bots/${b.id}/clone" style="text-decoration:none"><button class="secondary" type="button">Клонировать шаблон</button></a>`
         : ``;
       const paidBtn = canPerform(role, "paid_access:manage", email)
-        ? `<a href="/backoffice/bots/${b.id}/paid" style="text-decoration:none"><button class="secondary" type="button">Платные продукты</button></a>`
+        ? `<a href="/backoffice/bots/${b.id}/paid" style="text-decoration:none"><button class="secondary" type="button">Оплаты и доступ</button></a>`
         : ``;
       const audienceBtn = canViewAudience
         ? `<a href="/backoffice/audience?bot=${encodeURIComponent(b.id)}" style="text-decoration:none"><button class="secondary" type="button">Аудитория</button></a>`
@@ -1817,6 +1893,8 @@ export async function registerBackofficeRoutes(
     if (!template) return reply.code(409).send("Active template missing");
 
     const baseLang = template.baseLanguageCode;
+    const runtime = await runtimeManager.startBotInstance(bot.id, { launch: false });
+    const balanceFlowEnabled = runtime.services.balance.isNowPaymentsEnabled();
 
     const productRows = await prisma.menuItem.findMany({
       where: { templateId: template.id, productId: { not: null } },
@@ -1824,20 +1902,32 @@ export async function registerBackofficeRoutes(
       distinct: ["productId"]
     });
     const productIdSet = new Set(productRows.map((r) => String(r.productId)));
+    const botCodePrefix = `bot_${bot.id.slice(0, 8)}_`;
 
     const products = await prisma.product.findMany({
-      where: productIdSet.size ? { id: { in: Array.from(productIdSet) }, isActive: true } : { isActive: true },
+      where: {
+        isActive: true,
+        OR: [
+          { code: { startsWith: botCodePrefix } },
+          ...(productIdSet.size ? [{ id: { in: Array.from(productIdSet) } }] : [])
+        ]
+      },
       include: {
         localizations: {
-          where: { languageCode: baseLang },
-          select: { title: true, description: true, payButtonText: true }
+          select: { languageCode: true, title: true, description: true, payButtonText: true }
         }
-      }
+      },
+      orderBy: { createdAt: "desc" }
     });
+    const productIds = products.map((p) => p.id);
 
     const productLabelById = new Map<string, string>();
     for (const p of products) {
-      productLabelById.set(p.id, p.localizations[0]?.title ?? p.code);
+      const loc =
+        p.localizations.find((item) => item.languageCode === baseLang) ??
+        p.localizations.find((item) => item.languageCode === "ru") ??
+        p.localizations[0];
+      productLabelById.set(p.id, loc?.title ?? p.code);
     }
 
     const menuItems = await prisma.menuItem.findMany({
@@ -1855,6 +1945,14 @@ export async function registerBackofficeRoutes(
       },
       orderBy: { sortOrder: "asc" }
     });
+    const boundSectionsByProduct = new Map<string, string[]>();
+    for (const item of menuItems) {
+      if (!item.productId) continue;
+      const title = item.localizations[0]?.title ?? item.key;
+      const current = boundSectionsByProduct.get(item.productId) ?? [];
+      current.push(title);
+      boundSectionsByProduct.set(item.productId, current);
+    }
 
     const productSelectOptions = products.length
       ? products.map((p) => `<option value="${escapeHtml(p.id)}">${escapeHtml(productLabelById.get(p.id) ?? p.code)}</option>`).join("")
@@ -1871,196 +1969,568 @@ export async function registerBackofficeRoutes(
       return `<option value="${escapeHtml(u.id)}">${escapeHtml(label)}</option>`;
     }).join("");
 
+    const liveProducts = products.filter((product) => !isTestProduct(product));
+    const testProducts = products.filter((product) => isTestProduct(product));
+
+    const [activeAccessCount, expiringSoonCount, recentAccessRights, recentPayments, recentDeposits, recentPurchases, recentNotifications] =
+      await Promise.all([
+        productIds.length
+          ? prisma.userAccessRight.count({
+              where: {
+                productId: { in: productIds },
+                status: "ACTIVE",
+                user: { botInstanceId: bot.id }
+              }
+            })
+          : Promise.resolve(0),
+        productIds.length
+          ? prisma.userAccessRight.count({
+              where: {
+                productId: { in: productIds },
+                status: "ACTIVE",
+                activeUntil: {
+                  gt: new Date(),
+                  lte: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+                },
+                user: { botInstanceId: bot.id }
+              }
+            })
+          : Promise.resolve(0),
+        productIds.length
+          ? prisma.userAccessRight.findMany({
+              where: {
+                productId: { in: productIds },
+                user: { botInstanceId: bot.id }
+              },
+              include: {
+                user: { select: { id: true, username: true, fullName: true, telegramUserId: true, selectedLanguage: true } },
+                product: { include: { localizations: true } }
+              },
+              orderBy: [{ createdAt: "desc" }],
+              take: 20
+            })
+          : Promise.resolve([]),
+        prisma.payment.findMany({
+          where: { botInstanceId: bot.id },
+          include: {
+            user: { select: { id: true, username: true, fullName: true, telegramUserId: true } },
+            product: { include: { localizations: true } }
+          },
+          orderBy: { createdAt: "desc" },
+          take: 12
+        }),
+        prisma.depositTransaction.findMany({
+          where: { user: { botInstanceId: bot.id } },
+          include: {
+            user: { select: { id: true, username: true, fullName: true, telegramUserId: true } }
+          },
+          orderBy: { createdAt: "desc" },
+          take: 12
+        }),
+        prisma.productPurchase.findMany({
+          where: { user: { botInstanceId: bot.id } },
+          include: {
+            user: { select: { id: true, username: true, fullName: true, telegramUserId: true } },
+            product: { include: { localizations: true } }
+          },
+          orderBy: { createdAt: "desc" },
+          take: 12
+        }),
+        prisma.notification.findMany({
+          where: {
+            user: { botInstanceId: bot.id },
+            type: { in: ["PAYMENT_CONFIRMED", "ACCESS_GRANTED", "ACCESS_EXPIRING", "SYSTEM_ALERT"] }
+          },
+          include: {
+            user: { select: { id: true, username: true, fullName: true, telegramUserId: true } }
+          },
+          orderBy: { createdAt: "desc" },
+          take: 20
+        })
+      ]);
+
+    const accessRightIdSet = new Set(recentAccessRights.map((item) => item.id));
+    const recentJobs = accessRightIdSet.size
+      ? (
+          await prisma.scheduledJob.findMany({
+            where: { jobType: { in: ["SEND_SUBSCRIPTION_REMINDER", "PROCESS_ACCESS_EXPIRY"] } },
+            orderBy: { createdAt: "desc" },
+            take: 250
+          })
+        ).filter((job) => accessRightIdSet.has(String(((job.payloadJson as any)?.accessRightId ?? ""))))
+      : [];
+    const reminderJobsByAccessId = new Map<string, typeof recentJobs>();
+    const expiryJobByAccessId = new Map<string, (typeof recentJobs)[number]>();
+    for (const job of recentJobs) {
+      const accessRightId = String(((job.payloadJson as any)?.accessRightId ?? ""));
+      if (!accessRightId) continue;
+      if (job.jobType === "SEND_SUBSCRIPTION_REMINDER") {
+        const current = reminderJobsByAccessId.get(accessRightId) ?? [];
+        current.push(job);
+        reminderJobsByAccessId.set(accessRightId, current);
+        continue;
+      }
+      if (!expiryJobByAccessId.has(accessRightId)) {
+        expiryJobByAccessId.set(accessRightId, job);
+      }
+    }
+
+    const misconfiguredProducts = products.filter((product) => validateLinkedChatsForExpiringAccess(product));
+    const pendingPaymentsCount = recentPayments.filter((payment) => payment.status === "PENDING" || payment.status === "UNPAID").length;
+    const pendingDepositsCount = recentDeposits.filter((deposit) => deposit.status === "PENDING").length;
+    const failedExpiryJobsCount = recentJobs.filter((job) => job.jobType === "PROCESS_ACCESS_EXPIRY" && job.status === "FAILED").length;
+
+    const productLoc = (product: (typeof products)[number]) =>
+      product.localizations.find((item) => item.languageCode === baseLang) ??
+      product.localizations.find((item) => item.languageCode === "ru") ??
+      product.localizations[0];
+
+    const renderUserLabel = (user: { username: string | null; fullName: string; telegramUserId: bigint }) =>
+      user.username ? `@${escapeHtml(user.username)}` : escapeHtml(user.fullName || String(user.telegramUserId));
+
+    const renderPaymentStatus = (status: string) => {
+      switch (status) {
+        case "PAID":
+        case "CONFIRMED":
+        case "COMPLETED":
+        case "ACTIVE":
+          return renderStatusBadge(status, "active");
+        case "PENDING":
+        case "UNPAID":
+          return renderStatusBadge(status, "pending");
+        case "FAILED":
+        case "CANCELLED":
+        case "REJECTED":
+          return renderStatusBadge(status, "failed");
+        case "EXPIRED":
+        case "REVOKED":
+          return renderStatusBadge(status, "expired");
+        default:
+          return renderStatusBadge(status, "muted");
+      }
+    };
+
+    const renderAccessStatus = (right: (typeof recentAccessRights)[number]) => {
+      if (right.status === "EXPIRED") return renderStatusBadge("EXPIRED", "expired");
+      if (right.status === "REVOKED") return renderStatusBadge("REVOKED", "failed");
+      if (!right.activeUntil) return renderStatusBadge("ACTIVE", "active");
+      const msLeft = right.activeUntil.getTime() - Date.now();
+      if (msLeft <= 0) return renderStatusBadge("EXPIRED", "expired");
+      if (msLeft <= 3 * 24 * 60 * 60 * 1000) return renderStatusBadge("EXPIRES SOON", "expiring");
+      return renderStatusBadge("ACTIVE", "active");
+    };
+
+    const renderReminderSummary = (accessRightId: string) => {
+      const jobs = reminderJobsByAccessId.get(accessRightId) ?? [];
+      if (jobs.length === 0) return `<span class="small">—</span>`;
+      const sent = jobs.filter((job) => job.status === "COMPLETED").length;
+      const failed = jobs.filter((job) => job.status === "FAILED").length;
+      const pending = jobs.filter((job) => job.status === "PENDING").length;
+      const chunks: string[] = [];
+      if (sent) chunks.push(`sent ${sent}`);
+      if (pending) chunks.push(`pending ${pending}`);
+      if (failed) chunks.push(`failed ${failed}`);
+      return `${renderStatusBadge(chunks.join(" · "), failed ? "failed" : pending ? "pending" : "active")}`;
+    };
+
+    const renderExpirySummary = (accessRightId: string) => {
+      const job = expiryJobByAccessId.get(accessRightId);
+      if (!job) return `<span class="small">—</span>`;
+      if (job.status === "FAILED") {
+        return `${renderStatusBadge("REMOVAL FAILED", "failed")}<div class="small" style="margin-top:4px">${escapeHtml(job.errorMessage ?? "unknown error")}</div>`;
+      }
+      return `${renderPaymentStatus(job.status)}<div class="small" style="margin-top:4px">${formatIsoDate(job.runAt)}</div>`;
+    };
+
+    const renderProductCard = (product: (typeof products)[number], opts: { allowSimulate: boolean }) => {
+      const loc = productLoc(product);
+      const diagnostics = getLinkedChatDiagnostics(product.linkedChats);
+      const sections = boundSectionsByProduct.get(product.id) ?? [];
+      const removalWarning = validateLinkedChatsForExpiringAccess(product);
+
+      return `<div class="product-card">
+        <div class="product-card-header">
+          <span><b>${escapeHtml(loc?.title ?? product.code)}</b></span>
+          ${renderProductModeBadge(product)}
+          ${renderStatusBadge(product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "EXPIRING ACCESS" : "LIFETIME", product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "pending" : "active")}
+          <span class="small">${escapeHtml(formatMoney(product.price))} ${escapeHtml(product.currency)} · ${escapeHtml(formatProductDuration(product))}</span>
+          <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/archive" style="margin-left:auto">
+            <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Архивировать</button>
+          </form>
+        </div>
+
+        <div class="row" style="margin-bottom:12px">
+          <div class="small">Привязан к разделам: ${sections.length ? sections.map((item) => `<code>${escapeHtml(item)}</code>`).join(", ") : "— пока не привязан"}</div>
+          <div class="small">CTA в боте: <code>${escapeHtml(loc?.payButtonText ?? "Оплатить")}</code></div>
+          <div>${renderLinkedChatReadiness(product)}</div>
+        </div>
+        ${removalWarning ? `<div class="warning-card" style="margin-bottom:12px">${escapeHtml(removalWarning)}</div>` : ""}
+        ${diagnostics.hasLinkedChats ? `<div class="small" style="margin-bottom:12px">linked chats: ссылки ${diagnostics.displayLinkCount} · chat identifiers ${diagnostics.banIdentifierCount}</div>` : ""}
+
+        <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/update">
+          <div class="section-title">Basic</div>
+          <div class="product-form-grid">
+            <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required value="${escapeHtml(loc?.title ?? "")}" /></div>
+            <div class="field-wrap"><label class="small">Текст кнопки (ru)</label><input name="payButtonTextRu" type="text" required value="${escapeHtml(loc?.payButtonText ?? "")}" /></div>
+            <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="${escapeHtml(String(product.price ?? ""))}" /></div>
+            <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="${escapeHtml(product.currency ?? "USDT")}" /></div>
+            <div class="field-wrap"><label class="small">Тип</label>
+              <select name="billingType">
+                <option value="ONE_TIME" ${product.billingType === "ONE_TIME" ? "selected" : ""}>Разовая</option>
+                <option value="TEMPORARY" ${product.billingType === "TEMPORARY" ? "selected" : ""}>Временный доступ</option>
+              </select>
+            </div>
+            <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" value="${product.durationDays ?? ""}" placeholder="30" /></div>
+          </div>
+
+          <div class="section-title">Advanced</div>
+          <div class="product-form-grid">
+            <div class="field-wrap"><label class="small">Минуты для TEST mode</label><input name="durationMinutes" type="number" min="1" max="1440" value="${product.durationMinutes ?? ""}" placeholder="пусто = live" /></div>
+            <div class="field-wrap"><label class="small">Кошелёк USDT BEP20</label><input name="walletBep20" type="text" placeholder="0x..." value="${escapeHtml((product as any).walletBep20 ?? "")}" /></div>
+          </div>
+          <div style="margin-top:12px">
+            <label class="small">linked chats / channels</label>
+            <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/channel">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
+            <div class="small" style="margin-top:4px">Используйте @username или numeric chat id, если нужен auto-removal по expiry. Invite-only ссылки подойдут для кнопок доступа, но не для удаления.</div>
+          </div>
+          <div style="margin-top:12px">
+            <label class="small">Описание (ru)</label>
+            <textarea name="descriptionRu" rows="2">${escapeHtml(loc?.description ?? "")}</textarea>
+          </div>
+          <button type="submit" style="margin-top:16px">Сохранить</button>
+        </form>
+
+        ${
+          opts.allowSimulate
+            ? `<div class="section-title">Быстрый ручной тест</div>
+               <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/simulate-payment" class="form-row">
+                 <div class="field" style="min-width:220px; max-width:320px">
+                   <select name="userId" required>
+                     <option value="">— Выберите пользователя —</option>
+                     ${userSelectOptions}
+                   </select>
+                 </div>
+                 <div class="btn"><button type="submit" class="secondary">Выдать тестовый доступ</button></div>
+               </form>
+               <div class="small" style="margin-top:6px">Проверит grant → invite links → reminders → expiry → removal в ускоренном режиме.</div>`
+            : ""
+        }
+      </div>`;
+    };
+
+    const paymentEvents = [
+      ...recentPayments.map((payment) => ({
+        createdAt: payment.createdAt,
+        kind: "invoice",
+        status: payment.status,
+        user: payment.user,
+        productLabel:
+          payment.product.localizations.find((item) => item.languageCode === baseLang)?.title ??
+          payment.product.localizations.find((item) => item.languageCode === "ru")?.title ??
+          payment.product.code,
+        amount: `${formatMoney(payment.amount)} ${payment.currency}`,
+        note: payment.referenceCode
+      })),
+      ...recentDeposits.map((deposit) => ({
+        createdAt: deposit.createdAt,
+        kind: "deposit",
+        status: deposit.status,
+        user: deposit.user,
+        productLabel: "Balance top-up",
+        amount: `${formatMoney(deposit.amount)} ${deposit.currency}`,
+        note: deposit.orderId
+      })),
+      ...recentPurchases.map((purchase) => ({
+        createdAt: purchase.createdAt,
+        kind: "balance_purchase",
+        status: purchase.status,
+        user: purchase.user,
+        productLabel:
+          purchase.product.localizations.find((item) => item.languageCode === baseLang)?.title ??
+          purchase.product.localizations.find((item) => item.languageCode === "ru")?.title ??
+          purchase.product.code,
+        amount: `${formatMoney(purchase.amount)} USDT`,
+        note: purchase.idempotencyKey
+      }))
+    ]
+      .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
+      .slice(0, 14);
+
     return reply.type("text/html").send(
       renderPage(
         "Платный доступ",
-        `<h2 style="margin-top:0">Платный доступ</h2>
+        `<h2 style="margin-top:0">Оплаты и доступ</h2>
          <div class="small" style="margin-top:6px">Bot: <code>${escapeHtml(bot.id)}</code></div>
-         ${simulateOk ? `<div class="success" style="margin-top:12px">Тест-оплата выполнена. Проверьте бота — пользователь получил доступ. Через N минут (если указали минуты) его исключат из чата/канала.</div>` : ""}
-         ${simulateError ? `<div class="error" style="margin-top:12px">Ошибка тест-оплаты: ${escapeHtml(simulateError)}</div>` : ""}
+         ${simulateOk ? `<div class="success" style="margin-top:12px">Тестовый сценарий запущен: доступ выдан, reminders и expiry/removal будут отработаны по policy продукта.</div>` : ""}
+         ${simulateError ? `<div class="error" style="margin-top:12px">Ошибка тестового сценария: ${escapeHtml(simulateError)}</div>` : ""}
+         ${misconfiguredProducts.length ? `<div class="warning-card" style="margin-top:12px">Найдены expiring-продукты без ban-capable linked chats. Они смогут показать invite buttons, но не смогут гарантированно удалить пользователя из чата/канала по expiry: ${misconfiguredProducts.map((product) => `<code>${escapeHtml(productLabelById.get(product.id) ?? product.code)}</code>`).join(", ")}</div>` : ""}
 
-         <div class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Глобальное включение</h3>
-           <p class="small" style="margin:0 0 12px 0">Включить или выключить платные разделы для всего бота.</p>
-           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/toggle" class="form-row">
-             <div class="field">
-               <label class="small">Режим</label>
-               <select name="paidAccessEnabled" class="field">
-                 <option value="true" ${bot.paidAccessEnabled ? "selected" : ""}>Включено</option>
-                 <option value="false" ${!bot.paidAccessEnabled ? "selected" : ""}>Выключено</option>
-               </select>
+         <div class="paid-nav">
+           <a href="#overview"><button class="secondary" type="button">Обзор</button></a>
+           <a href="#bindings"><button class="secondary" type="button">Контент и доступ</button></a>
+           <a href="#live-products"><button class="secondary" type="button">Live products</button></a>
+           <a href="#test-lab"><button class="secondary" type="button">Test Lab</button></a>
+           <a href="#payments-balance"><button class="secondary" type="button">Платежи / баланс</button></a>
+           <a href="#access-audit"><button class="secondary" type="button">Аудит доступа</button></a>
+           <a href="/backoffice/bots/${escapeHtml(bot.id)}/payments"><button class="secondary" type="button">Manual payments</button></a>
+         </div>
+
+         <div id="overview" class="card" style="margin-top:16px">
+           <h3 style="margin-top:0">Dashboard / Обзор</h3>
+           <div class="small">Один экран для alpha-owner: сколько продуктов активны, какие разделы locked, где ближайшие истечения и есть ли ошибки в removal pipeline.</div>
+           <div class="overview-grid">
+             <div class="overview-card"><div class="small">Paid access</div><div class="value">${bot.paidAccessEnabled ? "ON" : "OFF"}</div><div style="margin-top:6px">${bot.paidAccessEnabled ? renderStatusBadge("ACTIVE", "active") : renderStatusBadge("DISABLED", "failed")}</div></div>
+             <div class="overview-card"><div class="small">Locked sections</div><div class="value">${menuItems.filter((item) => Boolean(item.productId)).length}</div><div class="small" style="margin-top:6px">${menuItems.length} всего разделов</div></div>
+             <div class="overview-card"><div class="small">Products</div><div class="value">${products.length}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`LIVE ${liveProducts.length}`, "live")} ${renderStatusBadge(`TEST ${testProducts.length}`, "test")}</div></div>
+             <div class="overview-card"><div class="small">Active accesses</div><div class="value">${activeAccessCount}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Expiring soon ${expiringSoonCount}`, expiringSoonCount ? "expiring" : "muted")}</div></div>
+             <div class="overview-card"><div class="small">Pending payments</div><div class="value">${pendingPaymentsCount}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Deposits pending ${pendingDepositsCount}`, pendingDepositsCount ? "pending" : "muted")}</div></div>
+             <div class="overview-card"><div class="small">Expiry issues</div><div class="value">${failedExpiryJobsCount}</div><div class="small" style="margin-top:6px">${failedExpiryJobsCount ? renderStatusBadge("Removal failures require review", "failed") : renderStatusBadge("No detected failures", "active")}</div></div>
+           </div>
+           <div class="subgrid" style="margin-top:16px">
+             <div class="card" style="padding:14px">
+               <div class="section-title">Quick flow</div>
+               <ol class="flow-list">
+                 <li>Создайте live- или test-продукт.</li>
+                 <li>Привяжите продукт к разделу в блоке “Контент и доступ”.</li>
+                 <li>Проверьте CTA-кнопку оплаты и linked chat readiness.</li>
+                 <li>Для TEST используйте “Выдать тестовый доступ”, чтобы прогнать весь lifecycle за минуты.</li>
+                 <li>Следите за reminders / expiry / removal в “Аудит доступа”.</li>
+               </ol>
              </div>
-             <div class="btn"><button type="submit">Сохранить</button></div>
-           </form>
+             <div class="card" style="padding:14px">
+               <div class="section-title">Checkout mode</div>
+               <div>${balanceFlowEnabled ? renderStatusBadge("TOP-UP + PAY FROM BALANCE", "active") : renderStatusBadge("DIRECT / MANUAL PAYMENT REQUEST", "pending")}</div>
+               <div class="small" style="margin-top:8px">${balanceFlowEnabled ? "Locked section сразу показывает balance-aware CTA: пользователь может пополнить баланс и оплатить продукт без лишних меню." : "Locked section показывает pay-button с реквизитами продукта/кошельком. Для manual review используйте экран Manual payments."}</div>
+             </div>
+           </div>
          </div>
 
-         <div class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Текст при закрытом доступе</h3>
-           <p class="small" style="margin:0 0 12px 0">Показывается пользователю, когда он пытается открыть заблокированный раздел. Можно указать адрес кошелька, валюту, сеть и другие инструкции. Если пусто — используется стандартный текст.</p>
-           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/paywall-message">
-             <textarea name="paywallMessage" rows="8" placeholder="💼 Ваш личный адрес для пополнения:&#10;0x00...&#10;&#10;🪙 Валюта: USDT&#10;⛓️ Сеть: BSC (BEP20)&#10;Перед отправкой дважды проверьте сеть перевода!" style="width:100%; box-sizing:border-box">${escapeHtml(String((bot as any).paywallMessage ?? ""))}</textarea>
-             <button type="submit" style="margin-top:10px">Сохранить текст</button>
-           </form>
-         </div>
-
-         <div class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Блокировка пунктов меню</h3>
-           <p class="small" style="margin:0 0 12px 0">Привяжите продукт к разделу — доступ откроется только после оплаты.</p>
+         <div id="bindings" class="card" style="margin-top:16px">
+           <h3 style="margin-top:0">Контент и доступ</h3>
+           <div class="small" style="margin-bottom:12px">Здесь находится business-flow alpha-owner: раздел → привязка продукта → locked state → CTA-кнопка оплаты в боте.</div>
+           <div class="card" style="padding:14px; margin-bottom:14px">
+             <h4 style="margin-top:0">Глобальное включение</h4>
+             <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/toggle" class="form-row">
+               <div class="field">
+                 <label class="small">Режим</label>
+                 <select name="paidAccessEnabled" class="field">
+                   <option value="true" ${bot.paidAccessEnabled ? "selected" : ""}>Включено</option>
+                   <option value="false" ${!bot.paidAccessEnabled ? "selected" : ""}>Выключено</option>
+                 </select>
+               </div>
+               <div class="btn"><button type="submit">Сохранить</button></div>
+             </form>
+           </div>
+           <div class="card" style="padding:14px; margin-bottom:14px">
+             <h4 style="margin-top:0">Текст при закрытом доступе</h4>
+             <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/paywall-message">
+               <textarea name="paywallMessage" rows="6" placeholder="💼 Ваш личный адрес для пополнения:&#10;0x00...&#10;&#10;🪙 Валюта: USDT&#10;⛓️ Сеть: BSC (BEP20)" style="width:100%; box-sizing:border-box">${escapeHtml(String((bot as any).paywallMessage ?? ""))}</textarea>
+               <div class="small" style="margin-top:6px">Если пусто, используется стандартный текст paywall. Balance-line подставится автоматически, если включён NOWPayments balance flow.</div>
+               <button type="submit" style="margin-top:10px">Сохранить текст</button>
+             </form>
+           </div>
            ${
              menuItems.length
                ? `<table class="paid-table">
-                   <thead><tr><th>Раздел</th><th>Продукт</th><th style="width:180px">Действие</th></tr></thead>
+                   <thead><tr><th>Раздел</th><th>Статус</th><th>Продукт</th><th>CTA в боте</th><th style="width:260px">Действие</th></tr></thead>
                    <tbody>
-                   ${menuItems
-                     .map((mi) => {
+                     ${menuItems.map((mi) => {
                        const title = mi.localizations[0]?.title ?? mi.key;
-                       const locked = Boolean(mi.productId);
+                       const product = mi.productId ? products.find((item) => item.id === mi.productId) : null;
                        const productLabel = mi.productId ? productLabelById.get(mi.productId) ?? mi.productId : null;
-                       return locked
+                       const productButtonText = product ? (productLoc(product)?.payButtonText ?? "Оплатить") : "—";
+                       return mi.productId
                          ? `<tr>
-                             <td><b>${escapeHtml(title)}</b></td>
-                             <td><code>${escapeHtml(productLabel ?? "")}</code></td>
-                             <td>
-                               <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/unlock" style="display:inline">
-                                 <button type="submit" class="secondary">Снять блокировку</button>
-                               </form>
-                             </td>
-                           </tr>`
+                              <td><b>${escapeHtml(title)}</b></td>
+                              <td>${renderStatusBadge("LOCKED", "pending")}</td>
+                              <td><code>${escapeHtml(productLabel ?? "")}</code> ${product ? renderProductModeBadge(product) : ""}</td>
+                              <td><code>${escapeHtml(productButtonText)}</code></td>
+                              <td>
+                                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/unlock" style="display:inline">
+                                  <button type="submit" class="secondary">Снять блокировку</button>
+                                </form>
+                              </td>
+                            </tr>`
                          : `<tr>
-                             <td><b>${escapeHtml(title)}</b></td>
-                             <td>
-                               <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" class="form-row" style="margin:0; max-width:320px">
-                                 <div class="field" style="flex:1; min-width:0">
-                                   <select name="productId" required class="field" style="width:100%">
-                                     ${productSelectOptions}
-                                   </select>
-                                 </div>
-                                 <div class="btn"><button type="submit">Заблокировать</button></div>
-                               </form>
-                             </td>
-                             <td>—</td>
-                           </tr>`;
-                     })
-                     .join("")}
+                              <td><b>${escapeHtml(title)}</b></td>
+                              <td>${renderStatusBadge("FREE", "active")}</td>
+                              <td>
+                                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" class="form-row" style="margin:0; max-width:420px">
+                                  <div class="field" style="flex:1; min-width:0">
+                                    <select name="productId" required class="field" style="width:100%">
+                                      ${productSelectOptions}
+                                    </select>
+                                  </div>
+                                  <div class="btn"><button type="submit">Привязать продукт</button></div>
+                                </form>
+                              </td>
+                              <td>—</td>
+                              <td><span class="small">После привязки появится CTA оплаты</span></td>
+                            </tr>`;
+                     }).join("")}
                    </tbody>
                  </table>`
                : `<div class="small">Нет пунктов меню.</div>`
            }
          </div>
 
-         <div class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Продукты</h3>
-
-           <div class="section-title">Создать продукт</div>
-           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create">
-             <div class="product-form-grid">
-               <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required /></div>
-               <div class="field-wrap"><label class="small">Текст кнопки (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить" /></div>
-               <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="10" /></div>
-               <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="USDT" /></div>
-               <div class="field-wrap"><label class="small">Тип</label>
-                 <select name="billingType" style="width:100%; box-sizing:border-box">
-                   <option value="ONE_TIME">Разовая оплата</option>
-                   <option value="TEMPORARY">Подписка (на N дней)</option>
-                 </select>
+         <div id="live-products" class="card" style="margin-top:16px">
+           <h3 style="margin-top:0">Продукты · LIVE</h3>
+           <div class="small">Live-продукты — это реальные продукты для продажи. Здесь только production-настройка без тестовых минут.</div>
+           <div class="card" style="padding:14px; margin-top:12px">
+             <h4 style="margin-top:0">Создать live-product</h4>
+             <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create">
+               <div class="product-form-grid">
+                 <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required placeholder="Обучение / VIP доступ" /></div>
+                 <div class="field-wrap"><label class="small">CTA-кнопка (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить обучение" /></div>
+                 <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="10" /></div>
+                 <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="USDT" /></div>
+                 <div class="field-wrap"><label class="small">Тип</label>
+                   <select name="billingType">
+                     <option value="ONE_TIME">Разовая продажа</option>
+                     <option value="TEMPORARY">Временный доступ</option>
+                   </select>
+                 </div>
+                 <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" placeholder="30" /></div>
                </div>
-               <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" placeholder="30" style="width:100%; box-sizing:border-box" /></div>
-             </div>
-             <div class="test-block" style="margin-top:12px">
-               <div class="small" style="margin-bottom:6px; color:rgba(251,191,36,0.9)">🧪 Тест: минуты вместо дней</div>
-               <input name="durationMinutes" type="number" min="1" max="1440" placeholder="пусто = дни" style="max-width:120px; box-sizing:border-box" title="1–5 мин для быстрой проверки" />
-             </div>
-             <div style="margin-top:12px">
-               <label class="small">Кошелёк USDT BEP20 (адрес для приёма оплаты)</label>
-               <input name="walletBep20" type="text" placeholder="0x..." style="margin-top:4px; width:100%; box-sizing:border-box" />
-               <div class="small" style="margin-top:4px">Обязательно. Кошелёк владельца или партнёра.</div>
-             </div>
-             <div style="margin-top:12px">
-               <label class="small">Ссылки на чат/канал (каждая с новой строки)</label>
-               <textarea name="linkedChatsRaw" rows="2" placeholder="https://t.me/channel" style="margin-top:4px"></textarea>
-             </div>
-             <div style="margin-top:10px">
-               <label class="small">Описание (ru)</label>
-               <textarea name="descriptionRu" rows="2" style="margin-top:4px"></textarea>
-             </div>
-             <button type="submit" style="margin-top:12px">Создать</button>
-           </form>
-
+               <details style="margin-top:12px">
+                 <summary class="small" style="cursor:pointer">Advanced settings</summary>
+                 <div style="margin-top:12px">
+                   <label class="small">Кошелёк USDT BEP20</label>
+                   <input name="walletBep20" type="text" placeholder="0x..." />
+                   <div class="small" style="margin-top:4px">Обязателен для ручного/direct payment режима. Для balance-flow нужен как fallback.</div>
+                 </div>
+                 <div style="margin-top:12px">
+                   <label class="small">linked chats / channels</label>
+                   <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/channel"></textarea>
+                   <div class="small" style="margin-top:4px">Для auto-removal по expiry используйте @username или numeric chat id. Invite-only link не даст боту удалить пользователя.</div>
+                 </div>
+                 <div style="margin-top:12px">
+                   <label class="small">Описание (ru)</label>
+                   <textarea name="descriptionRu" rows="2"></textarea>
+                 </div>
+               </details>
+               <button type="submit" style="margin-top:12px">Создать live-product</button>
+             </form>
+           </div>
            <div class="products-existing-block">
-           <div class="section-title">Существующие продукты</div>
-           ${products.length ? products.map((p) => {
-                const ruLoc = p.localizations.find((l: any) => l.languageCode === "ru") ?? p.localizations[0];
-                const durMin = (p as any).durationMinutes;
-                const testActive = durMin != null && String(durMin).trim() !== "";
-                return `<div class="product-card">
-                <div class="product-card-header">
-                  <span><b>${escapeHtml(ruLoc?.title ?? p.code)}</b></span>
-                  <span class="small">${escapeHtml(String(p.price))} ${escapeHtml(p.currency)} · ${p.billingType === "TEMPORARY" ? (p.durationDays ? `${p.durationDays} дн.` : "") : "Разовая"}${testActive ? ` · ${durMin} мин` : ""}</span>
-                  ${testActive ? '<span class="test-badge">🧪 ТЕСТ ВКЛ</span>' : ""}
-                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/archive" style="margin-left:auto">
-                    <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Архивировать</button>
-                  </form>
-                </div>
-                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/update">
-                  <div class="section-title">Основные параметры</div>
-                  <div class="product-form-grid">
-                    <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required value="${escapeHtml(ruLoc?.title ?? "")}" style="width:100%; box-sizing:border-box" /></div>
-                    <div class="field-wrap"><label class="small">Текст кнопки (ru)</label><input name="payButtonTextRu" type="text" required value="${escapeHtml(ruLoc?.payButtonText ?? "")}" style="width:100%; box-sizing:border-box" /></div>
-                    <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="${escapeHtml(String(p.price ?? ""))}" style="width:100%; box-sizing:border-box" /></div>
-                    <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="${escapeHtml(p.currency ?? "USDT")}" style="width:100%; box-sizing:border-box" /></div>
-                    <div class="field-wrap"><label class="small">Тип</label>
-                      <select name="billingType" style="width:100%; box-sizing:border-box">
-                        <option value="ONE_TIME" ${p.billingType === "ONE_TIME" ? "selected" : ""}>Разовая</option>
-                        <option value="TEMPORARY" ${p.billingType === "TEMPORARY" ? "selected" : ""}>Подписка</option>
-                      </select>
-                    </div>
-                    <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" value="${p.durationDays ?? ""}" placeholder="30" style="width:100%; box-sizing:border-box" /></div>
-                  </div>
-
-                  <div class="section-title">🧪 Тестовый режим</div>
-                  <div class="test-block">
-                    <div class="field-wrap" style="max-width:200px">
-                      <label class="small">Минуты вместо дней ${testActive ? '<span class="test-badge" style="margin-left:8px">ВКЛ</span>' : ""}</label>
-                      <input name="durationMinutes" type="number" min="1" max="1440" value="${p.durationMinutes ?? ""}" placeholder="пусто = дни" style="width:100%; box-sizing:border-box" title="1–5 мин для быстрой проверки подписки" />
-                    </div>
-                    <div class="small" style="margin-top:6px">Укажите 1 или 5 — подписка истечёт через минуты. Напоминания (3/2/1 день) не отправятся.</div>
-                  </div>
-
-                  <div class="section-title">Кошелёк USDT BEP20</div>
-                  <input name="walletBep20" type="text" placeholder="0x..." value="${escapeHtml((p as any).walletBep20 ?? "")}" style="width:100%; box-sizing:border-box" />
-                  <div class="small" style="margin-top:4px">Адрес для приёма оплаты. Если пусто — используется USDT_BEP20_WALLET из .env</div>
-
-                  <div class="section-title">Ссылки на чат/канал</div>
-                  <textarea name="linkedChatsRaw" rows="2" placeholder="https://t.me/channel&#10;https://t.me/joinchat/xxx" style="width:100%; box-sizing:border-box">${formatLinkedChatsForEdit(p.linkedChats)}</textarea>
-                  <div class="small" style="margin-top:4px">t.me/channel, t.me/+invite или ID. После оплаты появятся кнопки перехода.</div>
-
-                  <div class="section-title">Описание (ru)</div>
-                  <textarea name="descriptionRu" rows="2" style="width:100%; box-sizing:border-box">${escapeHtml(ruLoc?.description ?? "")}</textarea>
-
-                  <button type="submit" style="margin-top:16px">Сохранить</button>
-                </form>
-
-                <div class="section-title">Симуляция оплаты</div>
-                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(p.id)}/simulate-payment" class="form-row">
-                  <div class="field" style="min-width:200px; max-width:300px">
-                    <select name="userId" required style="width:100%; box-sizing:border-box">
-                      <option value="">— Выберите пользователя —</option>
-                      ${userSelectOptions}
-                    </select>
-                  </div>
-                  <div class="btn"><button type="submit" class="secondary">Выполнить тест-оплату</button></div>
-                </form>
-                <div class="small" style="margin-top:4px">Без реального платежа: выдаст доступ, отправит в чат/канал, через N минут исключит.</div>
-               </div>`;
-             }).join("") : `<div class="small">Нет продуктов. Создайте первый в форме выше.</div>`}
+             <div class="section-title">Существующие live-products</div>
+             ${liveProducts.length ? liveProducts.map((product) => renderProductCard(product, { allowSimulate: false })).join("") : `<div class="small">Пока нет live-продуктов.</div>`}
            </div>
+         </div>
+
+         <div id="test-lab" class="card" style="margin-top:16px">
+           <h3 style="margin-top:0">Test Lab</h3>
+           <div class="small">Отдельное пространство для ручной проверки полного lifecycle доступа без ожидания днями. TEST-продукты используют reminders за 3/2/1 минуты и истекают в минутах, но идут по тому же grant / invite / expiry / removal pipeline.</div>
+           <div class="card test-block" style="margin-top:12px">
+             <h4 style="margin-top:0">Создать тестовый продукт</h4>
+             <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create">
+               <input type="hidden" name="billingType" value="TEMPORARY" />
+               <input type="hidden" name="currency" value="USDT" />
+               <div class="product-form-grid">
+                 <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required placeholder="Тест: обучение 5 мин" /></div>
+                 <div class="field-wrap"><label class="small">CTA-кнопка (ru)</label><input name="payButtonTextRu" type="text" required value="Оплатить тест" /></div>
+                 <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="1" /></div>
+                 <div class="field-wrap"><label class="small">Срок в минутах</label><input name="durationMinutes" type="number" required min="1" max="1440" value="5" /></div>
+               </div>
+               <div style="margin-top:12px">
+                 <label class="small">Кошелёк USDT BEP20</label>
+                 <input name="walletBep20" type="text" placeholder="0x..." />
+               </div>
+               <div style="margin-top:12px">
+                 <label class="small">linked chats / channels</label>
+                 <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890"></textarea>
+               </div>
+               <div style="margin-top:12px">
+                 <label class="small">Описание (ru)</label>
+                 <textarea name="descriptionRu" rows="2" placeholder="Тестовый продукт для прогона access lifecycle"></textarea>
+               </div>
+               <button type="submit" style="margin-top:12px">Создать тестовый продукт</button>
+             </form>
+             <div class="small" style="margin-top:8px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats → ошибка видна в Access Audit, если бот не смог удалить.</div>
            </div>
+           <div class="products-existing-block">
+             <div class="section-title">Тестовые продукты</div>
+             ${testProducts.length ? testProducts.map((product) => renderProductCard(product, { allowSimulate: true })).join("") : `<div class="small">Пока нет тестовых продуктов. Создайте первый, чтобы быстро прогонять весь сценарий руками.</div>`}
+           </div>
+         </div>
+
+         <div id="payments-balance" class="card" style="margin-top:16px">
+           <h3 style="margin-top:0">Платежи / баланс</h3>
+           <div class="subgrid">
+             <div class="card" style="padding:14px">
+               <div class="section-title">Режим оплаты</div>
+               <div>${balanceFlowEnabled ? renderStatusBadge("Balance flow active", "active") : renderStatusBadge("Manual/direct payment flow", "pending")}</div>
+               <ul class="mono-list" style="margin-top:10px">
+                 <li><code>invoice/pending</code>: пользователь открыл оплату, ждём подтверждение.</li>
+                 <li><code>deposit/confirmed</code>: баланс пополнен через NOWPayments.</li>
+                 <li><code>balance purchase/completed</code>: продукт куплен с баланса.</li>
+                 <li><code>manual confirm</code>: подтверждение через экран Manual payments.</li>
+               </ul>
+             </div>
+             <div class="card" style="padding:14px">
+               <div class="section-title">Последние уведомления</div>
+               ${
+                 recentNotifications.length
+                   ? recentNotifications.map((notification) => `<div style="margin-top:8px"><div>${renderPaymentStatus(notification.status)} <code>${escapeHtml(notification.type)}</code></div><div class="small">${renderUserLabel(notification.user)} · ${formatIsoDate(notification.createdAt)}</div></div>`).join("")
+                   : `<div class="small">Пока нет notification events.</div>`
+               }
+             </div>
+           </div>
+           <div class="section-title">События платежей</div>
+           ${
+             paymentEvents.length
+               ? `<table class="paid-table">
+                   <thead><tr><th>Когда</th><th>Событие</th><th>Пользователь</th><th>Продукт</th><th>Сумма</th><th>Статус</th><th>Ref / Order</th></tr></thead>
+                   <tbody>
+                     ${paymentEvents.map((event) => `<tr>
+                       <td>${formatIsoDate(event.createdAt)}</td>
+                       <td><code>${escapeHtml(event.kind)}</code></td>
+                       <td>${renderUserLabel(event.user)}</td>
+                       <td>${escapeHtml(event.productLabel)}</td>
+                       <td>${escapeHtml(event.amount)}</td>
+                       <td>${renderPaymentStatus(event.status)}</td>
+                       <td><code>${escapeHtml(event.note)}</code></td>
+                     </tr>`).join("")}
+                   </tbody>
+                 </table>`
+               : `<div class="small">Пока нет событий платежей.</div>`
+           }
+         </div>
+
+         <div id="access-audit" class="card" style="margin-top:16px">
+           <h3 style="margin-top:0">Аудит / события доступа</h3>
+           <div class="small">Здесь видно, кому выдали доступ, когда он истекает, как отработали reminders и что произошло с expiry/removal pipeline.</div>
+           ${
+             recentAccessRights.length
+               ? `<table class="paid-table" style="margin-top:12px">
+                   <thead><tr><th>Пользователь</th><th>Продукт</th><th>Mode</th><th>Статус</th><th>Expires</th><th>linked chats</th><th>Reminders</th><th>Expiry / removal</th></tr></thead>
+                   <tbody>
+                     ${recentAccessRights.map((right) => {
+                       const loc =
+                         right.product.localizations.find((item) => item.languageCode === baseLang) ??
+                         right.product.localizations.find((item) => item.languageCode === "ru") ??
+                         right.product.localizations[0];
+                       return `<tr>
+                         <td>${renderUserLabel(right.user)}</td>
+                         <td>${escapeHtml(loc?.title ?? right.product.code)}</td>
+                         <td>${renderProductModeBadge(right.product)}</td>
+                         <td>${renderAccessStatus(right)}</td>
+                         <td>${formatIsoDate(right.activeUntil)}</td>
+                         <td>${renderLinkedChatReadiness(right.product)}</td>
+                         <td>${renderReminderSummary(right.id)}</td>
+                         <td>${renderExpirySummary(right.id)}</td>
+                       </tr>`;
+                     }).join("")}
+                   </tbody>
+                 </table>`
+               : `<div class="small" style="margin-top:10px">Пока нет access events для этого бота.</div>`
+           }
          </div>
 
          <div style="margin-top:16px" class="row">
            <a href="/backoffice/bots/${escapeHtml(bot.id)}/settings" style="text-decoration:none"><button class="secondary" type="button">Назад</button></a>
-         </div>
-        `
+         </div>`
       )
     );
   });
@@ -2150,9 +2620,19 @@ export async function registerBackofficeRoutes(
     const linkedChatsRaw = String(body?.linkedChatsRaw ?? "").trim();
     const linkedChats = linkedChatsRaw ? parseLinkedChatsFromForm(linkedChatsRaw) : [];
     const walletBep20 = String(body?.walletBep20 ?? "").trim() || null;
+    const effectiveBillingType = durationMinutes != null && durationMinutes > 0 ? "TEMPORARY" : billingType === "TEMPORARY" ? "TEMPORARY" : "ONE_TIME";
+    const linkedChatsValidationError = validateLinkedChatsForExpiringAccess({
+      billingType: effectiveBillingType,
+      durationDays,
+      durationMinutes,
+      linkedChats
+    });
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
     if (!walletBep20) return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">Укажите кошелёк USDT BEP20</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
+    if (linkedChatsValidationError) {
+      return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">${escapeHtml(linkedChatsValidationError)}</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
+    }
 
     const code = `bot_${bot.id.slice(0, 8)}_${randomBytes(4).toString("hex")}`;
 
@@ -2162,8 +2642,8 @@ export async function registerBackofficeRoutes(
         type: "SECTION",
         price,
         currency,
-        billingType: billingType === "TEMPORARY" ? "TEMPORARY" : "ONE_TIME",
-        durationDays: billingType === "TEMPORARY" && durationDays != null && durationDays > 0 ? durationDays : null,
+        billingType: effectiveBillingType,
+        durationDays: effectiveBillingType === "TEMPORARY" && durationMinutes == null && durationDays != null && durationDays > 0 ? durationDays : null,
         durationMinutes: durationMinutes != null && durationMinutes > 0 ? durationMinutes : null,
         linkedChats: linkedChats.length ? (linkedChats as any) : null,
         walletBep20,
@@ -2238,8 +2718,18 @@ export async function registerBackofficeRoutes(
     const linkedChatsRaw = String(body?.linkedChatsRaw ?? "").trim();
     const linkedChats = linkedChatsRaw ? parseLinkedChatsFromForm(linkedChatsRaw) : [];
     const walletBep20 = String(body?.walletBep20 ?? "").trim() || null;
+    const effectiveBillingType = durationMinutes != null && durationMinutes > 0 ? "TEMPORARY" : billingType;
+    const linkedChatsValidationError = validateLinkedChatsForExpiringAccess({
+      billingType: effectiveBillingType,
+      durationDays,
+      durationMinutes,
+      linkedChats
+    });
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
+    if (linkedChatsValidationError) {
+      return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">${escapeHtml(linkedChatsValidationError)}</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
+    }
 
     const productExists = await prisma.product.findUnique({
       where: { id: productId }
@@ -2252,8 +2742,8 @@ export async function registerBackofficeRoutes(
         data: {
           price,
           currency,
-          billingType,
-          durationDays: billingType === "TEMPORARY" && durationDays != null && durationDays > 0 ? durationDays : null,
+          billingType: effectiveBillingType,
+          durationDays: effectiveBillingType === "TEMPORARY" && durationMinutes == null && durationDays != null && durationDays > 0 ? durationDays : null,
           durationMinutes: durationMinutes != null && durationMinutes > 0 ? durationMinutes : null,
           linkedChats: linkedChats.length ? (linkedChats as any) : null,
           walletBep20
@@ -2965,4 +3455,3 @@ export async function registerBackofficeRoutes(
     return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/payments`);
   });
 }
-

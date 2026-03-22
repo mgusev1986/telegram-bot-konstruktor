@@ -391,6 +391,13 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate
 
 ## 14. Manual testing checklist
 
+- [ ] Backoffice → `Оплаты и доступ`: видны секции `Обзор`, `Контент и доступ`, `Live products`, `Test Lab`, `Платежи / баланс`, `Аудит доступа`.
+- [ ] В `Live products` можно создать production-продукт, затем в `Контент и доступ` привязать его к разделу и увидеть CTA-кнопку, которая появится в боте.
+- [ ] В `Test Lab` можно создать продукт с `durationMinutes`; reminders должны планироваться за `3/2/1` минуты, а не за дни.
+- [ ] Для expiring-продукта с `linkedChats` backoffice должен показывать readiness: если заданы только invite links без `@username`/chat id, отобразится `REMOVAL UNAVAILABLE`.
+- [ ] Для expiring-продукта с корректными linked chats тестовая симуляция должна пройти цикл `grant → invite links → reminders → expiry → removal`.
+- [ ] В `Аудит доступа` по accessRight видны текущий статус, reminder jobs и expiry/removal job; при проблеме удаления должен быть `REMOVAL FAILED` с причиной.
+- [ ] В `Платежи / баланс` видны invoice/deposit/balance purchase events и последние notification events (`PAYMENT_CONFIRMED`, `ACCESS_GRANTED`, `ACCESS_EXPIRING`, `SYSTEM_ALERT`).
 - [ ] `/start` — открывается главная с приветствием и кнопками разделов.
 - [ ] «🗂 В главное меню» с любой страницы — тот же экран, что по /start.
 - [ ] Кнопка раздела → открывается контент этого раздела; «↩️ Назад» → родитель с контентом.
@@ -402,6 +409,19 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate
 - [ ] Админ: предпросмотр структуры, публикация, «⚠️ Полностью обнулить бота» с подтверждением.
 - [ ] Drip: новый пользователь после /start получает серию (если есть активная кампания ON_REGISTRATION); интервалы по delayValue/delayUnit.
 - [ ] Демо: после `npm run prisma:seed-demo` в Telegram — главная с разделами О компании, О продукте (с Продукт 1–3), О пассивном доходе, О маркетинге; все переходы и «Назад» работают.
+
+### Paid access handoff
+
+- **Backoffice entrypoint:** `/backoffice/bots/:botId/paid` теперь является workspace для alpha-owner по оплатам и доступам. Там собраны overview/KPI, bindings, live products, test lab, payment events и access audit.
+- **Live vs Test:** отдельного поля `isTest` не добавляли. Безопасный `source of truth` для test mode — `Product.durationMinutes > 0`. Live остаётся на `durationDays` / стандартном flow.
+- **Reminder policy:** live использует `3/2/1` дня, test использует `3/2/1` минуты. Логика вынесена в `src/modules/subscription-channel/subscription-access-policy.ts`.
+- **Grant / expiry:** и direct/manual payment flow, и balance purchase flow теперь передают product policy в `SubscriptionChannelService.scheduleRemindersAndExpiry(...)`, поэтому reminders и expiry одинаково работают для live и test.
+- **Removal failure root cause:** если в `linkedChats` есть только invite/display links без `identifier` (`@username` или numeric chat id), бот может показать кнопки входа, но не сможет удалить пользователя по expiry. Теперь это:
+  - блокируется при создании/редактировании expiring-продукта;
+  - помечается в backoffice как `REMOVAL UNAVAILABLE`;
+  - при старых/кривых данных приводит к failed expiry job с понятной причиной в access audit.
+- **Observability:** reminder delivery идёт через `NotificationService` (`ACCESS_EXPIRING`), access grant links — через `ACCESS_GRANTED`, expiry DM — через `SYSTEM_ALERT`. Ошибки reminder/removal больше не должны быть «тихими»: expiry/reminder jobs получают `FAILED`, а причина видна через `scheduled_jobs.error_message`.
+- **Ключевые файлы paid access:** `src/http/backoffice/register-backoffice.ts`, `src/modules/subscription-channel/subscription-channel.service.ts`, `src/modules/subscription-channel/subscription-access-policy.ts`, `src/modules/payments/payment.service.ts`, `src/modules/payments/balance.service.ts`, `src/modules/jobs/workers.ts`.
 
 ---
 
