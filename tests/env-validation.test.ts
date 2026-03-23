@@ -21,10 +21,14 @@ describe("env validation", () => {
 
   beforeEach(() => {
     vi.resetModules();
+    vi.doUnmock("node:fs");
+    vi.restoreAllMocks();
     process.env = { ...originalEnv };
   });
 
   afterEach(() => {
+    vi.doUnmock("node:fs");
+    vi.restoreAllMocks();
     process.env = { ...originalEnv };
   });
 
@@ -52,6 +56,36 @@ describe("env validation", () => {
 
     const mod = await import("../src/config/env");
     expect(mod.env.AI_TRANSLATION_PROVIDER).toBe("ollama");
+  });
+
+  it("maps docker postgres and redis hosts to localhost on host machine", async () => {
+    process.env = {
+      ...process.env,
+      ...baseEnv,
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/db?schema=public",
+      REDIS_URL: "redis://redis:6379"
+    };
+
+    const mod = await import("../src/config/env");
+    expect(mod.env.DATABASE_URL).toBe("postgresql://postgres:postgres@127.0.0.1:5432/db?schema=public");
+    expect(mod.env.REDIS_URL).toBe("redis://127.0.0.1:6379");
+  });
+
+  it("keeps docker hostnames inside container runtime", async () => {
+    process.env = {
+      ...process.env,
+      ...baseEnv,
+      DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/db?schema=public",
+      REDIS_URL: "redis://redis:6379"
+    };
+
+    vi.doMock("node:fs", () => ({
+      existsSync: vi.fn((path: string) => path === "/.dockerenv")
+    }));
+
+    const mod = await import("../src/config/env");
+    expect(mod.env.DATABASE_URL).toBe("postgresql://postgres:postgres@postgres:5432/db?schema=public");
+    expect(mod.env.REDIS_URL).toBe("redis://redis:6379");
   });
 
   it("fails for cerebras without CEREBRAS_API_KEY", async () => {

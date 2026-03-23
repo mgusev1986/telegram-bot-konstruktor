@@ -1,7 +1,21 @@
 import { config as loadEnv } from "dotenv";
+import { existsSync } from "node:fs";
 import { z } from "zod";
 
 loadEnv();
+
+function isRunningInsideContainer(): boolean {
+  return existsSync("/.dockerenv") || existsSync("/run/.containerenv");
+}
+
+function normalizeDockerHostnameForHostRun(rawUrl: string, dockerHostname: string): string {
+  const parsed = new URL(rawUrl);
+  if (parsed.hostname !== dockerHostname || isRunningInsideContainer()) {
+    return rawUrl;
+  }
+  parsed.hostname = "127.0.0.1";
+  return parsed.toString();
+}
 
 const envSchema = z.object({
   // Optional when running multi-bot from DB only (bots created via back-office).
@@ -141,9 +155,16 @@ if (!parsed.success) {
 }
 
 const effectivePort = parsed.data.PORT ?? parsed.data.HTTP_PORT;
+const normalizedDatabaseUrl = normalizeDockerHostnameForHostRun(parsed.data.DATABASE_URL, "postgres");
+const normalizedRedisUrl = normalizeDockerHostnameForHostRun(parsed.data.REDIS_URL, "redis");
+
+process.env.DATABASE_URL = normalizedDatabaseUrl;
+process.env.REDIS_URL = normalizedRedisUrl;
 
 export const env = {
   ...parsed.data,
+  DATABASE_URL: normalizedDatabaseUrl,
+  REDIS_URL: normalizedRedisUrl,
   HTTP_PORT: effectivePort,
   // Aliases for the new names. Prefer new TRANSLATION_* when provided.
   TRANSLATION_TIMEOUT_MS: parsed.data.TRANSLATION_TIMEOUT_MS ?? parsed.data.AI_TRANSLATION_TIMEOUT_MS,

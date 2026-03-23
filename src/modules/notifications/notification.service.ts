@@ -54,7 +54,7 @@ export class NotificationService {
     type: NotificationType,
     text: string,
     payloadJson: Record<string, unknown>,
-    sendOptions?: { parse_mode?: "HTML" }
+    sendOptions?: Record<string, unknown>
   ): Promise<void> {
     const notification = await this.prisma.notification.create({
       data: {

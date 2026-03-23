@@ -4,13 +4,20 @@
 
 ### Last checkpoint
 Дата: 2026-03-23
-Снапшот: `.snapshots/snapshot-2026-03-23_12-55-49_full-project.tar.gz`
-SHA256: `0b8d16949b5f9ec953200d4d0897192243dc392f68b87d23acf894b5e5844751`
-HEAD: `87b9668e821ff8babef4f6fe066e4b013eafcc30`
+Снапшот: `.snapshots/snapshot-2026-03-23_18-12-39_full-project.tar.gz`
+SHA256: `f2a38d9b38447dda2b9d183ca9edf304eb991027dc03f77d576b59654a65fcf0`
+HEAD: `cab3fc812efc2b8885e82a534b8101c0fcf8b44b`
 Ветка: `main`
 Сборка: не запускалась в рамках этого snapshot
 Деплой: Hetzner VPS (77.42.79.54), Docker Compose
 Тесты: не запускались в рамках этого snapshot
+
+### Checkpoint notes (2026-03-23) — backup snapshot refresh
+
+- **New full-project snapshot created:** `.snapshots/snapshot-2026-03-23_18-12-39_full-project.tar.gz`
+- **SHA256 recorded:** `f2a38d9b38447dda2b9d183ca9edf304eb991027dc03f77d576b59654a65fcf0` (файл: `.snapshots/snapshot-2026-03-23_18-12-39_full-project.tar.gz.sha256`).
+- **Checkpoint file added:** `.snapshots/checkpoint-2026-03-23_18-12-39.md`.
+- **Purpose:** зафиксировать новый handoff checkpoint для передачи контекста в следующий чат.
 
 ### Checkpoint notes (2026-03-23) — full backup + current in-progress payment/cabinet/i18n updates
 

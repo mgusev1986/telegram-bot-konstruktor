@@ -19,6 +19,7 @@ import { env } from "../../config/env";
 import { logger } from "../../common/logger";
 import { NowPaymentsAdapter } from "./nowpayments.adapter";
 import { isTemporaryAccessProduct } from "../subscription-channel/subscription-access-policy";
+import { grantOrExtendAccess } from "./access-grant";
 
 const PROVIDER = "nowpayments";
 const NOWPAYMENTS_FINAL_SUCCESS_STATUSES = new Set(["finished"]);
@@ -130,40 +131,56 @@ export class BalanceService {
       );
     }
 
-    const resp = await this.nowPayments.createPayment({
-      priceAmount: amount,
-      priceCurrency: currency,
-      payCurrency,
-      orderId,
-      orderDescription: `Deposit ${amount} ${currency}`,
-      ipnCallbackUrl: ipnUrl,
-      fixedRate: true
-    });
-
-    const deposit = await this.prisma.depositTransaction.create({
-      data: {
-        userId: user.id,
-        accountId,
-        provider: PROVIDER,
-        providerPaymentId: String(resp.payment_id),
+    try {
+      const resp = await this.nowPayments.createPayment({
+        priceAmount: amount,
+        priceCurrency: currency,
+        payCurrency,
         orderId,
-        amount,
-        currency,
-        status: "PENDING",
-        rawPayload: resp as unknown as object
-      }
-    });
+        orderDescription: `Deposit ${amount} ${currency}`,
+        ipnCallbackUrl: ipnUrl,
+        fixedRate: true
+      });
 
-    return {
-      depositId: deposit.id,
-      orderId,
-      payAddress: resp.pay_address,
-      payAmount: resp.pay_amount,
-      payCurrency: resp.pay_currency,
-      network,
-      amount,
-      currency
-    };
+      const deposit = await this.prisma.depositTransaction.create({
+        data: {
+          userId: user.id,
+          accountId,
+          provider: PROVIDER,
+          providerPaymentId: String(resp.payment_id),
+          orderId,
+          amount,
+          currency,
+          status: "PENDING",
+          rawPayload: resp as unknown as object
+        }
+      });
+
+      return {
+        depositId: deposit.id,
+        orderId,
+        payAddress: resp.pay_address,
+        payAmount: resp.pay_amount,
+        payCurrency: resp.pay_currency,
+        network,
+        amount,
+        currency
+      };
+    } catch (error) {
+      logger.warn(
+        {
+          userId: user.id,
+          provider: PROVIDER,
+          orderId,
+          amount,
+          currency,
+          network,
+          error: error instanceof Error ? error.message : String(error)
+        },
+        "NOWPayments createDepositIntent failed"
+      );
+      return null;
+    }
   }
 
   /**
@@ -477,13 +494,32 @@ export class BalanceService {
     }
 
     const price = Number(product.price);
-    const idempotencyKey = `purchase_${user.id}_${productId}`;
+    const renewablePurchase = isTemporaryAccessProduct(product) || product.billingType === "RECURRING";
+    const duplicateWindowStart = new Date(Date.now() - 30 * 1000);
+    const idempotencyKey = renewablePurchase
+      ? `purchase_${user.id}_${productId}_${randomUUID()}`
+      : `purchase_${user.id}_${productId}`;
 
-    const existing = await this.prisma.productPurchase.findUnique({
-      where: { idempotencyKey }
-    });
-    if (existing && existing.status === "COMPLETED") {
-      return { success: true, accessGranted: true };
+    if (!renewablePurchase) {
+      const existing = await this.prisma.productPurchase.findUnique({
+        where: { idempotencyKey }
+      });
+      if (existing && existing.status === "COMPLETED") {
+        return { success: true, accessGranted: true };
+      }
+    } else {
+      const recentCompletedPurchase = await this.prisma.productPurchase.findFirst({
+        where: {
+          userId: user.id,
+          productId,
+          status: "COMPLETED",
+          createdAt: { gte: duplicateWindowStart }
+        },
+        select: { id: true }
+      });
+      if (recentCompletedPurchase) {
+        return { success: true, accessGranted: true };
+      }
     }
 
     const { id: accountId, balance } = await this.getOrCreateAccount(user.id);
@@ -501,9 +537,18 @@ export class BalanceService {
         return { success: false as const };
       }
 
-      const existingPurchase = await tx.productPurchase.findUnique({
-        where: { idempotencyKey }
-      });
+      const existingPurchase = renewablePurchase
+        ? await tx.productPurchase.findFirst({
+            where: {
+              userId: user.id,
+              productId,
+              status: "COMPLETED",
+              createdAt: { gte: duplicateWindowStart }
+            }
+          })
+        : await tx.productPurchase.findUnique({
+            where: { idempotencyKey }
+          });
       if (existingPurchase?.status === "COMPLETED") {
         return { success: true, alreadyCompleted: true };
       }
@@ -519,50 +564,45 @@ export class BalanceService {
         }
       });
 
-      await tx.productPurchase.upsert({
-        where: { idempotencyKey },
-        create: {
-          userId: user.id,
-          productId,
-          accountId,
-          amount: price,
-          ledgerEntryId: ledgerEntry.id,
-          idempotencyKey,
-          status: "COMPLETED"
-        },
-        update: {
-          ledgerEntryId: ledgerEntry.id,
-          status: "COMPLETED"
-        }
-      });
-
-      const purchase = await tx.productPurchase.findUniqueOrThrow({
-        where: { idempotencyKey }
-      });
+      const purchase = renewablePurchase
+        ? await tx.productPurchase.create({
+            data: {
+              userId: user.id,
+              productId,
+              accountId,
+              amount: price,
+              ledgerEntryId: ledgerEntry.id,
+              idempotencyKey,
+              status: "COMPLETED"
+            }
+          })
+        : await tx.productPurchase.upsert({
+            where: { idempotencyKey },
+            create: {
+              userId: user.id,
+              productId,
+              accountId,
+              amount: price,
+              ledgerEntryId: ledgerEntry.id,
+              idempotencyKey,
+              status: "COMPLETED"
+            },
+            update: {
+              ledgerEntryId: ledgerEntry.id,
+              status: "COMPLETED"
+            }
+          });
 
       await tx.userBalanceAccount.update({
         where: { id: accountId },
         data: { balance: { decrement: price } }
       });
 
-      const durationMinutes = product.durationMinutes;
-      const durationDays = product.durationDays;
-      const activeUntil =
-        durationMinutes != null && durationMinutes > 0
-          ? new Date(Date.now() + durationMinutes * 60 * 1000)
-          : durationDays && durationDays > 0
-            ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000)
-            : null;
-      const temporaryAccess = isTemporaryAccessProduct(product);
-
-      const accessRight = await tx.userAccessRight.create({
-        data: {
-          userId: user.id,
-          productId,
-          accessType: temporaryAccess ? "TEMPORARY" : product.billingType === "ONE_TIME" ? "LIFETIME" : "SUBSCRIPTION",
-          activeFrom: new Date(),
-          activeUntil
-        }
+      const accessGrant = await grantOrExtendAccess(tx.userAccessRight, {
+        userId: user.id,
+        productId,
+        product,
+        now: new Date()
       });
 
       await tx.user.update({
@@ -570,7 +610,11 @@ export class BalanceService {
         data: { status: "PAID" }
       });
 
-      return { success: true, accessRight, activeUntil };
+      return {
+        success: true,
+        accessGrant,
+        purchaseAuditRef: renewablePurchase ? purchase.id : idempotencyKey
+      };
     });
 
     if (!result.success) {
@@ -581,11 +625,15 @@ export class BalanceService {
       return { success: true, accessGranted: true };
     }
 
-    if ("accessRight" in result && result.accessRight && result.activeUntil) {
-      if (this.scheduler && this.subscriptionChannel) {
+    if ("accessGrant" in result && result.accessGrant) {
+      if (result.accessGrant.activeUntil && this.scheduler && this.subscriptionChannel) {
+        if (result.accessGrant.extendedExisting) {
+          await this.scheduler.cancelByIdempotencyKeyPrefix(`sub-rem:${result.accessGrant.accessRight.id}:`);
+          await this.scheduler.cancelByIdempotencyKeyPrefix(`access-exp:${result.accessGrant.accessRight.id}`);
+        }
         await this.subscriptionChannel.scheduleRemindersAndExpiry(
-          result.accessRight.id,
-          result.activeUntil,
+          result.accessGrant.accessRight.id,
+          result.accessGrant.activeUntil,
           user.botInstanceId ?? null,
           this.scheduler,
           product
@@ -604,7 +652,7 @@ export class BalanceService {
       const owner = await this.prisma.user.findFirst({ where: { role: "ALPHA_OWNER" } });
       if (owner) {
         await this.crm.assignTag(user.id, "paid", owner.id);
-        await this.audit.log(owner.id, "product_purchase_balance", "product_purchase", idempotencyKey, {
+        await this.audit.log(owner.id, "product_purchase_balance", "product_purchase", result.purchaseAuditRef, {
           userId: user.id,
           productId,
           amount: price

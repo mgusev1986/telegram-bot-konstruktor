@@ -146,7 +146,7 @@ export class CabinetService {
       ""
     ];
     const bal = await this.balance.getBalance(user.id);
-    blocks.push(`💰 ${this.i18n.t(lang, "cabinet_balance")}: ${bal.toFixed(2)} USDT`);
+    blocks.push(`[b]💰 ${this.i18n.t(lang, "cabinet_balance")}: ${bal.toFixed(2)} USDT[/b]`);
     blocks.push("");
     blocks.push(
       `🔗 ${this.i18n.t(lang, "cabinet_my_link")}`,

@@ -72,9 +72,10 @@ describe("SubscriptionChannelService", () => {
           product: {
             id: "product-1",
             linkedChats: [{ link: "https://t.me/+secretInvite" }],
-            localizations: [{ languageCode: "ru", title: "Тестовый доступ" }]
+            localizations: [{ languageCode: "ru", title: "Тестовый доступ", payButtonText: "Оплатить доступ" }]
           }
         }),
+        findFirst: vi.fn().mockResolvedValue(null),
         update: vi.fn().mockResolvedValue(undefined)
       }
     };
@@ -97,7 +98,14 @@ describe("SubscriptionChannelService", () => {
       expect.objectContaining({ id: "user-1" }),
       "SYSTEM_ALERT",
       expect.stringContaining("Ваш доступ к платному разделу системы истёк"),
-      expect.objectContaining({ accessRightId: "access-1", event: "access_expired" })
+      expect.objectContaining({ accessRightId: "access-1", event: "access_expired" }),
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "💳 Оплатить доступ", callback_data: "pay:checkout:product-1" }]
+          ]
+        }
+      })
     );
   });
 
@@ -118,7 +126,7 @@ describe("SubscriptionChannelService", () => {
           product: {
             id: "product-2",
             code: "test-product",
-            localizations: [{ languageCode: "ru", title: "Тестовый продукт" }]
+            localizations: [{ languageCode: "ru", title: "Тестовый продукт", payButtonText: "Оплатить доступ" }]
           }
         })
       }
@@ -134,7 +142,14 @@ describe("SubscriptionChannelService", () => {
       expect.objectContaining({ id: "user-2" }),
       "ACCESS_EXPIRING",
       expect.stringContaining("через 3 мин"),
-      expect.objectContaining({ accessRightId: "access-2", minutesLeft: 3 })
+      expect.objectContaining({ accessRightId: "access-2", minutesLeft: 3 }),
+      expect.objectContaining({
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "💳 Оплатить доступ", callback_data: "pay:checkout:product-2" }]
+          ]
+        }
+      })
     );
   });
 });

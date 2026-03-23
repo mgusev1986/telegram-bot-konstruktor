@@ -872,18 +872,21 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const details: string[] = [];
     if (typeof opts.balance === "number") {
       details.push(
-        `💰 <b>${escapeHtml(services.i18n.t(languageCode, "balance_label"))}</b>: ${escapeHtml(opts.balance.toFixed(2))} USDT`
+        `💰 ${escapeHtml(services.i18n.t(languageCode, "balance_label"))}: <b>${escapeHtml(opts.balance.toFixed(2))} USDT</b>`
       );
     }
     details.push(
-      `💳 <b>${escapeHtml(services.i18n.t(languageCode, "amount_label"))}</b>: ${escapeHtml(opts.amount)}`,
-      `💼 <b>${escapeHtml(services.i18n.t(languageCode, "wallet_label"))}</b>:`,
-      `<code>${escapeHtml(opts.wallet)}</code>`,
-      `🪙 <b>${escapeHtml(services.i18n.t(languageCode, "currency_label"))}</b>: ${escapeHtml(opts.currency)}`,
-      `⛓️ <b>${escapeHtml(services.i18n.t(languageCode, "network_label"))}</b>: ${escapeHtml(formatNetworkLabel(opts.network))}`
+      `💳 ${escapeHtml(services.i18n.t(languageCode, "amount_label"))}: <b>${escapeHtml(opts.amount)}</b>`,
+      "",
+      `${escapeHtml(services.i18n.t(languageCode, "wallet_label"))}:`,
+      `<b>${escapeHtml(opts.wallet)}</b>`,
+      "",
+      `💵 ${escapeHtml(services.i18n.t(languageCode, "currency_label"))}: <b>${escapeHtml(opts.currency)}</b>`,
+      `⛓️ ${escapeHtml(services.i18n.t(languageCode, "network_label"))}: <b>${escapeHtml(formatNetworkLabel(opts.network))}</b>`,
+      `⚠️ ${escapeHtml(services.i18n.t(languageCode, "network_warning"))}`
     );
     if (opts.reference?.trim()) {
-      details.push(`🧾 <b>${escapeHtml(services.i18n.t(languageCode, "reference_label"))}</b>: <code>${escapeHtml(opts.reference.trim())}</code>`);
+      details.push("", `${escapeHtml(services.i18n.t(languageCode, "reference_label"))}: ${escapeHtml(opts.reference.trim())}`);
     }
     blocks.push(details.join("\n"));
 
@@ -899,7 +902,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
   ) => ({
     reply_markup: {
       inline_keyboard: [
-        [{ text: `📋 ${services.i18n.t(languageCode, "copy_wallet_address")}`, copy_text: { text: payAddress } }],
+        [{ text: payAddress, copy_text: { text: payAddress } }],
         [{ text: productCta, callback_data: makeCallbackData("pay", "balance", productId) }],
         [
           { text: services.i18n.t(languageCode, "back"), callback_data: returnPageId ? makeCallbackData("menu", "open", returnPageId) : NAV_BACK_DATA },
@@ -916,7 +919,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
   ) => ({
     reply_markup: {
       inline_keyboard: [
-        [{ text: `📋 ${services.i18n.t(languageCode, "copy_wallet_address")}`, copy_text: { text: payAddress } }],
+        [{ text: payAddress, copy_text: { text: payAddress } }],
         [
           { text: services.i18n.t(languageCode, "back"), callback_data: returnPageId ? makeCallbackData("menu", "open", returnPageId) : NAV_BACK_DATA },
           { text: services.i18n.t(languageCode, "to_main_menu"), callback_data: NAV_ROOT_DATA }
@@ -981,7 +984,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const description = productLoc?.description?.trim() ?? "";
     const payButtonText = getProductPayButtonText(product, user.selectedLanguage)?.trim() || services.i18n.t(user.selectedLanguage, "pay_from_balance");
 
-    if (!services.balance.isNowPaymentsEnabled()) {
+    const showDirectCheckoutScreen = async () => {
       const { payment } = await services.payments.createPaymentRequest(user, productId, "USDT_BEP20" as PaymentNetwork);
       const checkoutText = buildCheckoutText(user.selectedLanguage, {
         title,
@@ -1001,6 +1004,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         { text: checkoutText },
         buildDirectCheckoutKeyboard(user.selectedLanguage, payment.walletAddress, returnPageId)
       );
+    };
+
+    if (!services.balance.isNowPaymentsEnabled()) {
+      await showDirectCheckoutScreen();
       return;
     }
 
@@ -1009,7 +1016,11 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const network = "USDT_BEP20" as PaymentNetwork;
     const intent = await services.balance.createDepositIntent(user, amount, currency, network);
     if (!intent) {
-      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), { show_alert: true });
+      logger.warn(
+        { userId: user.id, productId, mode: "direct_fallback" },
+        "Balance checkout unavailable; falling back to direct payment request"
+      );
+      await showDirectCheckoutScreen();
       return;
     }
 

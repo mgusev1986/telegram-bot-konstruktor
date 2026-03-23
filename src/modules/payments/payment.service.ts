@@ -8,7 +8,7 @@ import type { CrmService } from "../crm/crm.service";
 import type { SchedulerService } from "../jobs/scheduler.service";
 import type { NotificationService } from "../notifications/notification.service";
 import type { SubscriptionChannelService } from "../subscription-channel/subscription-channel.service";
-import { isTemporaryAccessProduct } from "../subscription-channel/subscription-access-policy";
+import { grantOrExtendAccess } from "./access-grant";
 
 export class PaymentService {
   public constructor(
@@ -144,25 +144,13 @@ export class PaymentService {
       return;
     }
 
-    const durationMinutes = payment.product.durationMinutes;
-    const durationDays = payment.product.durationDays;
-    const activeUntil =
-      durationMinutes != null && durationMinutes > 0
-        ? new Date(Date.now() + durationMinutes * 60 * 1000)
-        : durationDays && durationDays > 0
-      ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000)
-      : null;
-    const temporaryAccess = isTemporaryAccessProduct(payment.product);
-
-    const accessRight = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.userAccessRight.create({
-        data: {
-          userId: payment.userId,
-          productId: payment.productId,
-          accessType: temporaryAccess ? "TEMPORARY" : payment.product.billingType === "ONE_TIME" ? "LIFETIME" : "SUBSCRIPTION",
-          activeFrom: new Date(),
-          activeUntil
-        }
+    const now = new Date();
+    const accessGrant = await this.prisma.$transaction(async (tx) => {
+      const granted = await grantOrExtendAccess(tx.userAccessRight, {
+        userId: payment.userId,
+        productId: payment.productId,
+        product: payment.product,
+        now
       });
       await tx.payment.update({
         where: { id: payment.id },
@@ -176,13 +164,17 @@ export class PaymentService {
         where: { id: payment.userId },
         data: { status: "PAID" }
       });
-      return created;
+      return granted;
     });
 
-    if (activeUntil && this.scheduler && this.subscriptionChannel) {
+    if (accessGrant.activeUntil && this.scheduler && this.subscriptionChannel) {
+      if (accessGrant.extendedExisting) {
+        await this.scheduler.cancelByIdempotencyKeyPrefix(`sub-rem:${accessGrant.accessRight.id}:`);
+        await this.scheduler.cancelByIdempotencyKeyPrefix(`access-exp:${accessGrant.accessRight.id}`);
+      }
       await this.subscriptionChannel.scheduleRemindersAndExpiry(
-        accessRight.id,
-        activeUntil,
+        accessGrant.accessRight.id,
+        accessGrant.activeUntil,
         payment.botInstanceId ?? null,
         this.scheduler,
         payment.product

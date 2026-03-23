@@ -5,6 +5,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Telegram } from "telegraf";
 import type { SchedulerService } from "../jobs/scheduler.service";
+import { makeCallbackData } from "../../common/callback-data";
 import { getBanIdentifiers, getDisplayLinks } from "../../common/linked-chat-parser";
 import { logger } from "../../common/logger";
 import type { NotificationService } from "../notifications/notification.service";
@@ -12,6 +13,37 @@ import {
   getReminderSchedule,
   type ProductTimingLike
 } from "./subscription-access-policy";
+
+function getRenewButtonText(
+  languageCode: string | null | undefined,
+  payButtonText: string | null | undefined
+): string {
+  const normalized = payButtonText?.trim();
+  if (normalized) {
+    return normalized;
+  }
+
+  switch ((languageCode ?? "ru").toLowerCase()) {
+    case "en":
+      return "Pay now";
+    case "de":
+      return "Jetzt bezahlen";
+    case "uk":
+      return "Оплатити";
+    default:
+      return "Оплатить";
+  }
+}
+
+function buildRenewReplyMarkup(productId: string, buttonText: string) {
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: `💳 ${buttonText}`, callback_data: makeCallbackData("pay", "checkout", productId) }]
+      ]
+    }
+  };
+}
 
 export class SubscriptionChannelService {
   private telegram: Telegram | null = null;
@@ -91,6 +123,8 @@ export class SubscriptionChannelService {
       ?? right.product.localizations.find((l) => l.languageCode === "ru")
       ?? right.product.localizations[0];
     const title = loc?.title ?? right.product.code;
+    const renewButtonText = getRenewButtonText(right.user.selectedLanguage, loc?.payButtonText);
+    const sendOptions = buildRenewReplyMarkup(right.productId, renewButtonText);
     const minutesLeft = reminder.minutesLeft && reminder.minutesLeft > 0 ? reminder.minutesLeft : null;
     const daysLeft = reminder.daysLeft && reminder.daysLeft > 0 ? reminder.daysLeft : null;
     const msg =
@@ -122,13 +156,14 @@ export class SubscriptionChannelService {
           productId: right.productId,
           ...(minutesLeft ? { minutesLeft } : {}),
           ...(daysLeft ? { daysLeft } : {})
-        }
+        },
+        sendOptions
       );
       return;
     }
 
     if (!this.telegram) return;
-    await this.telegram.sendMessage(Number(right.user.telegramUserId), msg);
+    await this.telegram.sendMessage(Number(right.user.telegramUserId), msg, sendOptions);
   }
 
   /**
@@ -146,6 +181,27 @@ export class SubscriptionChannelService {
       where: { id: accessRightId },
       data: { status: "EXPIRED" }
     });
+
+    const replacementAccess = await this.prisma.userAccessRight.findFirst({
+      where: {
+        userId: right.userId,
+        productId: right.productId,
+        status: "ACTIVE",
+        OR: [
+          { activeUntil: null },
+          { activeUntil: { gt: new Date() } }
+        ]
+      },
+      select: { id: true }
+    });
+
+    if (replacementAccess) {
+      logger.info(
+        { accessRightId, replacementAccessRightId: replacementAccess.id, userId: right.userId, productId: right.productId },
+        "Skipping expiry removal because a newer active access right already exists"
+      );
+      return;
+    }
 
     const removalIssues: string[] = [];
     const identifiers = getBanIdentifiers(right.product.linkedChats);
@@ -184,6 +240,11 @@ export class SubscriptionChannelService {
         : right.user.selectedLanguage === "de"
           ? "Ihr Zugang ist abgelaufen. Bitte verlängern Sie Ihr Abonnement."
           : "Ваш доступ к платному разделу системы истёк.\n\nПродлите подписку, чтобы снова получить доступ к платному контенту и материалам. (Чат / Канал)";
+    const loc = right.product.localizations.find((l) => l.languageCode === right.user.selectedLanguage)
+      ?? right.product.localizations.find((l) => l.languageCode === "ru")
+      ?? right.product.localizations[0];
+    const renewButtonText = getRenewButtonText(right.user.selectedLanguage, loc?.payButtonText);
+    const sendOptions = buildRenewReplyMarkup(right.productId, renewButtonText);
 
     if (this.notifications) {
       try {
@@ -191,14 +252,15 @@ export class SubscriptionChannelService {
           right.user,
           "SYSTEM_ALERT",
           expiryMsg,
-          { accessRightId, productId: right.productId, event: "access_expired" }
+          { accessRightId, productId: right.productId, event: "access_expired" },
+          sendOptions
         );
       } catch (e) {
         logger.warn({ accessRightId, userId: right.userId, err: e }, "Failed to send expiry DM to user");
       }
     } else if (this.telegram) {
       try {
-        await this.telegram.sendMessage(Number(right.user.telegramUserId), expiryMsg);
+        await this.telegram.sendMessage(Number(right.user.telegramUserId), expiryMsg, sendOptions);
       } catch (e) {
         logger.warn({ accessRightId, userId: right.userId, err: e }, "Failed to send expiry DM to user");
       }
