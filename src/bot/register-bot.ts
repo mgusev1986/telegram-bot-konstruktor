@@ -4,6 +4,8 @@ import type { PaymentNetwork } from "@prisma/client";
 import { makeCallbackData, splitCallbackData, toShortId } from "../common/callback-data";
 import { logger } from "../common/logger";
 import { ForbiddenError } from "../common/errors";
+import { maybeFormatForTelegram } from "../common/content-formatting";
+import { escapeHtml } from "../common/html";
 import { applyPersonalization } from "../common/personalization";
 import { renderPageContent } from "./helpers/render-page-content";
 import { isValidTimeZone } from "../common/timezone";
@@ -33,7 +35,6 @@ import {
   buildLanguageVersionHubKeyboard,
   buildLanguageVersionPageActionsKeyboard,
   buildLanguageVersionPreviewConfirmKeyboard,
-  buildPaymentReviewKeyboard,
   buildCancelKeyboard,
   buildStaleActionKeyboard,
   buildScheduledBroadcastHubKeyboard,
@@ -83,6 +84,12 @@ const COMMAND_ARGUMENT_RE = /^\/\w+(?:@\w+)?(?:\s+(.+))?$/i;
 const extractCommandArgument = (text: string | undefined): string => {
   const match = text?.match(COMMAND_ARGUMENT_RE);
   return match?.[1]?.trim() ?? "";
+};
+
+const formatMoney = (value: number): string => {
+  if (!Number.isFinite(value)) return "0";
+  const normalized = Math.abs(value) < 1e-9 ? 0 : value;
+  return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(2);
 };
 
 export const registerBot = (services: AppServices, opts: { botToken: string }): Telegraf<BotContext> => {
@@ -815,19 +822,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     opts: {
       backTarget: string;
       payButtonText?: string;
-      useBalanceFlow: boolean;
     }
   ) => {
     const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
     if (productId) {
       const ctaLabel = opts.payButtonText?.trim() || services.i18n.t(languageCode, "pay_now");
       rows.push([
-        Markup.button.callback(
-          ctaLabel,
-          opts.useBalanceFlow
-            ? makeCallbackData("pay", "checkout", productId)
-            : makeCallbackData("pay", "network", productId, "USDT_BEP20")
-        )
+        Markup.button.callback(ctaLabel, makeCallbackData("pay", "checkout", productId))
       ]);
     }
     rows.push(buildNavigationRow(services.i18n, languageCode, {
@@ -835,6 +836,58 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       toMain: true
     }));
     return Markup.inlineKeyboard(rows);
+  };
+
+  const formatNetworkLabel = (value: string) => {
+    if (value === "USDT_BEP20") return "USDT (BEP20)";
+    if (value === "USDT_TRC20") return "USDT (TRC20)";
+    return value.replace(/_/g, " ");
+  };
+
+  const buildCheckoutText = (
+    languageCode: string,
+    opts: {
+      title: string;
+      description?: string | null;
+      balance?: number | null;
+      amount: string;
+      wallet: string;
+      currency: string;
+      network: string;
+      reference?: string | null;
+    }
+  ) => {
+    const blocks: string[] = [];
+    const title = opts.title.trim();
+    const description = (opts.description ?? "").trim();
+
+    if (title) {
+      blocks.push(`<b>${escapeHtml(title)}</b>`);
+    }
+
+    if (description) {
+      blocks.push(maybeFormatForTelegram(description));
+    }
+
+    const details: string[] = [];
+    if (typeof opts.balance === "number") {
+      details.push(
+        `💰 <b>${escapeHtml(services.i18n.t(languageCode, "balance_label"))}</b>: ${escapeHtml(opts.balance.toFixed(2))} USDT`
+      );
+    }
+    details.push(
+      `💳 <b>${escapeHtml(services.i18n.t(languageCode, "amount_label"))}</b>: ${escapeHtml(opts.amount)}`,
+      `💼 <b>${escapeHtml(services.i18n.t(languageCode, "wallet_label"))}</b>:`,
+      `<code>${escapeHtml(opts.wallet)}</code>`,
+      `🪙 <b>${escapeHtml(services.i18n.t(languageCode, "currency_label"))}</b>: ${escapeHtml(opts.currency)}`,
+      `⛓️ <b>${escapeHtml(services.i18n.t(languageCode, "network_label"))}</b>: ${escapeHtml(formatNetworkLabel(opts.network))}`
+    );
+    if (opts.reference?.trim()) {
+      details.push(`🧾 <b>${escapeHtml(services.i18n.t(languageCode, "reference_label"))}</b>: <code>${escapeHtml(opts.reference.trim())}</code>`);
+    }
+    blocks.push(details.join("\n"));
+
+    return blocks.join("\n\n");
   };
 
   const buildCheckoutScreenKeyboard = (
@@ -846,8 +899,24 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
   ) => ({
     reply_markup: {
       inline_keyboard: [
-        [{ text: `📋 ${services.i18n.t(languageCode, "copy_address")}`, copy_text: { text: payAddress } }],
+        [{ text: `📋 ${services.i18n.t(languageCode, "copy_wallet_address")}`, copy_text: { text: payAddress } }],
         [{ text: productCta, callback_data: makeCallbackData("pay", "balance", productId) }],
+        [
+          { text: services.i18n.t(languageCode, "back"), callback_data: returnPageId ? makeCallbackData("menu", "open", returnPageId) : NAV_BACK_DATA },
+          { text: services.i18n.t(languageCode, "to_main_menu"), callback_data: NAV_ROOT_DATA }
+        ]
+      ]
+    }
+  });
+
+  const buildDirectCheckoutKeyboard = (
+    languageCode: string,
+    payAddress: string,
+    returnPageId: string | null
+  ) => ({
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: `📋 ${services.i18n.t(languageCode, "copy_wallet_address")}`, copy_text: { text: payAddress } }],
         [
           { text: services.i18n.t(languageCode, "back"), callback_data: returnPageId ? makeCallbackData("menu", "open", returnPageId) : NAV_BACK_DATA },
           { text: services.i18n.t(languageCode, "to_main_menu"), callback_data: NAV_ROOT_DATA }
@@ -868,19 +937,18 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
     const titleText = content.localization.title ? renderPageContent(content.localization.title, user) : "";
     const bodyText = content.localization.contentText ? renderPageContent(content.localization.contentText, user) : "";
+    const product = content.item.product;
+    const productLoc = product ? getProductLocalization(product as any, user.selectedLanguage) : null;
     const teaserText =
       composeTitleBody(titleText, bodyText)
-      || (await services.menu.getPaywallMessage())
+      || composeTitleBody(productLoc?.title ?? "", productLoc?.description ?? "")
       || services.i18n.t(user.selectedLanguage, "access_locked");
     const hasMedia =
       (content.localization.mediaType === "PHOTO"
         || content.localization.mediaType === "VIDEO"
         || content.localization.mediaType === "DOCUMENT")
       && Boolean(content.localization.mediaFileId);
-    const product = content.item.product;
     const productId = content.item.productId;
-    const useBalanceFlow = services.balance.isNowPaymentsEnabled();
-
     await services.navigation.replaceScreen(
       user,
       ctx.telegram,
@@ -894,8 +962,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         : { text: teaserText },
       buildLockedSectionKeyboard(user.selectedLanguage, productId, {
         backTarget: opts.backTarget,
-        payButtonText: getProductPayButtonText(product as any, user.selectedLanguage),
-        useBalanceFlow
+        payButtonText: getProductPayButtonText(product as any, user.selectedLanguage)
       })
     );
   };
@@ -909,6 +976,34 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     }
 
     const productLoc = getProductLocalization(product, user.selectedLanguage);
+    const returnPageId = getCheckoutReturnPage(ctx);
+    const title = productLoc?.title?.trim() ?? product.code;
+    const description = productLoc?.description?.trim() ?? "";
+    const payButtonText = getProductPayButtonText(product, user.selectedLanguage)?.trim() || services.i18n.t(user.selectedLanguage, "pay_from_balance");
+
+    if (!services.balance.isNowPaymentsEnabled()) {
+      const { payment } = await services.payments.createPaymentRequest(user, productId, "USDT_BEP20" as PaymentNetwork);
+      const checkoutText = buildCheckoutText(user.selectedLanguage, {
+        title,
+        description,
+        amount: `${payment.amount} ${payment.currency}`,
+        wallet: payment.walletAddress,
+        currency: payment.currency,
+        network: payment.network,
+        reference: payment.referenceCode
+      });
+
+      setNavBeforeShow(ctx, "pay:checkout:" + productId);
+      await services.navigation.replaceScreen(
+        user,
+        ctx.telegram,
+        ctx.chat?.id ?? user.telegramUserId,
+        { text: checkoutText },
+        buildDirectCheckoutKeyboard(user.selectedLanguage, payment.walletAddress, returnPageId)
+      );
+      return;
+    }
+
     const amount = Number(product.price);
     const currency = product.currency ?? "USDT";
     const network = "USDT_BEP20" as PaymentNetwork;
@@ -919,23 +1014,16 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     }
 
     const balance = await services.balance.getBalance(user.id);
-    const returnPageId = getCheckoutReturnPage(ctx);
-    const title = productLoc?.title?.trim() ?? product.code;
-    const description = productLoc?.description?.trim() ?? "";
-    const payButtonText = getProductPayButtonText(product, user.selectedLanguage)?.trim() || services.i18n.t(user.selectedLanguage, "pay_from_balance");
-    const checkoutText = [
+    const checkoutText = buildCheckoutText(user.selectedLanguage, {
       title,
-      ``,
-      `💰 ${services.i18n.t(user.selectedLanguage, "balance_label")}: ${balance.toFixed(2)} USDT`,
-      ``,
-      `💼 ${services.i18n.t(user.selectedLanguage, "topup_address_label")}:`,
-      intent.payAddress,
-      ``,
-      `🪙 ${services.i18n.t(user.selectedLanguage, "currency_label")}: ${intent.payCurrency}`,
-      `⛓️ ${services.i18n.t(user.selectedLanguage, "network_label")}: ${intent.network}`,
-      description ? "" : undefined,
-      description || undefined
-    ].filter((line): line is string => Boolean(line)).join("\n");
+      description,
+      balance,
+      amount: `${formatMoney(amount)} ${currency}`,
+      wallet: intent.payAddress,
+      currency: intent.payCurrency,
+      network: intent.network,
+      reference: intent.orderId
+    });
 
     setNavBeforeShow(ctx, "pay:checkout:" + productId);
     await services.navigation.replaceScreen(
@@ -3262,7 +3350,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         );
         return;
       }
-      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "deposit_confirmed"));
+      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "balance_purchase_success"));
       const returnPageId = getCheckoutReturnPage(ctx);
       clearCheckoutReturnPage(ctx);
       await sendMenuPage(ctx, returnPageId);
@@ -3279,11 +3367,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       const status = await services.balance.checkDepositStatus(orderId);
       if (status.credited) {
         await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "deposit_confirmed"));
-        await ctx.reply(services.i18n.t(user.selectedLanguage, "deposit_confirmed"), {
-          reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback(services.i18n.t(user.selectedLanguage, "to_main_menu"), NAV_ROOT_DATA)]
-          ]).reply_markup
-        });
+        const returnPageId = getCheckoutReturnPage(ctx);
+        clearCheckoutReturnPage(ctx);
+        await sendMenuPage(ctx, returnPageId);
       } else {
         await ctx.answerCbQuery(
           services.i18n.t(user.selectedLanguage, "check_deposit_status") + ": " + status.status
@@ -3292,47 +3378,17 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       return;
     }
 
-    if (scope === "pay" && action === "network" && value && extra) {
-      const { payment, product } = await services.payments.createPaymentRequest(
-        user,
-        value,
-        extra as PaymentNetwork
-      );
-      setNavBeforeShow(ctx, "pay:review:" + payment.id);
-      const localization =
-        product.localizations.find((item) => item.languageCode === user.selectedLanguage) ??
-        product.localizations[0];
-      const text = [
-        localization?.title ?? product.code,
-        localization?.description ?? "",
-        `Amount: ${payment.amount} ${payment.currency}`,
-        `Wallet: ${payment.walletAddress}`,
-        `Network: ${payment.network}`,
-        `Reference: ${payment.referenceCode}`
-      ]
-        .filter(Boolean)
-        .join("\n");
-      await ctx.reply(text, buildPaymentReviewKeyboard(payment.id, user.selectedLanguage, services.i18n));
+    if (scope === "pay" && action === "network" && value) {
+      await showBalanceCheckoutScreen(ctx, value);
       return;
     }
 
     if (scope === "pay" && action === "review" && value) {
-      const owner = await services.users.findByTelegramId(BigInt(process.env.SUPER_ADMIN_TELEGRAM_ID ?? "0"));
-      if (owner) {
-        await services.notifications.sendText(
-          owner,
-          "SYSTEM_ALERT",
-          `Payment review requested for payment ${value}`,
-          { paymentId: value, requesterUserId: user.id }
-        );
-      }
-      setNavBeforeShow(ctx, "pay:request_sent");
-      await services.navigation.replaceScreen(
-        user,
-        ctx.telegram,
-        ctx.chat?.id ?? user.telegramUserId,
-        { text: "Запрос на проверку оплаты отправлен администраторам." },
-        Markup.inlineKeyboard([buildNavigationRow(services.i18n, user.selectedLanguage, { back: true, toMain: true })])
+      await ctx.answerCbQuery(
+        user.selectedLanguage === "en"
+          ? "Automatic confirmation is enabled. Wait for network confirmation."
+          : "Автоматическое подтверждение включено. Дождитесь подтверждения сети.",
+        { show_alert: true }
       );
       return;
     }

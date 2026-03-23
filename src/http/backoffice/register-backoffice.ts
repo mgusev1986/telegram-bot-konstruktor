@@ -2185,8 +2185,8 @@ export async function registerBackofficeRoutes(
         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/update">
           <div class="section-title">Basic</div>
           <div class="product-form-grid">
-            <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required value="${escapeHtml(loc?.title ?? "")}" /></div>
-            <div class="field-wrap"><label class="small">Текст кнопки (ru)</label><input name="payButtonTextRu" type="text" required value="${escapeHtml(loc?.payButtonText ?? "")}" /></div>
+            <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required value="${escapeHtml(loc?.title ?? "")}" /></div>
+            <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required value="${escapeHtml(loc?.payButtonText ?? "")}" /></div>
             <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="${escapeHtml(String(product.price ?? ""))}" /></div>
             <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="${escapeHtml(product.currency ?? "USDT")}" /></div>
             <div class="field-wrap"><label class="small">Тип</label>
@@ -2195,23 +2195,23 @@ export async function registerBackofficeRoutes(
                 <option value="TEMPORARY" ${product.billingType === "TEMPORARY" ? "selected" : ""}>Временный доступ</option>
               </select>
             </div>
-            <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" value="${product.durationDays ?? ""}" placeholder="30" /></div>
+            <div class="field-wrap"><label class="small">Дней доступа (LIVE)</label><input name="durationDays" type="number" min="1" value="${product.durationDays ?? ""}" placeholder="30" /></div>
           </div>
 
-          <div class="section-title">Advanced</div>
+          <div class="section-title">Платежи и доступ</div>
           <div class="product-form-grid">
-            <div class="field-wrap"><label class="small">Минуты для TEST mode</label><input name="durationMinutes" type="number" min="1" max="1440" value="${product.durationMinutes ?? ""}" placeholder="пусто = live" /></div>
-            <div class="field-wrap"><label class="small">Fallback-кошелёк USDT BEP20</label><input name="walletBep20" type="text" placeholder="0x..." value="${escapeHtml((product as any).walletBep20 ?? "")}" /><div class="small" style="margin-top:4px">Используется только для direct/manual payment flow. Для balance-flow реальный payout wallet берётся из настроек NOWPayments по API key.</div></div>
+            <div class="field-wrap"><label class="small">Минуты доступа для TEST</label><input name="durationMinutes" type="number" min="1" max="1440" value="${product.durationMinutes ?? ""}" placeholder="пусто = live" /></div>
+            <div class="field-wrap"><label class="small">Резервный кошелёк (только manual mode)</label><input name="walletBep20" type="text" placeholder="0x..." value="${escapeHtml((product as any).walletBep20 ?? "")}" /><div class="small" style="margin-top:4px">Используется только в direct/manual payment flow. Если включён NOWPayments balance-flow, фактический адрес пополнения берётся из payout wallet, привязанного к API key.</div></div>
           </div>
           <div style="margin-top:12px">
-            <label class="small">linked chats / channels</label>
+            <label class="small">Ссылки доступа в чат / канал</label>
             <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890&#10;https://t.me/channel">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
             <div class="small" style="margin-top:4px">Для приватного чата можно хранить и ссылку для входа, и identifier для ban/unban в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда пользователь войдёт по invite-link, а бот сможет удалить его по expiry.</div>
           </div>
           <div style="margin-top:12px">
-            <label class="small">Текст экрана оплаты / тарифы (ru)</label>
+            <label class="small">Описание на экране оплаты / тарифы (ru)</label>
             <textarea name="descriptionRu" rows="2">${escapeHtml(loc?.description ?? "")}</textarea>
-            <div class="small" style="margin-top:4px">Этот текст показывается на checkout-экране под балансом, адресом пополнения, валютой и сетью. Сюда удобно писать тарифы, бонусы и что получит пользователь после оплаты.</div>
+            <div class="small" style="margin-top:4px">Показывается пользователю в едином инвойсе сразу под названием продукта. Сюда пишите оффер, тарифы, бонусы и что откроется после оплаты.</div>
           </div>
           <button type="submit" style="margin-top:16px">Сохранить</button>
         </form>
@@ -2323,7 +2323,7 @@ export async function registerBackofficeRoutes(
 
          <div id="bindings" class="card" style="margin-top:16px">
            <h3 style="margin-top:0">Контент и доступ</h3>
-           <div class="small" style="margin-bottom:12px">Здесь находится business-flow alpha-owner: раздел → привязка продукта → locked state → CTA-кнопка оплаты в боте.</div>
+           <div class="small" style="margin-bottom:12px">Здесь находится business-flow alpha-owner: раздел → привязка продукта → страница-витрина раздела → CTA-кнопка оплаты в боте.</div>
            <div class="card" style="padding:14px; margin-bottom:14px">
              <h4 style="margin-top:0">Глобальное включение</h4>
              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/toggle" class="form-row">
@@ -2335,14 +2335,6 @@ export async function registerBackofficeRoutes(
                  </select>
                </div>
                <div class="btn"><button type="submit">Сохранить</button></div>
-             </form>
-           </div>
-           <div class="card" style="padding:14px; margin-bottom:14px">
-             <h4 style="margin-top:0">Fallback-текст для закрытого раздела</h4>
-             <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/paywall-message">
-               <textarea name="paywallMessage" rows="6" placeholder="💼 Ваш личный адрес для пополнения:&#10;0x00...&#10;&#10;🪙 Валюта: USDT&#10;⛓️ Сеть: BSC (BEP20)" style="width:100%; box-sizing:border-box">${escapeHtml(String((bot as any).paywallMessage ?? ""))}</textarea>
-               <div class="small" style="margin-top:6px">Обычный сценарий теперь такой: пользователь заходит в сам раздел и видит его контент-витрину + CTA продукта. Это поле используется только как запасной текст, если у раздела нет собственного teaser-контента. Balance-line подставится автоматически, если включён NOWPayments balance flow.</div>
-               <button type="submit" style="margin-top:10px">Сохранить текст</button>
              </form>
            </div>
            ${
@@ -2371,13 +2363,13 @@ export async function registerBackofficeRoutes(
                               <td><b>${escapeHtml(title)}</b></td>
                               <td>${renderStatusBadge("FREE", "active")}</td>
                               <td>
-                                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" style="margin:0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; max-width:460px">
-                                  <div class="field" style="min-width:0">
+                                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" style="margin:0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; max-width:560px">
+                                  <div class="field" style="min-width:220px; flex:1 1 260px">
                                     <select name="productId" required class="field" style="width:100%">
                                       ${productSelectOptions}
                                     </select>
                                   </div>
-                                  <div class="btn" style="min-width:150px"><button type="submit">Привязать продукт</button></div>
+                                  <div class="btn" style="flex:0 0 auto"><button type="submit">Привязать продукт</button></div>
                                 </form>
                               </td>
                               <td>—</td>
@@ -2397,8 +2389,8 @@ export async function registerBackofficeRoutes(
              <h4 style="margin-top:0">Создать live-product</h4>
              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create">
                <div class="product-form-grid">
-                 <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required placeholder="Обучение / VIP доступ" /></div>
-                 <div class="field-wrap"><label class="small">CTA-кнопка (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить обучение" /></div>
+                 <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required placeholder="Обучение / VIP доступ" /></div>
+                 <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить обучение" /></div>
                  <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="10" /></div>
                  <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="USDT" /></div>
                  <div class="field-wrap"><label class="small">Тип</label>
@@ -2409,22 +2401,22 @@ export async function registerBackofficeRoutes(
                  </div>
                  <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" placeholder="30" /></div>
                </div>
-               <details style="margin-top:12px">
-                 <summary class="small" style="cursor:pointer">Advanced settings</summary>
+              <details style="margin-top:12px">
+                 <summary class="small" style="cursor:pointer">Платежи и доступ</summary>
                  <div style="margin-top:12px">
-                 <label class="small">Кошелёк USDT BEP20</label>
+                 <label class="small">Резервный кошелёк (только manual mode)</label>
                   <input name="walletBep20" type="text" placeholder="0x..." />
-                  <div class="small" style="margin-top:4px">Используется только как fallback для direct/manual payment. Для balance-flow фактический payout wallet берётся из NOWPayments dashboard по API key.</div>
+                  <div class="small" style="margin-top:4px">Используется только как fallback для direct/manual payment. Для balance-flow фактический адрес пополнения берётся из NOWPayments dashboard по API key.</div>
                 </div>
                 <div style="margin-top:12px">
-                  <label class="small">linked chats / channels</label>
+                  <label class="small">Ссылки доступа в чат / канал</label>
                    <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890&#10;https://t.me/channel"></textarea>
                    <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
                 </div>
                 <div style="margin-top:12px">
-                  <label class="small">Текст экрана оплаты / тарифы (ru)</label>
+                  <label class="small">Описание на экране оплаты / тарифы (ru)</label>
                   <textarea name="descriptionRu" rows="2"></textarea>
-                  <div class="small" style="margin-top:4px">Показывается пользователю на едином checkout-экране: под балансом, адресом пополнения, валютой и сетью.</div>
+                  <div class="small" style="margin-top:4px">Показывается пользователю в едином инвойсе сразу под названием продукта. Сюда удобно писать тарифы и то, что человек получит после оплаты.</div>
                 </div>
               </details>
                <button type="submit" style="margin-top:12px">Создать live-product</button>
@@ -2445,24 +2437,24 @@ export async function registerBackofficeRoutes(
                <input type="hidden" name="billingType" value="TEMPORARY" />
                <input type="hidden" name="currency" value="USDT" />
                <div class="product-form-grid">
-                 <div class="field-wrap"><label class="small">Название (ru)</label><input name="titleRu" type="text" required placeholder="Тест: обучение 5 мин" /></div>
-                 <div class="field-wrap"><label class="small">CTA-кнопка (ru)</label><input name="payButtonTextRu" type="text" required value="Оплатить тест" /></div>
+                 <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required placeholder="Тест: обучение 5 мин" /></div>
+                 <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required value="Оплатить тест" /></div>
                  <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="1" /></div>
                  <div class="field-wrap"><label class="small">Срок в минутах</label><input name="durationMinutes" type="number" required min="1" max="1440" value="5" /></div>
                </div>
                <div style="margin-top:12px">
-                 <label class="small">Fallback-кошелёк USDT BEP20</label>
+                 <label class="small">Резервный кошелёк (только manual mode)</label>
                  <input name="walletBep20" type="text" placeholder="0x..." />
                  <div class="small" style="margin-top:4px">Нужен только как запасной кошелёк для direct/manual payment flow. Для balance-flow тестовый checkout берёт реальный адрес пополнения из NOWPayments.</div>
                </div>
                <div style="margin-top:12px">
-                 <label class="small">linked chats / channels</label>
+                 <label class="small">Ссылки доступа в чат / канал</label>
                  <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890"></textarea>
                </div>
                <div style="margin-top:12px">
-                 <label class="small">Текст экрана оплаты / тарифы (ru)</label>
+                 <label class="small">Описание на экране оплаты / тарифы (ru)</label>
                  <textarea name="descriptionRu" rows="2" placeholder="Тестовый продукт для прогона access lifecycle"></textarea>
-                 <div class="small" style="margin-top:4px">Показывается на едином checkout-экране тестового продукта. Удобно писать краткий оффер, тариф и что именно откроется после оплаты.</div>
+                 <div class="small" style="margin-top:4px">Показывается в едином инвойсе тестового продукта сразу под названием. Здесь удобно описать оффер, тариф и что откроется после оплаты.</div>
                </div>
                <button type="submit" style="margin-top:12px">Создать тестовый продукт</button>
              </form>

@@ -3,14 +3,23 @@
 Один snapshot проекта для переноса контекста в новый чат или онбординга разработчика. Обновляйте этот файл после крупных изменений.
 
 ### Last checkpoint
-Дата: 2026-03-22
-Снапшот: `.snapshots/snapshot-2026-03-22_18-11-04_full-project.tar.gz`
-SHA256: `e5b0069b44156d579866181c9071aca865fb81f7673265da34de1a3325008013`
-HEAD: `08489d2eb3658d4147273a128822248d56d3fd8a`
+Дата: 2026-03-23
+Снапшот: `.snapshots/snapshot-2026-03-23_12-55-49_full-project.tar.gz`
+SHA256: `0b8d16949b5f9ec953200d4d0897192243dc392f68b87d23acf894b5e5844751`
+HEAD: `87b9668e821ff8babef4f6fe066e4b013eafcc30`
 Ветка: `main`
-Сборка: `npm run build` (pass), `npm run lint:types` (pass)
+Сборка: не запускалась в рамках этого snapshot
 Деплой: Hetzner VPS (77.42.79.54), Docker Compose
-Тесты: targeted feature tests (pass, 61/61), full `npm test` = 240 passed, 6 failed (known unrelated failures / postgres required for part of suite)
+Тесты: не запускались в рамках этого snapshot
+
+### Checkpoint notes (2026-03-23) — full backup + current in-progress payment/cabinet/i18n updates
+
+- **Full backup created:** `backups/full-BACKUP-2026-03-23_12-55-34` (код + `.env` + `RESTORE.md`); авто-выгрузка БД с сервера не выполнена из-за недоступного SSH, создан `DB_FETCH_MANUALLY.txt` с командой для догрузки.
+- **New full-project snapshot created:** `.snapshots/snapshot-2026-03-23_12-55-49_full-project.tar.gz`, SHA256 выше, плюс детальный checkpoint: `.snapshots/checkpoint-2026-03-23_12-55-49.md`.
+- **Payment checkout flow in progress:** в `src/bot/register-bot.ts` добавлен единый формат инвойса (title/description/amount/wallet/currency/network/reference), прямой checkout fallback при отключенном NOWPayments, упрощен сценарий (без выбора сети), обновлены copy/success тексты.
+- **Backoffice payment form wording refreshed:** `src/http/backoffice/register-backoffice.ts` — уточнены названия полей и helper-тексты для live/test продуктов (инвойс, кнопка раздела, manual wallet, linked chats, описание).
+- **Cabinet balance display updated:** `src/modules/cabinet/cabinet.service.ts` — баланс показывается всегда и форматируется как `toFixed(2)`.
+- **I18n dictionaries extended:** `src/modules/i18n/static-dictionaries.ts` — добавлены `amount_label`, `wallet_label`, `reference_label`, `copy_wallet_address`, `balance_purchase_success` (ru/en).
 
 ### Checkpoint notes (2026-03-22) — user management, onboarding ru-default, external-link buttons, full local snapshot
 

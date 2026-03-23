@@ -145,11 +145,9 @@ export class CabinetService {
       this.i18n.t(lang, "my_cabinet"),
       ""
     ];
-    if (this.balance.isNowPaymentsEnabled()) {
-      const bal = await this.balance.getBalance(user.id);
-      blocks.push(`💰 ${this.i18n.t(lang, "cabinet_balance")}: ${bal} USDT`);
-      blocks.push("");
-    }
+    const bal = await this.balance.getBalance(user.id);
+    blocks.push(`💰 ${this.i18n.t(lang, "cabinet_balance")}: ${bal.toFixed(2)} USDT`);
+    blocks.push("");
     blocks.push(
       `🔗 ${this.i18n.t(lang, "cabinet_my_link")}`,
       link,
