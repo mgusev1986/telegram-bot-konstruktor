@@ -191,5 +191,13 @@ export const startWorkers = ({
     );
   });
 
+  worker.on("ready", () => {
+    logger.info("Background worker ready");
+  });
+
+  worker.on("error", (error) => {
+    logger.error({ err: error }, "Background worker error");
+  });
+
   return worker;
 };

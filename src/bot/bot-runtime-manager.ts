@@ -53,15 +53,34 @@ export class BotRuntimeManager {
     services.inactivityReminders.setTelegram(bot.telegram);
     services.subscriptionChannel.setTelegram(bot.telegram);
 
+    const runtime: BotRuntime = { botInstanceId, bot, services };
+    this.bots.set(botInstanceId, runtime);
+
     const shouldLaunch = opts?.launch ?? true;
     if (shouldLaunch && canBeLaunched) {
       logger.info({ botInstanceId, username: botInstance.telegramBotUsername }, "Connecting to Telegram...");
-      await bot.launch();
-      logger.info({ botInstanceId, username: botInstance.telegramBotUsername }, "Telegram polling started");
-    }
+      try {
+        bot.botInfo = await bot.telegram.getMe();
+      } catch (error) {
+        this.bots.delete(botInstanceId);
+        throw error;
+      }
 
-    const runtime: BotRuntime = { botInstanceId, bot, services };
-    this.bots.set(botInstanceId, runtime);
+      void bot
+        .launch(() => {
+          logger.info({ botInstanceId, username: botInstance.telegramBotUsername }, "Telegram polling started");
+        })
+        .catch((error) => {
+          logger.error(
+            {
+              botInstanceId,
+              username: botInstance.telegramBotUsername,
+              err: error
+            },
+            "Telegram polling crashed"
+          );
+        });
+    }
     return runtime;
   }
 
