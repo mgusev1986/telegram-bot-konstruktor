@@ -202,8 +202,32 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     // Private links t.me/c/... can reference private channels and private supergroups.
     if (chatType === "supergroup" || chatType === "group") {
       await ingestMediaAsset(post);
+      return;
     }
     return next();
+  });
+
+  bot.on("chat_join_request", async (ctx) => {
+    const joinRequest = (ctx.update as any).chat_join_request;
+    if (!joinRequest?.chat?.id || !joinRequest?.from?.id) {
+      return;
+    }
+
+    try {
+      await services.subscriptionChannel.handleChatJoinRequest({
+        chatId: joinRequest.chat.id,
+        userTelegramId: BigInt(joinRequest.from.id)
+      });
+    } catch (error) {
+      logger.warn(
+        {
+          chatId: String(joinRequest.chat.id),
+          userTelegramId: String(joinRequest.from.id),
+          err: error
+        },
+        "Failed to process paid chat join request"
+      );
+    }
   });
 
   /** User loading MUST run before stage so that ctx.currentUser is set for escape hatch and for scenes. */

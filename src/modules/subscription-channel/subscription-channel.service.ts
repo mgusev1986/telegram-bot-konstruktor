@@ -47,14 +47,147 @@ function buildRenewReplyMarkup(productId: string, buttonText: string) {
 
 export class SubscriptionChannelService {
   private telegram: Telegram | null = null;
+  private static readonly JOIN_LINK_TTL_SECONDS = 15 * 60;
 
   constructor(
     private readonly prisma: PrismaClient,
-    private readonly notifications?: NotificationService
+    private readonly notifications?: NotificationService,
+    private readonly botInstanceId?: string
   ) {}
 
   setTelegram(tg: Telegram): void {
     this.telegram = tg;
+  }
+
+  private normalizeChatIdentifier(chatId: string | number | bigint): string {
+    return typeof chatId === "string" ? chatId : String(chatId);
+  }
+
+  private toTelegramChatId(identifier: string): string | number {
+    return identifier.startsWith("@") ? identifier : Number(identifier);
+  }
+
+  private async createPaidAccessInviteLink(
+    identifier: string,
+    productId: string,
+    userId: string
+  ): Promise<string | null> {
+    if (!this.telegram) return null;
+
+    try {
+      const inv = await this.telegram.createChatInviteLink(
+        this.toTelegramChatId(identifier),
+        {
+          creates_join_request: true,
+          expire_date: Math.floor(Date.now() / 1000) + SubscriptionChannelService.JOIN_LINK_TTL_SECONDS,
+          name: `paid:${productId}:${userId}`.slice(0, 32)
+        } as any
+      );
+      return (inv as { invite_link?: string }).invite_link ?? null;
+    } catch (e) {
+      logger.warn({ identifier, productId, userId, err: e }, "Failed to create join-request invite link");
+      return null;
+    }
+  }
+
+  private async resolveBotLinkedProducts(): Promise<Array<{
+    id: string;
+    linkedChats: unknown;
+  }>> {
+    if (this.botInstanceId) {
+      const templateIds = await this.prisma.presentationTemplate.findMany({
+        where: { botInstanceId: this.botInstanceId, isActive: true },
+        select: { id: true }
+      });
+      if (templateIds.length === 0) return [];
+
+      const productRows = await this.prisma.menuItem.findMany({
+        where: {
+          templateId: { in: templateIds.map((row) => row.id) },
+          productId: { not: null }
+        },
+        select: { productId: true },
+        distinct: ["productId"]
+      });
+      const productIds = productRows.map((row) => String(row.productId)).filter(Boolean);
+      if (productIds.length === 0) return [];
+
+      return this.prisma.product.findMany({
+        where: { id: { in: productIds }, isActive: true },
+        select: { id: true, linkedChats: true }
+      });
+    }
+
+    return this.prisma.product.findMany({
+      where: { isActive: true },
+      select: { id: true, linkedChats: true }
+    });
+  }
+
+  async handleChatJoinRequest(input: {
+    chatId: string | number | bigint;
+    userTelegramId: bigint;
+  }): Promise<"approved" | "declined" | "ignored"> {
+    if (!this.telegram) return "ignored";
+
+    const chatIdentifier = this.normalizeChatIdentifier(input.chatId);
+    const linkedProducts = await this.resolveBotLinkedProducts();
+    const matchedProducts = linkedProducts.filter((product) =>
+      getBanIdentifiers(product.linkedChats).some((identifier) => this.normalizeChatIdentifier(identifier) === chatIdentifier)
+    );
+    if (matchedProducts.length === 0) {
+      return "ignored";
+    }
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        telegramUserId: input.userTelegramId,
+        ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {})
+      },
+      select: { id: true }
+    });
+
+    const hasActiveAccess = user
+      ? await this.prisma.userAccessRight.findFirst({
+          where: {
+            userId: user.id,
+            productId: { in: matchedProducts.map((product) => product.id) },
+            status: "ACTIVE",
+            OR: [
+              { activeUntil: null },
+              { activeUntil: { gt: new Date() } }
+            ]
+          },
+          select: { id: true }
+        })
+      : null;
+
+    const targetChatId = this.toTelegramChatId(chatIdentifier);
+    if (hasActiveAccess) {
+      await this.telegram.approveChatJoinRequest(targetChatId, Number(input.userTelegramId));
+      logger.info(
+        {
+          chatId: chatIdentifier,
+          userTelegramId: String(input.userTelegramId),
+          botInstanceId: this.botInstanceId,
+          matchedProductIds: matchedProducts.map((product) => product.id)
+        },
+        "Approved paid chat join request"
+      );
+      return "approved";
+    }
+
+    await this.telegram.declineChatJoinRequest(targetChatId, Number(input.userTelegramId));
+    logger.info(
+      {
+        chatId: chatIdentifier,
+        userTelegramId: String(input.userTelegramId),
+        botInstanceId: this.botInstanceId,
+        matchedProductIds: matchedProducts.map((product) => product.id)
+      },
+      "Declined unpaid chat join request"
+    );
+    return "declined";
   }
 
   /**
@@ -292,11 +425,10 @@ export class SubscriptionChannelService {
 
     const lines: string[] = [];
     const identifiers = getBanIdentifiers(linkedChats);
-    const chatId = (id: string) => id.startsWith("@") ? id : Number(id);
 
     for (const ident of identifiers) {
       try {
-        await this.telegram.unbanChatMember(chatId(ident), Number(telegramUserId)).catch(() => undefined);
+        await this.telegram.unbanChatMember(this.toTelegramChatId(ident), Number(telegramUserId)).catch(() => undefined);
       } catch {
         /* ignore */
       }
@@ -304,15 +436,11 @@ export class SubscriptionChannelService {
 
     for (const entry of linkedChats) {
       let url: string | null = null;
-      if (entry.link) {
+      if (entry.identifier) {
+        url = await this.createPaidAccessInviteLink(entry.identifier, productId, userId);
+      }
+      if (!url && entry.link) {
         url = entry.link;
-      } else if (entry.identifier) {
-        try {
-          const inv = await this.telegram.createChatInviteLink(chatId(entry.identifier), { member_limit: 1 } as any);
-          url = (inv as { invite_link?: string }).invite_link ?? null;
-        } catch {
-          /* skip */
-        }
       }
       if (url) {
         const label = entry.label ?? "Перейти";
@@ -384,16 +512,26 @@ export class SubscriptionChannelService {
     const direct = getDisplayLinks(linkedChats);
     if (!Array.isArray(linkedChats)) return direct;
 
-    const chatId = (id: string) => id.startsWith("@") ? id : Number(id);
     const out = [...direct];
 
     for (const entry of linkedChats as Array<{ link?: string; identifier?: string; label?: string }>) {
-      if (entry.link) continue;
       if (!entry.identifier) continue;
       try {
-        const inv = await telegram.createChatInviteLink(chatId(entry.identifier), { member_limit: 1 } as any);
+        const inv = await telegram.createChatInviteLink(this.toTelegramChatId(entry.identifier), {
+          creates_join_request: true,
+          expire_date: Math.floor(Date.now() / 1000) + SubscriptionChannelService.JOIN_LINK_TTL_SECONDS,
+          name: "paid-access"
+        } as any);
         const url = (inv as { invite_link?: string }).invite_link;
-        if (url) out.push({ link: url, label: entry.label ?? "Перейти" });
+        if (url) {
+          const label = entry.label ?? "Перейти";
+          const existingIndex = out.findIndex((item) => item.label === label);
+          if (existingIndex >= 0) {
+            out[existingIndex] = { link: url, label };
+          } else {
+            out.push({ link: url, label });
+          }
+        }
       } catch {
         /* skip */
       }

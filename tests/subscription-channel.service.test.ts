@@ -152,4 +152,86 @@ describe("SubscriptionChannelService", () => {
       })
     );
   });
+
+  it("approves join request for user with active paid access to the linked chat", async () => {
+    const prisma = {
+      presentationTemplate: {
+        findMany: vi.fn().mockResolvedValue([{ id: "tpl-1" }])
+      },
+      menuItem: {
+        findMany: vi.fn().mockResolvedValue([{ productId: "product-1" }])
+      },
+      product: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "product-1",
+            linkedChats: [{ identifier: "-1001234567890" }]
+          }
+        ])
+      },
+      user: {
+        findFirst: vi.fn().mockResolvedValue({ id: "user-1" })
+      },
+      userAccessRight: {
+        findFirst: vi.fn().mockResolvedValue({ id: "access-1" })
+      }
+    };
+
+    const service = new SubscriptionChannelService(prisma as any, undefined, "bot-1");
+    const telegram = {
+      approveChatJoinRequest: vi.fn().mockResolvedValue(true),
+      declineChatJoinRequest: vi.fn().mockResolvedValue(true)
+    };
+    service.setTelegram(telegram as any);
+
+    const result = await service.handleChatJoinRequest({
+      chatId: "-1001234567890",
+      userTelegramId: 999n
+    });
+
+    expect(result).toBe("approved");
+    expect(telegram.approveChatJoinRequest).toHaveBeenCalledWith(-1001234567890, 999);
+    expect(telegram.declineChatJoinRequest).not.toHaveBeenCalled();
+  });
+
+  it("declines join request for user without active paid access to the linked chat", async () => {
+    const prisma = {
+      presentationTemplate: {
+        findMany: vi.fn().mockResolvedValue([{ id: "tpl-1" }])
+      },
+      menuItem: {
+        findMany: vi.fn().mockResolvedValue([{ productId: "product-1" }])
+      },
+      product: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "product-1",
+            linkedChats: [{ identifier: "-1001234567890" }]
+          }
+        ])
+      },
+      user: {
+        findFirst: vi.fn().mockResolvedValue({ id: "user-1" })
+      },
+      userAccessRight: {
+        findFirst: vi.fn().mockResolvedValue(null)
+      }
+    };
+
+    const service = new SubscriptionChannelService(prisma as any, undefined, "bot-1");
+    const telegram = {
+      approveChatJoinRequest: vi.fn().mockResolvedValue(true),
+      declineChatJoinRequest: vi.fn().mockResolvedValue(true)
+    };
+    service.setTelegram(telegram as any);
+
+    const result = await service.handleChatJoinRequest({
+      chatId: "-1001234567890",
+      userTelegramId: 999n
+    });
+
+    expect(result).toBe("declined");
+    expect(telegram.declineChatJoinRequest).toHaveBeenCalledWith(-1001234567890, 999);
+    expect(telegram.approveChatJoinRequest).not.toHaveBeenCalled();
+  });
 });
