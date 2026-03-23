@@ -244,6 +244,21 @@ describe("Keyboards: menu keyboard", () => {
     expect(rows[0]?.[0]?.callback_data).toBe("menu:open:external-locked");
     expect(rows[0]?.[0]?.url).toBeUndefined();
   });
+
+  it("renders locked section with plain title text instead of lock-prefixed label", () => {
+    const items = [
+      {
+        id: "locked-section",
+        locked: true,
+        localizations: [{ languageCode: "ru", title: "Обучение" }]
+      }
+    ];
+
+    const kb = buildMenuKeyboard(items as any, lang, i18n, null, "USER", undefined);
+    const rows = getInlineKeyboardRows(kb as any);
+
+    expect(rows[0]?.[0]?.text).toBe("Обучение");
+  });
 });
 
 describe("Keyboards: content screen (leaf page)", () => {

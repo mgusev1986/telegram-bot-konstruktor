@@ -313,7 +313,7 @@ export const buildMenuKeyboard = (
   const buildRowForItem = (item: (typeof items)[number]) => {
     const localization = i18n.pickLocalized(item.localizations, languageCode);
     const title = localization?.title ?? item.id;
-    const label = item.locked ? `🔒 ${i18n.t(languageCode, "menu_item_locked")} · ${title}` : title;
+    const label = title;
     const externalUrl = localization?.externalUrl?.trim();
     if (isPartnerRegisterLink(item)) {
       if (externalPartnerUrl) return [Markup.button.url(label, externalPartnerUrl)];

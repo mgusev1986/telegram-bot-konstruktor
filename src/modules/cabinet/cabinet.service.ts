@@ -143,9 +143,6 @@ export class CabinetService {
     const blocks: string[] = [
       "",
       this.i18n.t(lang, "my_cabinet"),
-      "",
-      `🔗 ${this.i18n.t(lang, "cabinet_my_link")}`,
-      link,
       ""
     ];
     if (this.balance.isNowPaymentsEnabled()) {
@@ -153,6 +150,11 @@ export class CabinetService {
       blocks.push(`💰 ${this.i18n.t(lang, "cabinet_balance")}: ${bal} USDT`);
       blocks.push("");
     }
+    blocks.push(
+      `🔗 ${this.i18n.t(lang, "cabinet_my_link")}`,
+      link,
+      ""
+    );
     blocks.push(
       `📈 ${this.i18n.t(lang, "first_line_count")}: ${firstLine}`,
       `👥 ${this.i18n.t(lang, "structure_count")}: ${totalStructure}`,

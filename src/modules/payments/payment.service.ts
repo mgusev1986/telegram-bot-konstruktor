@@ -1,4 +1,4 @@
-import type { PaymentNetwork, PrismaClient, Product, User } from "@prisma/client";
+import type { PaymentNetwork, PrismaClient, Product, ProductLocalization, User } from "@prisma/client";
 
 import { randomBytes, randomUUID } from "node:crypto";
 
@@ -298,9 +298,12 @@ export class PaymentService {
     });
   }
 
-  public async getProduct(productId: string): Promise<Product | null> {
+  public async getProduct(productId: string): Promise<(Product & { localizations: ProductLocalization[] }) | null> {
     return this.prisma.product.findUnique({
-      where: { id: productId }
+      where: { id: productId },
+      include: {
+        localizations: true
+      }
     });
   }
 

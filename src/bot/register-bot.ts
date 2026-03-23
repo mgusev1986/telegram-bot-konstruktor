@@ -34,8 +34,6 @@ import {
   buildLanguageVersionPageActionsKeyboard,
   buildLanguageVersionPreviewConfirmKeyboard,
   buildPaymentReviewKeyboard,
-  buildPaywallKeyboard,
-  buildDepositScreenKeyboard,
   buildCancelKeyboard,
   buildStaleActionKeyboard,
   buildScheduledBroadcastHubKeyboard,
@@ -57,6 +55,7 @@ import {
   buildUserManagementDeleteConfirmKeyboard,
   buildUserManagementPromptKeyboard,
   isAdminRole,
+  NAV_BACK_DATA,
   NAV_ROOT_DATA,
   SCENE_CANCEL_DATA
 } from "./keyboards";
@@ -397,6 +396,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       stack: string[]; // "root" + page ids
     };
     awaitingUserLookup?: boolean;
+    checkoutReturnPageId?: string | null;
   };
   const getProductPayButtonText = (
     product: { localizations?: Array<{ languageCode: string; payButtonText: string }> } | null | undefined,
@@ -408,20 +408,52 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       ?? locs.find((l) => l.languageCode === "ru")?.payButtonText
       ?? locs[0]?.payButtonText;
   };
+  const getProductLocalization = (
+    product: {
+      localizations?: Array<{
+        languageCode: string;
+        title?: string | null;
+        description?: string | null;
+        payButtonText?: string | null;
+      }>;
+    } | null | undefined,
+    userLang: string
+  ) =>
+    product?.localizations?.find((l) => l.languageCode === userLang)
+    ?? product?.localizations?.find((l) => l.languageCode === "ru")
+    ?? product?.localizations?.[0]
+    ?? null;
   const getNavSession = (ctx: BotContext): NavSession => {
     const s = (ctx as unknown as { session?: NavSession }).session;
     return s ? { navCurrent: s.navCurrent, navPrev: s.navPrev } : {};
   };
+  const getExtendedSession = (ctx: BotContext): ExtendedNavSession =>
+    (((ctx as unknown as { session?: ExtendedNavSession }).session ?? {}) as ExtendedNavSession);
   const setNavCurrent = (ctx: BotContext, screenId: string) => {
-    const s = ((ctx as unknown as { session?: ExtendedNavSession }).session ?? {}) as ExtendedNavSession;
+    const s = getExtendedSession(ctx);
     (ctx as unknown as { session: ExtendedNavSession }).session = { ...s, navCurrent: screenId };
   };
   const setNavBeforeShow = (ctx: BotContext, screenId: string) => {
-    const s = ((ctx as unknown as { session?: ExtendedNavSession }).session ?? {}) as ExtendedNavSession;
+    const s = getExtendedSession(ctx);
     (ctx as unknown as { session: ExtendedNavSession }).session = {
       ...s,
       navPrev: s.navCurrent,
       navCurrent: screenId
+    };
+  };
+  const setCheckoutReturnPage = (ctx: BotContext, pageId: string | null) => {
+    const s = getExtendedSession(ctx);
+    (ctx as unknown as { session: ExtendedNavSession }).session = {
+      ...s,
+      checkoutReturnPageId: pageId
+    };
+  };
+  const getCheckoutReturnPage = (ctx: BotContext): string | null => getExtendedSession(ctx).checkoutReturnPageId ?? null;
+  const clearCheckoutReturnPage = (ctx: BotContext) => {
+    const s = getExtendedSession(ctx);
+    (ctx as unknown as { session: ExtendedNavSession }).session = {
+      ...s,
+      checkoutReturnPageId: null
     };
   };
   const setEditingContentLanguageCode = (ctx: BotContext, languageCode: string) => {
@@ -777,6 +809,144 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     );
   };
 
+  const buildLockedSectionKeyboard = (
+    languageCode: string,
+    productId: string | null,
+    opts: {
+      backTarget: string;
+      payButtonText?: string;
+      useBalanceFlow: boolean;
+    }
+  ) => {
+    const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
+    if (productId) {
+      const ctaLabel = opts.payButtonText?.trim() || services.i18n.t(languageCode, "pay_now");
+      rows.push([
+        Markup.button.callback(
+          ctaLabel,
+          opts.useBalanceFlow
+            ? makeCallbackData("pay", "checkout", productId)
+            : makeCallbackData("pay", "network", productId, "USDT_BEP20")
+        )
+      ]);
+    }
+    rows.push(buildNavigationRow(services.i18n, languageCode, {
+      back: makeCallbackData("menu", "back", opts.backTarget),
+      toMain: true
+    }));
+    return Markup.inlineKeyboard(rows);
+  };
+
+  const buildCheckoutScreenKeyboard = (
+    languageCode: string,
+    productId: string,
+    productCta: string,
+    payAddress: string,
+    returnPageId: string | null
+  ) => ({
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: `📋 ${services.i18n.t(languageCode, "copy_address")}`, copy_text: { text: payAddress } }],
+        [{ text: productCta, callback_data: makeCallbackData("pay", "balance", productId) }],
+        [
+          { text: services.i18n.t(languageCode, "back"), callback_data: returnPageId ? makeCallbackData("menu", "open", returnPageId) : NAV_BACK_DATA },
+          { text: services.i18n.t(languageCode, "to_main_menu"), callback_data: NAV_ROOT_DATA }
+        ]
+      ]
+    }
+  });
+
+  const showLockedSectionScreen = async (
+    ctx: BotContext,
+    content: Awaited<ReturnType<typeof services.menu.getMenuItemContent>>,
+    opts: { backTarget: string }
+  ) => {
+    const user = ctx.currentUser!;
+    await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
+    setNavBeforeShow(ctx, "paywall:locked:" + content.item.id);
+    setCheckoutReturnPage(ctx, content.item.id);
+
+    const titleText = content.localization.title ? renderPageContent(content.localization.title, user) : "";
+    const bodyText = content.localization.contentText ? renderPageContent(content.localization.contentText, user) : "";
+    const teaserText =
+      composeTitleBody(titleText, bodyText)
+      || (await services.menu.getPaywallMessage())
+      || services.i18n.t(user.selectedLanguage, "access_locked");
+    const hasMedia =
+      (content.localization.mediaType === "PHOTO"
+        || content.localization.mediaType === "VIDEO"
+        || content.localization.mediaType === "DOCUMENT")
+      && Boolean(content.localization.mediaFileId);
+    const product = content.item.product;
+    const productId = content.item.productId;
+    const useBalanceFlow = services.balance.isNowPaymentsEnabled();
+
+    await services.navigation.replaceScreen(
+      user,
+      ctx.telegram,
+      ctx.chat?.id ?? user.telegramUserId,
+      hasMedia
+        ? {
+            text: teaserText,
+            mediaType: content.localization.mediaType,
+            mediaFileId: content.localization.mediaFileId
+          }
+        : { text: teaserText },
+      buildLockedSectionKeyboard(user.selectedLanguage, productId, {
+        backTarget: opts.backTarget,
+        payButtonText: getProductPayButtonText(product as any, user.selectedLanguage),
+        useBalanceFlow
+      })
+    );
+  };
+
+  const showBalanceCheckoutScreen = async (ctx: BotContext, productId: string) => {
+    const user = ctx.currentUser!;
+    const product = await services.payments.getProduct(productId);
+    if (!product) {
+      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), { show_alert: true });
+      return;
+    }
+
+    const productLoc = getProductLocalization(product, user.selectedLanguage);
+    const amount = Number(product.price);
+    const currency = product.currency ?? "USDT";
+    const network = "USDT_BEP20" as PaymentNetwork;
+    const intent = await services.balance.createDepositIntent(user, amount, currency, network);
+    if (!intent) {
+      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), { show_alert: true });
+      return;
+    }
+
+    const balance = await services.balance.getBalance(user.id);
+    const returnPageId = getCheckoutReturnPage(ctx);
+    const title = productLoc?.title?.trim() ?? product.code;
+    const description = productLoc?.description?.trim() ?? "";
+    const payButtonText = getProductPayButtonText(product, user.selectedLanguage)?.trim() || services.i18n.t(user.selectedLanguage, "pay_from_balance");
+    const checkoutText = [
+      title,
+      ``,
+      `💰 ${services.i18n.t(user.selectedLanguage, "balance_label")}: ${balance.toFixed(2)} USDT`,
+      ``,
+      `💼 ${services.i18n.t(user.selectedLanguage, "topup_address_label")}:`,
+      intent.payAddress,
+      ``,
+      `🪙 ${services.i18n.t(user.selectedLanguage, "currency_label")}: ${intent.payCurrency}`,
+      `⛓️ ${services.i18n.t(user.selectedLanguage, "network_label")}: ${intent.network}`,
+      description ? "" : undefined,
+      description || undefined
+    ].filter((line): line is string => Boolean(line)).join("\n");
+
+    setNavBeforeShow(ctx, "pay:checkout:" + productId);
+    await services.navigation.replaceScreen(
+      user,
+      ctx.telegram,
+      ctx.chat?.id ?? user.telegramUserId,
+      { text: checkoutText },
+      buildCheckoutScreenKeyboard(user.selectedLanguage, productId, payButtonText, intent.payAddress, returnPageId)
+    );
+  };
+
   /** Render a single menu page by id with real saved content. Used for "Назад" and unified page open. Root -> sendRootWithWelcome. */
   const sendMenuPage = async (ctx: BotContext, pageId: string | null) => {
     const user = ctx.currentUser!;
@@ -792,29 +962,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const children = await services.menu.getMenuItemsForParent(user, content.item.id);
 
     if (content.locked) {
-      await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
-      setNavBeforeShow(ctx, "paywall:locked:" + content.item.id);
-      const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
-      const product = content.item.product;
-      const productId = content.item.productId;
-      const price = product ? Number(product.price) : 0;
-      const useBalanceFlow = services.balance.isNowPaymentsEnabled();
-      const balance = useBalanceFlow ? await services.balance.getBalance(user.id) : 0;
-      const balanceLine = useBalanceFlow ? `\n\n${services.i18n.t(user.selectedLanguage, "balance_label")}: ${balance} USDT` : "";
-      await services.navigation.replaceScreen(
-        user,
-        ctx.telegram,
-        ctx.chat?.id ?? user.telegramUserId,
-        { text: paywallText + balanceLine },
-        productId
-          ? buildPaywallKeyboard(user.selectedLanguage, productId, services.i18n, {
-              payButtonText: product ? getProductPayButtonText(product as any, user.selectedLanguage) : undefined,
-              balance,
-              price,
-              useBalanceFlow
-            })
-          : Markup.inlineKeyboard([buildNavigationRow(services.i18n, user.selectedLanguage, { back: true, toMain: true })])
-      );
+      await showLockedSectionScreen(ctx, content, { backTarget: content.item.parentId ?? "root" });
       return;
     }
 
@@ -2658,29 +2806,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
         const content = await services.menu.getMenuItemContent(user, linkItem.targetMenuItemId!);
         if (content.locked) {
-          await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
-          setNavBeforeShow(ctx, "paywall:locked:" + linkItem.id);
-          const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
-          const product = content.item.product;
-          const productId = content.item.productId;
-          const price = product ? Number(product.price) : 0;
-          const useBalanceFlow = services.balance.isNowPaymentsEnabled();
-          const balance = useBalanceFlow ? await services.balance.getBalance(user.id) : 0;
-          const balanceLine = useBalanceFlow ? `\n\n${services.i18n.t(user.selectedLanguage, "balance_label")}: ${balance} USDT` : "";
-          await services.navigation.replaceScreen(
-            user,
-            ctx.telegram,
-            ctx.chat?.id ?? user.telegramUserId,
-            { text: paywallText + balanceLine },
-            productId
-              ? buildPaywallKeyboard(user.selectedLanguage, productId, services.i18n, {
-                  payButtonText: product ? getProductPayButtonText(product as any, user.selectedLanguage) : undefined,
-                  balance,
-                  price,
-                  useBalanceFlow
-                })
-              : Markup.inlineKeyboard([buildNavigationRow(services.i18n, user.selectedLanguage, { back: true, toMain: true })])
-          );
+          await showLockedSectionScreen(ctx, content, { backTarget: linkItem.parentId ?? "root" });
           return;
         }
         await services.inactivityReminders.cancelPendingForUserExcept(user.id, content.item.id);
@@ -2776,29 +2902,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       const shouldSchedule = resolveEffectiveRole(ctx) === "USER";
 
       if (content.locked) {
-        await services.inactivityReminders.cancelPendingForUserExcept(user.id, null);
-        setNavBeforeShow(ctx, "paywall:locked:" + content.item.id);
-        const paywallText = (await services.menu.getPaywallMessage()) || services.i18n.t(user.selectedLanguage, "access_locked");
-        const product = content.item.product;
-        const productId = content.item.productId;
-        const price = product ? Number(product.price) : 0;
-        const useBalanceFlow = services.balance.isNowPaymentsEnabled();
-        const balance = useBalanceFlow ? await services.balance.getBalance(user.id) : 0;
-        const balanceLine = useBalanceFlow ? `\n\n${services.i18n.t(user.selectedLanguage, "balance_label")}: ${balance} USDT` : "";
-        await services.navigation.replaceScreen(
-          user,
-          ctx.telegram,
-          ctx.chat?.id ?? user.telegramUserId,
-          { text: paywallText + balanceLine },
-          productId
-            ? buildPaywallKeyboard(user.selectedLanguage, productId, services.i18n, {
-                payButtonText: product ? getProductPayButtonText(product as any, user.selectedLanguage) : undefined,
-                balance,
-                price,
-                useBalanceFlow
-              })
-            : Markup.inlineKeyboard([buildNavigationRow(services.i18n, user.selectedLanguage, { back: true, toMain: true })])
-        );
+        await showLockedSectionScreen(ctx, content, { backTarget: content.item.parentId ?? "root" });
         return;
       }
 
@@ -3139,54 +3243,34 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       return;
     }
 
+    if (scope === "pay" && action === "checkout" && value) {
+      await showBalanceCheckoutScreen(ctx, value);
+      return;
+    }
+
     if (scope === "pay" && action === "balance" && value) {
       const productId = value;
       const result = await services.balance.purchaseFromBalance(user, productId);
       if (!result.success) {
-        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), {
+        await ctx.answerCbQuery(
+          result.error === "Insufficient balance"
+            ? services.i18n.t(user.selectedLanguage, "insufficient_balance")
+            : services.i18n.t(user.selectedLanguage, "error_generic"),
+          {
           show_alert: true
-        });
+          }
+        );
         return;
       }
       await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "deposit_confirmed"));
-      await sendRootWithWelcome(ctx);
+      const returnPageId = getCheckoutReturnPage(ctx);
+      clearCheckoutReturnPage(ctx);
+      await sendMenuPage(ctx, returnPageId);
       return;
     }
 
     if (scope === "pay" && action === "deposit" && value) {
-      const productId = value;
-      const product = await services.payments.getFirstProduct();
-      const targetProduct = productId
-        ? await services.payments.getProduct(productId)
-        : product;
-      const amount = targetProduct ? Number(targetProduct.price) : 10;
-      const intent = await services.balance.createDepositIntent(
-        user,
-        amount,
-        targetProduct?.currency ?? "USDT",
-        "USDT_BEP20"
-      );
-      if (!intent) {
-        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), { show_alert: true });
-        return;
-      }
-      const hint = services.i18n.t(user.selectedLanguage, "deposit_address_hint");
-      const text = [
-        `💳 ${services.i18n.t(user.selectedLanguage, "top_up_balance")}`,
-        ``,
-        `Адрес: \`${intent.payAddress}\``,
-        `Сумма: ${intent.payAmount} ${intent.payCurrency}`,
-        `Сеть: ${intent.network}`,
-        ``,
-        `⚠️ ${hint}`,
-        ``,
-        `Order: ${intent.orderId}`
-      ].join("\n");
-      setNavBeforeShow(ctx, "pay:deposit:" + intent.depositId);
-      await ctx.reply(text, {
-        parse_mode: "Markdown",
-        reply_markup: buildDepositScreenKeyboard(user.selectedLanguage, services.i18n, intent.depositId).reply_markup
-      });
+      await showBalanceCheckoutScreen(ctx, value);
       return;
     }
 

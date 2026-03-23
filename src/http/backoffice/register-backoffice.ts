@@ -2201,7 +2201,7 @@ export async function registerBackofficeRoutes(
           <div class="section-title">Advanced</div>
           <div class="product-form-grid">
             <div class="field-wrap"><label class="small">Минуты для TEST mode</label><input name="durationMinutes" type="number" min="1" max="1440" value="${product.durationMinutes ?? ""}" placeholder="пусто = live" /></div>
-            <div class="field-wrap"><label class="small">Кошелёк USDT BEP20</label><input name="walletBep20" type="text" placeholder="0x..." value="${escapeHtml((product as any).walletBep20 ?? "")}" /></div>
+            <div class="field-wrap"><label class="small">Fallback-кошелёк USDT BEP20</label><input name="walletBep20" type="text" placeholder="0x..." value="${escapeHtml((product as any).walletBep20 ?? "")}" /><div class="small" style="margin-top:4px">Используется только для direct/manual payment flow. Для balance-flow реальный payout wallet берётся из настроек NOWPayments по API key.</div></div>
           </div>
           <div style="margin-top:12px">
             <label class="small">linked chats / channels</label>
@@ -2209,8 +2209,9 @@ export async function registerBackofficeRoutes(
             <div class="small" style="margin-top:4px">Для приватного чата можно хранить и ссылку для входа, и identifier для ban/unban в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда пользователь войдёт по invite-link, а бот сможет удалить его по expiry.</div>
           </div>
           <div style="margin-top:12px">
-            <label class="small">Описание (ru)</label>
+            <label class="small">Текст экрана оплаты / тарифы (ru)</label>
             <textarea name="descriptionRu" rows="2">${escapeHtml(loc?.description ?? "")}</textarea>
+            <div class="small" style="margin-top:4px">Этот текст показывается на checkout-экране под балансом, адресом пополнения, валютой и сетью. Сюда удобно писать тарифы, бонусы и что получит пользователь после оплаты.</div>
           </div>
           <button type="submit" style="margin-top:16px">Сохранить</button>
         </form>
@@ -2337,10 +2338,10 @@ export async function registerBackofficeRoutes(
              </form>
            </div>
            <div class="card" style="padding:14px; margin-bottom:14px">
-             <h4 style="margin-top:0">Текст при закрытом доступе</h4>
+             <h4 style="margin-top:0">Fallback-текст для закрытого раздела</h4>
              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/paywall-message">
                <textarea name="paywallMessage" rows="6" placeholder="💼 Ваш личный адрес для пополнения:&#10;0x00...&#10;&#10;🪙 Валюта: USDT&#10;⛓️ Сеть: BSC (BEP20)" style="width:100%; box-sizing:border-box">${escapeHtml(String((bot as any).paywallMessage ?? ""))}</textarea>
-               <div class="small" style="margin-top:6px">Если пусто, используется стандартный текст paywall. Balance-line подставится автоматически, если включён NOWPayments balance flow.</div>
+               <div class="small" style="margin-top:6px">Обычный сценарий теперь такой: пользователь заходит в сам раздел и видит его контент-витрину + CTA продукта. Это поле используется только как запасной текст, если у раздела нет собственного teaser-контента. Balance-line подставится автоматически, если включён NOWPayments balance flow.</div>
                <button type="submit" style="margin-top:10px">Сохранить текст</button>
              </form>
            </div>
@@ -2370,13 +2371,13 @@ export async function registerBackofficeRoutes(
                               <td><b>${escapeHtml(title)}</b></td>
                               <td>${renderStatusBadge("FREE", "active")}</td>
                               <td>
-                                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" class="form-row" style="margin:0; max-width:420px">
-                                  <div class="field" style="flex:1; min-width:0">
+                                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" style="margin:0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:center; max-width:460px">
+                                  <div class="field" style="min-width:0">
                                     <select name="productId" required class="field" style="width:100%">
                                       ${productSelectOptions}
                                     </select>
                                   </div>
-                                  <div class="btn"><button type="submit">Привязать продукт</button></div>
+                                  <div class="btn" style="min-width:150px"><button type="submit">Привязать продукт</button></div>
                                 </form>
                               </td>
                               <td>—</td>
@@ -2411,20 +2412,21 @@ export async function registerBackofficeRoutes(
                <details style="margin-top:12px">
                  <summary class="small" style="cursor:pointer">Advanced settings</summary>
                  <div style="margin-top:12px">
-                   <label class="small">Кошелёк USDT BEP20</label>
-                   <input name="walletBep20" type="text" placeholder="0x..." />
-                   <div class="small" style="margin-top:4px">Обязателен для ручного/direct payment режима. Для balance-flow нужен как fallback.</div>
-                 </div>
-                 <div style="margin-top:12px">
-                   <label class="small">linked chats / channels</label>
+                 <label class="small">Кошелёк USDT BEP20</label>
+                  <input name="walletBep20" type="text" placeholder="0x..." />
+                  <div class="small" style="margin-top:4px">Используется только как fallback для direct/manual payment. Для balance-flow фактический payout wallet берётся из NOWPayments dashboard по API key.</div>
+                </div>
+                <div style="margin-top:12px">
+                  <label class="small">linked chats / channels</label>
                    <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890&#10;https://t.me/channel"></textarea>
                    <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
-                 </div>
-                 <div style="margin-top:12px">
-                   <label class="small">Описание (ru)</label>
-                   <textarea name="descriptionRu" rows="2"></textarea>
-                 </div>
-               </details>
+                </div>
+                <div style="margin-top:12px">
+                  <label class="small">Текст экрана оплаты / тарифы (ru)</label>
+                  <textarea name="descriptionRu" rows="2"></textarea>
+                  <div class="small" style="margin-top:4px">Показывается пользователю на едином checkout-экране: под балансом, адресом пополнения, валютой и сетью.</div>
+                </div>
+              </details>
                <button type="submit" style="margin-top:12px">Создать live-product</button>
              </form>
            </div>
@@ -2449,16 +2451,18 @@ export async function registerBackofficeRoutes(
                  <div class="field-wrap"><label class="small">Срок в минутах</label><input name="durationMinutes" type="number" required min="1" max="1440" value="5" /></div>
                </div>
                <div style="margin-top:12px">
-                 <label class="small">Кошелёк USDT BEP20</label>
+                 <label class="small">Fallback-кошелёк USDT BEP20</label>
                  <input name="walletBep20" type="text" placeholder="0x..." />
+                 <div class="small" style="margin-top:4px">Нужен только как запасной кошелёк для direct/manual payment flow. Для balance-flow тестовый checkout берёт реальный адрес пополнения из NOWPayments.</div>
                </div>
                <div style="margin-top:12px">
                  <label class="small">linked chats / channels</label>
                  <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890"></textarea>
                </div>
                <div style="margin-top:12px">
-                 <label class="small">Описание (ru)</label>
+                 <label class="small">Текст экрана оплаты / тарифы (ru)</label>
                  <textarea name="descriptionRu" rows="2" placeholder="Тестовый продукт для прогона access lifecycle"></textarea>
+                 <div class="small" style="margin-top:4px">Показывается на едином checkout-экране тестового продукта. Удобно писать краткий оффер, тариф и что именно откроется после оплаты.</div>
                </div>
                <button type="submit" style="margin-top:12px">Создать тестовый продукт</button>
              </form>
@@ -2644,7 +2648,6 @@ export async function registerBackofficeRoutes(
     });
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
-    if (!walletBep20) return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">Укажите кошелёк USDT BEP20</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
     if (linkedChatsValidationError) {
       return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">${escapeHtml(linkedChatsValidationError)}</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
     }
