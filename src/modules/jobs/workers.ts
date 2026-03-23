@@ -13,6 +13,7 @@ import type { BotRuntimeManager } from "../../bot/bot-runtime-manager";
 import { AiTranslationService } from "../ai/ai-translation.service";
 import { LanguageGenerationService } from "../ai/language-generation.service";
 import { createAiTranslationProvider } from "../ai/providers/provider-factory";
+import { OwnerPayoutService } from "../payments/owner-payout.service";
 
 interface WorkerDependencies {
   prisma: PrismaClient;
@@ -36,9 +37,25 @@ export const startWorkers = ({
       });
 
       const payload = scheduledJob.payloadJson as Record<string, unknown>;
+      const jobType = scheduledJob.jobType as string;
+
+      if (jobType === "PROCESS_OWNER_DAILY_PAYOUTS") {
+        const payoutService = new OwnerPayoutService(prisma);
+        const botId = payload.botInstanceId ? String(payload.botInstanceId) : null;
+        const results = botId
+          ? [await payoutService.processBotPayout(botId)]
+          : await payoutService.processAllBots();
+        logger.info(
+          { scheduledJobId, results: results.map((r) => ({ bot: r.botInstanceId, status: r.status })) },
+          "PROCESS_OWNER_DAILY_PAYOUTS completed"
+        );
+        await scheduler.markCompleted(scheduledJobId);
+        return;
+      }
+
       const botInstanceId = (payload.botInstanceId ? String(payload.botInstanceId) : runtimeManager.getFirstRuntime()?.botInstanceId) ?? null;
       if (!botInstanceId) {
-        throw new Error(`Missing botInstanceId for scheduled job ${scheduledJobId} (${scheduledJob.jobType})`);
+        throw new Error(`Missing botInstanceId for scheduled job ${scheduledJobId} (${jobType})`);
       }
 
       const runtime = await runtimeManager.startBotInstance(botInstanceId, { launch: false });

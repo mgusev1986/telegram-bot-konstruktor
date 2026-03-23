@@ -1,9 +1,11 @@
+import crypto from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/config/env", () => ({
   env: {
     HTTP_PORT: 3000,
-    LOG_LEVEL: "info"
+    LOG_LEVEL: "info",
+    NOWPAYMENTS_IPN_SECRET: "test-ipn-secret"
   }
 }));
 
@@ -17,6 +19,12 @@ vi.mock("../src/common/logger", () => ({
 }));
 
 import { addPaymentWebhookRoute, createHealthServer } from "../src/http/server";
+
+function signPayload(payload: Record<string, unknown>, secret: string): string {
+  const sortedEntries = Object.entries(payload).sort(([a], [b]) => a.localeCompare(b));
+  const sorted = Object.fromEntries(sortedEntries);
+  return crypto.createHmac("sha512", secret).update(JSON.stringify(sorted)).digest("hex");
+}
 
 describe("NOWPayments webhook route", () => {
   afterEach(async () => {
@@ -52,6 +60,12 @@ describe("NOWPayments webhook route", () => {
       duplicate: false,
       status: "finished"
     });
+    const prisma = {
+      paymentWebhookLog: {
+        create: vi.fn().mockResolvedValue({ id: "log-1" }),
+        update: vi.fn().mockResolvedValue({})
+      }
+    };
     const server = createHealthServer();
     addPaymentWebhookRoute(
       server,
@@ -61,32 +75,29 @@ describe("NOWPayments webhook route", () => {
             processNowPaymentsIpn
           }
         }) as any,
-      {} as any
+      prisma as any
     );
+
+    const payload = {
+      payment_id: "payment-1",
+      order_id: "order-1",
+      payment_status: "finished"
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
 
     const response = await server.inject({
       method: "POST",
       url: "/webhooks/payments/nowpayments",
       headers: {
         "content-type": "application/json",
-        "x-nowpayments-sig": "signature"
+        "x-nowpayments-sig": signature
       },
-      payload: {
-        payment_id: "payment-1",
-        order_id: "order-1",
-        payment_status: "finished"
-      }
+      payload: rawBody
     });
 
     expect(response.statusCode).toBe(200);
-    expect(processNowPaymentsIpn).toHaveBeenCalledWith(
-      JSON.stringify({
-        payment_id: "payment-1",
-        order_id: "order-1",
-        payment_status: "finished"
-      }),
-      "signature"
-    );
+    expect(processNowPaymentsIpn).toHaveBeenCalledWith(rawBody, signature);
     expect(response.json()).toEqual({
       ok: true,
       credited: true,

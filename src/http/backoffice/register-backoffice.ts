@@ -1987,7 +1987,7 @@ export async function registerBackofficeRoutes(
     const liveProducts = products.filter((product) => !isTestProduct(product));
     const testProducts = products.filter((product) => isTestProduct(product));
 
-    const [activeAccessCount, expiringSoonCount, recentAccessRights, recentPayments, recentDeposits, recentPurchases, recentNotifications] =
+    const [activeAccessCount, expiringSoonCount, recentAccessRights, recentPayments, recentDeposits, recentPurchases, recentNotifications, nowPaymentsConfig, settlementAgg, payoutBatches, settlementEntries, webhookLogs] =
       await Promise.all([
         productIds.length
           ? prisma.userAccessRight.count({
@@ -2059,6 +2059,31 @@ export async function registerBackofficeRoutes(
           include: {
             user: { select: { id: true, username: true, fullName: true, telegramUserId: true } }
           },
+          orderBy: { createdAt: "desc" },
+          take: 20
+        }),
+        prisma.botPaymentProviderConfig.findUnique({
+          where: { botInstanceId: bot.id }
+        }),
+        prisma.ownerSettlementEntry
+          .aggregate({
+            where: { botInstanceId: bot.id, status: "PENDING" },
+            _count: true,
+            _sum: { netAmountBeforePayoutFee: true }
+          }),
+        prisma.ownerPayoutBatch.findMany({
+          where: { botInstanceId: bot.id },
+          orderBy: { createdAt: "desc" },
+          take: 10
+        }),
+        prisma.ownerSettlementEntry.findMany({
+          where: { botInstanceId: bot.id },
+          include: { depositTransaction: { select: { orderId: true } } },
+          orderBy: { createdAt: "desc" },
+          take: 20
+        }),
+        prisma.paymentWebhookLog.findMany({
+          where: { provider: "nowpayments" },
           orderBy: { createdAt: "desc" },
           take: 20
         })
@@ -2287,6 +2312,7 @@ export async function registerBackofficeRoutes(
            <a href="#live-products"><button class="secondary" type="button">Live products</button></a>
            <a href="#test-lab"><button class="secondary" type="button">Test Lab</button></a>
            <a href="#payments-balance"><button class="secondary" type="button">Платежи / баланс</button></a>
+           <a href="#nowpayments"><button class="secondary" type="button">NOWPayments / Payouts</button></a>
            <a href="#access-audit"><button class="secondary" type="button">Аудит доступа</button></a>
            <a href="/backoffice/bots/${escapeHtml(bot.id)}/payments"><button class="secondary" type="button">Manual payments</button></a>
          </div>
@@ -2509,6 +2535,41 @@ export async function registerBackofficeRoutes(
            }
          </div>
 
+         <div id="nowpayments" class="card" style="margin-top:16px">
+           <h3 style="margin-top:0">NOWPayments / Owner Payouts</h3>
+           <div class="small" style="margin-bottom:12px">Конфигурация для пополнения баланса и ежедневных выплат owner'у бота.</div>
+           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/nowpayments-config">
+             <div class="product-form-grid" style="margin-bottom:16px">
+               <div class="field-wrap"><label class="small">Включить NOWPayments</label><input type="checkbox" name="enabled" value="1" ${nowPaymentsConfig?.enabled ? "checked" : ""} /></div>
+               <div class="field-wrap"><label class="small">Owner payout включён</label><input type="checkbox" name="ownerPayoutEnabled" value="1" ${nowPaymentsConfig?.ownerPayoutEnabled ? "checked" : ""} /></div>
+               <div class="field-wrap"><label class="small">Ежедневные выплаты</label><input type="checkbox" name="dailyPayoutEnabled" value="1" ${nowPaymentsConfig?.dailyPayoutEnabled !== false ? "checked" : ""} /></div>
+               <div class="field-wrap"><label class="small">Кошелёк owner (USDT TRC20/BEP20)</label><input name="ownerWalletAddress" type="text" placeholder="T..." value="${escapeHtml(nowPaymentsConfig?.ownerWalletAddress ?? "")}" style="width:100%" /></div>
+               <div class="field-wrap"><label class="small">Settlement currency</label><input name="settlementCurrency" type="text" value="${escapeHtml(nowPaymentsConfig?.settlementCurrency ?? "usdttrc20")}" /></div>
+               <div class="field-wrap"><label class="small">Минимум для выплаты (USDT)</label><input name="dailyPayoutMinAmount" type="text" value="${escapeHtml(String(nowPaymentsConfig?.dailyPayoutMinAmount ?? 0))}" /></div>
+             </div>
+             <button type="submit">Сохранить конфиг</button>
+           </form>
+           <div class="subgrid" style="margin-top:16px">
+             <div class="card" style="padding:14px">
+               <div class="section-title">Settlement summary</div>
+               <div class="overview-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
+                 <div><div class="small">Pending entries</div><div class="value">${settlementAgg._count}</div></div>
+                 <div><div class="small">Pending net (USDT)</div><div class="value">${Number(settlementAgg._sum.netAmountBeforePayoutFee ?? 0).toFixed(2)}</div></div>
+               </div>
+             </div>
+             <div class="card" style="padding:14px">
+               <div class="section-title">Payout batches</div>
+               ${payoutBatches.length ? payoutBatches.slice(0, 5).map((b) => `<div class="small" style="margin-top:6px">${formatIsoDate(b.runDate)} · ${b.status} · ${Number(b.netTotal).toFixed(2)} USDT</div>`).join("") : `<div class="small">Нет батчей</div>`}
+             </div>
+           </div>
+           <div class="section-title" style="margin-top:16px">Settlement entries (последние)</div>
+           ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Order</th><th>Gross</th><th>Net</th><th>Статус</th></tr></thead><tbody>${settlementEntries.map((e) => `<tr><td>${formatIsoDate(e.createdAt)}</td><td><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${renderPaymentStatus(e.status)}</td></tr>`).join("")}</tbody></table>` : `<div class="small">Нет записей</div>`}
+           <details style="margin-top:16px">
+             <summary class="small" style="cursor:pointer">Webhook logs (NOWPayments)</summary>
+             ${webhookLogs.length ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Event</th><th>Sig</th><th>Result</th></tr></thead><tbody>${webhookLogs.map((w) => `<tr><td>${formatIsoDate(w.createdAt)}</td><td><code>${escapeHtml(String((w.bodyJson as any)?.payment_id ?? "-"))}</code></td><td>${w.signatureValid ? "✓" : "✗"}</td><td>${escapeHtml(w.processingResult ?? "-")}</td></tr>`).join("")}</tbody></table>` : `<div class="small" style="margin-top:8px">Нет логов</div>`}
+           </details>
+         </div>
+
          <div id="access-audit" class="card" style="margin-top:16px">
            <h3 style="margin-top:0">Аудит / события доступа</h3>
            <div class="small">Здесь видно, кому выдали доступ, когда он истекает, как отработали reminders и что произошло с expiry/removal pipeline.</div>
@@ -2573,6 +2634,56 @@ export async function registerBackofficeRoutes(
     }
 
     return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/paid`);
+  });
+
+  server.post("/backoffice/api/bots/:botId/paid/nowpayments-config", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const body = req.body as any;
+    const enabled = body?.enabled === "1" || body?.enabled === true;
+    const ownerPayoutEnabled = body?.ownerPayoutEnabled === "1" || body?.ownerPayoutEnabled === true;
+    const dailyPayoutEnabled = body?.dailyPayoutEnabled !== "0" && body?.dailyPayoutEnabled !== false;
+    const ownerWalletAddress = String(body?.ownerWalletAddress ?? "").trim() || null;
+    const settlementCurrency = String(body?.settlementCurrency ?? "usdttrc20").toLowerCase().trim();
+    const dailyPayoutMinAmount = Math.max(0, Number(body?.dailyPayoutMinAmount) || 0);
+
+    await prisma.botPaymentProviderConfig.upsert({
+      where: { botInstanceId: bot.id },
+      create: {
+        botInstanceId: bot.id,
+        provider: "NOWPAYMENTS",
+        enabled,
+        ownerPayoutEnabled,
+        dailyPayoutEnabled,
+        ownerWalletAddress,
+        settlementCurrency,
+        dailyPayoutMinAmount
+      },
+      update: {
+        enabled,
+        ownerPayoutEnabled,
+        dailyPayoutEnabled,
+        ownerWalletAddress,
+        settlementCurrency,
+        dailyPayoutMinAmount
+      }
+    });
+
+    return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/paid#nowpayments`);
   });
 
   server.post("/backoffice/api/bots/:botId/paid/paywall-message", async (req, reply) => {

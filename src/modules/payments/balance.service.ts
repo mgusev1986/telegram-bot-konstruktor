@@ -108,7 +108,8 @@ export class BalanceService {
 
   /**
    * Create deposit intent — returns per-user payment details from NOWPayments.
-   * Variant A: user pays exactly priceAmount; we absorb commission.
+   * Flow: 1) create local DepositTransaction, 2) call NOWPayments, 3) update with provider data.
+   * orderId format: bot:{botId}:user:{userId}:topup:{uuid} for webhook correlation.
    */
   async createDepositIntent(
     user: User,
@@ -119,10 +120,24 @@ export class BalanceService {
     if (!this.nowPayments) return null;
 
     const { id: accountId } = await this.getOrCreateAccount(user.id);
-    const orderId = `dep_${user.id}_${Date.now()}_${randomUUID().slice(0, 8)}`;
+    const botId = user.botInstanceId ?? "global";
+    const orderId = `bot:${botId}:user:${user.id}:topup:${randomUUID().slice(0, 12)}`;
+
+    const deposit = await this.prisma.depositTransaction.create({
+      data: {
+        userId: user.id,
+        accountId,
+        botInstanceId: user.botInstanceId ?? undefined,
+        provider: PROVIDER,
+        orderId,
+        amount,
+        currency,
+        status: "PENDING",
+        requestedAmountUsd: currency.toUpperCase() === "USD" || currency.toUpperCase() === "USDT" ? amount : undefined
+      }
+    });
 
     const payCurrency = NowPaymentsAdapter.payCurrencyFromNetwork(network);
-
     const ipnUrl = env.NOWPAYMENTS_IPN_CALLBACK_URL?.trim() || undefined;
     if (!ipnUrl) {
       logger.warn(
@@ -142,16 +157,12 @@ export class BalanceService {
         fixedRate: true
       });
 
-      const deposit = await this.prisma.depositTransaction.create({
+      await this.prisma.depositTransaction.update({
+        where: { id: deposit.id },
         data: {
-          userId: user.id,
-          accountId,
-          provider: PROVIDER,
           providerPaymentId: String(resp.payment_id),
-          orderId,
-          amount,
-          currency,
-          status: "PENDING",
+          providerStatus: resp.payment_status ?? undefined,
+          providerPayAddress: resp.pay_address ?? undefined,
           rawPayload: resp as unknown as object
         }
       });
@@ -172,12 +183,13 @@ export class BalanceService {
           userId: user.id,
           provider: PROVIDER,
           orderId,
+          depositId: deposit.id,
           amount,
           currency,
           network,
           error: error instanceof Error ? error.message : String(error)
         },
-        "NOWPayments createDepositIntent failed"
+        "NOWPayments createDepositIntent failed; deposit remains PENDING"
       );
       return null;
     }
@@ -185,7 +197,7 @@ export class BalanceService {
 
   /**
    * Process IPN from NOWPayments — idempotent, credits balance on finished.
-   * Variant A: credit price_amount (what user was supposed to pay), not outcome_amount.
+   * v1: credit actualOutcomeAmount when available, else price_amount.
    */
   async processNowPaymentsIpn(
     rawBody: string,
@@ -368,7 +380,11 @@ export class BalanceService {
         return;
       }
 
-      const creditAmount = readNowPaymentsAmount(payload.price_amount, Number(lockedDeposit.amount));
+      const actualOutcome = readNowPaymentsAmount(payload.outcome_amount, 0);
+      const creditAmount =
+        actualOutcome > 0
+          ? actualOutcome
+          : readNowPaymentsAmount(payload.price_amount, Number(lockedDeposit.amount));
 
       const account = await tx.userBalanceAccount.update({
         where: { id: lockedDeposit.accountId },
@@ -395,9 +411,46 @@ export class BalanceService {
           providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
           creditedAt: processedAt,
           ledgerEntryId: entry.id,
-          rawPayload: payloadObject
+          rawPayload: payloadObject,
+          creditedBalanceAmount: creditAmount,
+          actualOutcomeAmount: actualOutcome > 0 ? creditAmount : undefined,
+          confirmedAt: processedAt,
+          webhookLastProcessedAt: processedAt
         }
       });
+
+      if (lockedDeposit.botInstanceId) {
+        const config = await tx.botPaymentProviderConfig.findUnique({
+          where: { botInstanceId: lockedDeposit.botInstanceId }
+        });
+        const platformFeePercent = config ? Number(config.platformFeePercent) : 0;
+        const platformFeeFixedUsd = config ? Number(config.platformFeeFixedUsd) : 0;
+        const platformFeeAmount = Math.max(
+          0,
+          (creditAmount * platformFeePercent) / 100 + platformFeeFixedUsd
+        );
+        const payAmount = readNowPaymentsAmount(payload.pay_amount, 0);
+        const processorFeeAmount =
+          payAmount > 0 && actualOutcome > 0 && payAmount >= actualOutcome
+            ? payAmount - actualOutcome
+            : 0;
+        const netAmountBeforePayoutFee = Math.max(
+          0,
+          creditAmount - processorFeeAmount - platformFeeAmount
+        );
+        await tx.ownerSettlementEntry.create({
+          data: {
+            botInstanceId: lockedDeposit.botInstanceId,
+            depositTransactionId: lockedDeposit.id,
+            currency: String(payload.outcome_currency ?? payload.pay_currency ?? "USDT").toUpperCase(),
+            grossAmount: creditAmount,
+            processorFeeAmount,
+            platformFeeAmount,
+            netAmountBeforePayoutFee,
+            status: "PENDING"
+          }
+        });
+      }
 
       await tx.providerEventLog.update({
         where: { id: eventLog.id },
@@ -434,7 +487,11 @@ export class BalanceService {
       return { ok: true, status: paymentStatus };
     }
 
-    const creditedAmount = readNowPaymentsAmount(payload.price_amount, Number(deposit.amount));
+    const actualOutcomeForLog = readNowPaymentsAmount(payload.outcome_amount, 0);
+    const creditedAmount =
+      actualOutcomeForLog > 0
+        ? actualOutcomeForLog
+        : readNowPaymentsAmount(payload.price_amount, Number(deposit.amount));
 
     logger.info(
       {

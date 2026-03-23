@@ -323,7 +323,7 @@ describe("BalanceService NOWPayments flow", () => {
 
     expect(result).toEqual({ status: "confirmed", credited: true });
     expect(state.deposit.status).toBe("CONFIRMED");
-    expect(state.account.balance).toBe(10);
+    expect(state.account.balance).toBe(9.8);
     expect(state.ledgerEntries).toHaveLength(1);
   });
 
@@ -336,7 +336,8 @@ describe("BalanceService NOWPayments flow", () => {
     const result = await service.createDepositIntent(state.user as any, 10, "USDT", "USDT_BEP20");
 
     expect(result).toBeNull();
-    expect(prisma.depositTransaction.create).not.toHaveBeenCalled();
+    expect(prisma.depositTransaction.create).toHaveBeenCalled();
+    expect(prisma.depositTransaction.update).not.toHaveBeenCalled();
   });
 
   it("extends active temporary access on balance renewal and reschedules expiry from the previous end date", async () => {

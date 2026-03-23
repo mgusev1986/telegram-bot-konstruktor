@@ -55,6 +55,25 @@ const envSchema = z.object({
   NOWPAYMENTS_BASE_URL: z.string().url().optional().default("https://api.nowpayments.io/v1"),
   /** Full URL for IPN callbacks, e.g. https://yourdomain.com/webhooks/payments/nowpayments. Empty = disabled. */
   NOWPAYMENTS_IPN_CALLBACK_URL: z.union([z.string().url(), z.literal("")]).optional().default(""),
+  // NOWPayments v1 (payout, config defaults)
+  /** Use Custody API for payouts (different auth/endpoints). Optional, default false. */
+  NOWPAYMENTS_USE_CUSTODY: z.coerce.boolean().optional().default(false),
+  /** Default pay currency for top-up, e.g. usdtbsc, usdttrc20. */
+  NOWPAYMENTS_DEFAULT_PAY_CURRENCY: z.string().optional().default("usdtbsc"),
+  /** Default settlement currency for payouts, e.g. usdttrc20. */
+  NOWPAYMENTS_DEFAULT_SETTLEMENT_CURRENCY: z.string().optional().default("usdttrc20"),
+  /** Payout fee policy: "deduct_from_payout" | "add_to_payout" | etc. For v1 used as hint. */
+  NOWPAYMENTS_PAYOUT_FEE_POLICY: z.string().optional().default("deduct_from_payout"),
+  /** Cron expression for daily payout job, e.g. "0 1 * * *" (1:00 daily). Empty = use payoutHourLocal. */
+  NOWPAYMENTS_DAILY_PAYOUT_CRON: z.string().optional().default(""),
+  /** Timezone for daily payout run, e.g. Europe/Madrid. */
+  NOWPAYMENTS_DAILY_PAYOUT_TIMEZONE: z.string().optional().default("Europe/Madrid"),
+  /** Account email for Mass Payouts API (Bearer auth). Required for owner payouts. */
+  NOWPAYMENTS_EMAIL: z.union([z.string().email(), z.literal("")]).optional().default(""),
+  /** Account password for Mass Payouts API. Required for owner payouts. */
+  NOWPAYMENTS_PASSWORD: z.string().optional().default(""),
+  /** Secret for triggering owner payout via HTTP (cron). If set, POST /webhooks/payments/owner-payout-trigger?secret=xxx triggers payout. */
+  NOWPAYMENTS_PAYOUT_TRIGGER_SECRET: z.string().optional().default(""),
   HTTP_PORT: z.coerce.number().int().positive().default(3000),
   // PORT используется Railway, Render и др. — приоритет над HTTP_PORT
   PORT: z.coerce.number().int().positive().optional(),

@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { env } from "../config/env";
 import { logger } from "../common/logger";
 import type { AppServices } from "../app/services";
+import { NowPaymentsAdapter } from "../modules/payments/nowpayments.adapter";
 
 /**
  * Creates HTTP server with /health route. Does NOT call listen() — all routes
@@ -70,24 +71,79 @@ export function addPaymentWebhookRoute(
     Body: Record<string, unknown>;
     RawBody?: string;
   }>("/webhooks/payments/nowpayments", async (request, reply) => {
+    const rawBody = (request as any).rawBody ?? JSON.stringify(request.body ?? {});
+    const signatureHeader = request.headers["x-nowpayments-sig"];
+    const sig = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+    const ipnSecret = env.NOWPAYMENTS_IPN_SECRET?.trim();
+    const signatureValid = Boolean(ipnSecret && (await NowPaymentsAdapter.verifyIpnSignature(rawBody, sig, ipnSecret)));
+
+    let bodyJson: object;
+    try {
+      bodyJson = typeof request.body === "object" && request.body ? (request.body as object) : (JSON.parse(rawBody) as object);
+    } catch {
+      bodyJson = { _parseError: "invalid_json" };
+    }
+    const externalEventId = typeof (bodyJson as any)?.payment_id !== "undefined"
+      ? String((bodyJson as any).payment_id)
+      : null;
+
+    const safeHeaders: Record<string, string> = {};
+    const h = request.headers;
+    if (h["content-type"]) safeHeaders["content-type"] = String(h["content-type"]);
+    safeHeaders["x-nowpayments-sig"] = sig ? "[REDACTED]" : "[MISSING]";
+
+    const webhookLog = await prisma.paymentWebhookLog.create({
+      data: {
+        provider: "nowpayments",
+        externalEventId,
+        headersJson: safeHeaders,
+        bodyJson,
+        signatureValid,
+        processed: false
+      }
+    });
+
     const services = getServices();
     if (!services) {
+      await prisma.paymentWebhookLog.update({
+        where: { id: webhookLog.id },
+        data: { processed: true, processingResult: "services_not_ready" }
+      });
       logger.warn({ route: "/webhooks/payments/nowpayments" }, "NOWPayments webhook rejected: services not ready");
       reply.code(503);
       return { ok: false, error: "Services not ready" };
     }
-    const rawBody = (request as any).rawBody ?? JSON.stringify(request.body ?? {});
-    const signatureHeader = request.headers["x-nowpayments-sig"];
-    const sig = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
+
+    if (!signatureValid) {
+      await prisma.paymentWebhookLog.update({
+        where: { id: webhookLog.id },
+        data: { processed: true, processingResult: "invalid_signature" }
+      });
+      logger.warn({ route: "/webhooks/payments/nowpayments" }, "NOWPayments webhook rejected: invalid signature");
+      reply.code(400);
+      return { ok: false, error: "invalid_signature" };
+    }
+
     logger.info(
-      {
-        route: "/webhooks/payments/nowpayments",
-        contentLength: request.headers["content-length"] ?? null,
-        hasSignature: Boolean(sig)
-      },
+      { route: "/webhooks/payments/nowpayments", contentLength: request.headers["content-length"] ?? null },
       "NOWPayments webhook request received"
     );
+
     const result = await services.balance.processNowPaymentsIpn(rawBody, sig);
+
+    const processingResult = !result.ok
+      ? (result.error ?? "error")
+      : result.credited
+        ? "credited"
+        : result.duplicate
+          ? "duplicate"
+          : `status:${result.status ?? "unknown"}`;
+
+    await prisma.paymentWebhookLog.update({
+      where: { id: webhookLog.id },
+      data: { processed: true, processingResult }
+    });
+
     if (!result.ok) {
       logger.warn(
         { route: "/webhooks/payments/nowpayments", error: result.error ?? "invalid_request" },
@@ -97,15 +153,50 @@ export function addPaymentWebhookRoute(
       return { ok: false, error: result.error ?? "invalid_request" };
     }
     logger.info(
-      {
-        route: "/webhooks/payments/nowpayments",
-        credited: Boolean(result.credited),
-        duplicate: Boolean(result.duplicate),
-        status: result.status ?? null
-      },
+      { route: "/webhooks/payments/nowpayments", credited: Boolean(result.credited), duplicate: Boolean(result.duplicate) },
       "NOWPayments webhook request processed"
     );
     return { ok: true, credited: result.credited, duplicate: result.duplicate };
+  });
+
+  server.get("/webhooks/payments/owner-payout-trigger", async () => {
+    const configured = Boolean(env.NOWPAYMENTS_PAYOUT_TRIGGER_SECRET?.trim());
+    return {
+      ok: true,
+      route: "/webhooks/payments/owner-payout-trigger",
+      message: "Use POST with ?secret=xxx to trigger payout",
+      configured
+    };
+  });
+
+  server.post<{
+    Querystring: { secret?: string };
+  }>("/webhooks/payments/owner-payout-trigger", async (request, reply) => {
+    const triggerSecret = env.NOWPAYMENTS_PAYOUT_TRIGGER_SECRET?.trim();
+    if (!triggerSecret) {
+      reply.code(400);
+      return { ok: false, error: "Payout trigger not configured (set NOWPAYMENTS_PAYOUT_TRIGGER_SECRET)" };
+    }
+    const provided = request.query?.secret ?? "";
+    if (provided !== triggerSecret) {
+      reply.code(401);
+      return { ok: false, error: "Invalid secret" };
+    }
+    const services = getServices();
+    if (!services) {
+      reply.code(503);
+      return { ok: false, error: "Services not ready" };
+    }
+    const runAt = new Date();
+    const idempotencyKey = `owner-payout-manual-${runAt.getTime()}`;
+    await services.scheduler.schedule(
+      "PROCESS_OWNER_DAILY_PAYOUTS",
+      {},
+      runAt,
+      idempotencyKey
+    );
+    logger.info({ route: "/webhooks/payments/owner-payout-trigger" }, "Owner payout job scheduled");
+    return { ok: true, message: "Payout job scheduled" };
   });
 
   server.post<{
