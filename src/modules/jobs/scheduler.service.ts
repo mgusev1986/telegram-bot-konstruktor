@@ -9,17 +9,39 @@ export interface QueuePayload {
   scheduledJobId: string;
 }
 
+type QueueJobLike = {
+  getState(): Promise<string>;
+  promote(): Promise<void>;
+};
+
+type QueueLike = {
+  add(
+    name: string,
+    data: QueuePayload,
+    opts: {
+      jobId: string;
+      delay: number;
+      removeOnComplete: number;
+      removeOnFail: number;
+    }
+  ): Promise<unknown>;
+  remove(jobId: string): Promise<unknown>;
+  getJob(jobId: string): Promise<QueueJobLike | undefined>;
+};
+
 export class SchedulerService {
-  private readonly queue: Queue<QueuePayload>;
+  private readonly queue: QueueLike;
 
   public constructor(
     private readonly prisma: PrismaClient,
     connection: ConnectionOptions,
-    private readonly botInstanceId?: string
+    private readonly botInstanceId?: string,
+    queueOverride?: QueueLike
   ) {
-    this.queue = new Queue<QueuePayload>(QUEUE_NAMES.scheduled, {
-      connection
-    });
+    this.queue = queueOverride
+      ?? new Queue<QueuePayload>(QUEUE_NAMES.scheduled, {
+        connection
+      });
   }
 
   public async schedule(
@@ -147,6 +169,56 @@ export class SchedulerService {
     for (const job of pendingJobs) {
       await this.enqueue(job.id, job.runAt);
     }
+  }
+
+  public async recoverDueJobs(limit = 100): Promise<number> {
+    const dueJobs = await this.prisma.scheduledJob.findMany({
+      where: {
+        status: "PENDING",
+        runAt: {
+          lte: new Date()
+        }
+      },
+      orderBy: {
+        runAt: "asc"
+      },
+      take: limit,
+      select: {
+        id: true,
+        jobType: true,
+        runAt: true
+      }
+    });
+
+    let recovered = 0;
+
+    for (const job of dueJobs) {
+      const queueJob = await this.queue.getJob(job.id);
+
+      if (!queueJob) {
+        await this.enqueue(job.id, new Date());
+        recovered += 1;
+        continue;
+      }
+
+      const state = await queueJob.getState();
+      if (state === "delayed") {
+        await queueJob.promote();
+        recovered += 1;
+      }
+    }
+
+    if (recovered > 0) {
+      logger.info(
+        {
+          recovered,
+          limit
+        },
+        "Recovered due scheduled jobs"
+      );
+    }
+
+    return recovered;
   }
 
   public async markRunning(scheduledJobId: string): Promise<void> {

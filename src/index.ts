@@ -374,6 +374,7 @@ const bootstrap = async (): Promise<void> => {
 
   await servicesRef.payments.ensureDemoProducts();
   await servicesRef.scheduler.recoverPendingJobs();
+  await servicesRef.scheduler.recoverDueJobs();
 
   const worker = startWorkers({
     prisma,
@@ -381,6 +382,12 @@ const bootstrap = async (): Promise<void> => {
     scheduler: servicesRef.scheduler,
     runtimeManager
   });
+
+  const dueJobsRecoveryTimer = setInterval(() => {
+    void servicesRef?.scheduler.recoverDueJobs().catch((error) => {
+      logger.warn({ err: error }, "Failed to recover due scheduled jobs");
+    });
+  }, 5000);
 
   logger.info(
     {
@@ -395,6 +402,7 @@ const bootstrap = async (): Promise<void> => {
 
   const shutdown = async (signal: string) => {
     logger.info({ signal }, "Shutting down");
+    clearInterval(dueJobsRecoveryTimer);
     await runtimeManager.stopAll(signal);
     await worker.close();
     await httpServer.close();
