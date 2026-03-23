@@ -29,6 +29,13 @@ type QueueLike = {
   getJob(jobId: string): Promise<QueueJobLike | undefined>;
 };
 
+const RETRYABLE_TERMINAL_DUE_JOB_TYPES = new Set([
+  "SEND_SUBSCRIPTION_REMINDER",
+  "PROCESS_ACCESS_EXPIRY",
+  "PROCESS_PAYMENT_EXPIRY",
+  "SEND_INACTIVITY_REMINDER"
+]);
+
 export class SchedulerService {
   private readonly queue: QueueLike;
 
@@ -204,6 +211,24 @@ export class SchedulerService {
       const state = await queueJob.getState();
       if (state === "delayed") {
         await queueJob.promote();
+        recovered += 1;
+        continue;
+      }
+
+      if (
+        (state === "completed" || state === "failed")
+        && RETRYABLE_TERMINAL_DUE_JOB_TYPES.has(job.jobType)
+      ) {
+        logger.warn(
+          {
+            scheduledJobId: job.id,
+            jobType: job.jobType,
+            queueState: state
+          },
+          "Recovering due job with terminal BullMQ state but pending DB status"
+        );
+        await this.queue.remove(job.id).catch(() => undefined);
+        await this.enqueue(job.id, new Date());
         recovered += 1;
       }
     }

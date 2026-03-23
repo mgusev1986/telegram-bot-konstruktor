@@ -68,4 +68,43 @@ describe("SchedulerService.recoverDueJobs", () => {
     );
     expect(recovered).toBe(1);
   });
+
+  it("re-enqueues retryable due jobs when BullMQ already marked them completed", async () => {
+    const queueJob = {
+      getState: vi.fn().mockResolvedValue("completed"),
+      promote: vi.fn().mockResolvedValue(undefined)
+    };
+
+    const queue = {
+      add: vi.fn().mockResolvedValue(undefined),
+      remove: vi.fn().mockResolvedValue(undefined),
+      getJob: vi.fn().mockResolvedValue(queueJob)
+    };
+
+    const prisma = {
+      scheduledJob: {
+        findMany: vi.fn().mockResolvedValue([
+          {
+            id: "job-3",
+            jobType: "PROCESS_ACCESS_EXPIRY",
+            runAt: new Date(Date.now() - 1000)
+          }
+        ])
+      }
+    };
+
+    const service = new SchedulerService(prisma as any, {} as any, undefined, queue as any);
+    const recovered = await service.recoverDueJobs();
+
+    expect(queue.remove).toHaveBeenCalledWith("job-3");
+    expect(queue.add).toHaveBeenCalledWith(
+      QUEUE_NAMES.scheduled,
+      { scheduledJobId: "job-3" },
+      expect.objectContaining({
+        jobId: "job-3",
+        delay: 0
+      })
+    );
+    expect(recovered).toBe(1);
+  });
 });

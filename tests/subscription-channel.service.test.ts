@@ -96,7 +96,7 @@ describe("SubscriptionChannelService", () => {
     expect(notifications.sendText).toHaveBeenCalledWith(
       expect.objectContaining({ id: "user-1" }),
       "SYSTEM_ALERT",
-      expect.stringContaining("Ваш доступ истёк"),
+      expect.stringContaining("Ваш доступ к платному разделу системы истёк"),
       expect.objectContaining({ accessRightId: "access-1", event: "access_expired" })
     );
   });

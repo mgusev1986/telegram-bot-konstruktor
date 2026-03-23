@@ -183,7 +183,7 @@ export class SubscriptionChannelService {
         ? "Your access has expired. Please renew your subscription to regain access to the chat and materials."
         : right.user.selectedLanguage === "de"
           ? "Ihr Zugang ist abgelaufen. Bitte verlängern Sie Ihr Abonnement."
-          : "Ваш доступ истёк. Продлите подписку, чтобы снова получить доступ к чату и материалам.";
+          : "Ваш доступ к платному разделу системы истёк.\n\nПродлите подписку, чтобы снова получить доступ к платному контенту и материалам. (Чат / Канал)";
 
     if (this.notifications) {
       try {
