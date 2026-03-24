@@ -38,6 +38,8 @@ export const dictionaries = {
     exchange_fee_warning: "Если отправляете с биржи или внешнего кошелька, комиссия за вывод оплачивается отдельно.",
     invoice_exact_amount_prefix: "На адрес должна поступить точная сумма инвойса",
     invoice_cta_copy_and_transfer: "Нажмите кнопку ниже, чтобы скопировать адрес кошелька и выполните перевод средств.",
+    invoice_parallel_deposits_hint:
+      "Если вы раньше открывали другой инвойс — он тоже действителен: можно оплатить любой из них; каждый перевод зачисляется отдельно по своему адресу. Кнопка «Запросить проверку оплаты» проверяет только этот экран.",
     reference_label: "Референс",
     copy_address: "Скопировать адрес",
     copy_wallet_address: "Скопировать адрес кошелька",
@@ -728,6 +730,8 @@ export const dictionaries = {
     exchange_fee_warning: "If sending from an exchange or external wallet, withdrawal fees are paid separately.",
     invoice_exact_amount_prefix: "The exact invoice amount must arrive at the address",
     invoice_cta_copy_and_transfer: "Tap the button below to copy the wallet address and complete the transfer.",
+    invoice_parallel_deposits_hint:
+      "If you opened another invoice earlier, it still counts: you can pay any of them; each transfer is credited separately to its own address. \"Request payment review\" only checks this invoice screen.",
     reference_label: "Reference",
     copy_address: "Copy address",
     copy_wallet_address: "Copy wallet address",

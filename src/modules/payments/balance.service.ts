@@ -187,6 +187,9 @@ export class BalanceService {
    * Create deposit intent — returns per-user payment details from NOWPayments.
    * Flow: 1) create local DepositTransaction, 2) call NOWPayments, 3) update with provider data.
    * orderId format: bot:{botId}:user:{userId}:topup:{uuid} for webhook correlation.
+   *
+   * Previous PENDING deposits for the same user are never cancelled or superseded: each has its own
+   * orderId, address and NOWPayments payment. IPN/polling credits whichever payment completes; no conflict.
    */
   async createDepositIntent(
     user: User,
@@ -307,6 +310,21 @@ export class BalanceService {
           } as object
         }
       });
+
+      const otherPendingCount = await this.prisma.depositTransaction.count({
+        where: {
+          userId: user.id,
+          provider: PROVIDER,
+          status: "PENDING",
+          id: { not: deposit.id }
+        }
+      });
+      if (otherPendingCount > 0) {
+        logger.info(
+          { userId: user.id, depositId: deposit.id, orderId, otherPendingCount, botId },
+          "createDepositIntent: user has other PENDING deposits; they remain valid (parallel invoices)"
+        );
+      }
 
       return {
         depositId: deposit.id,
@@ -549,41 +567,87 @@ export class BalanceService {
         return;
       }
 
-      if (mappedStatus === "PENDING") {
-        logger.info(
-          {
-            provider: PROVIDER,
-            source,
-            depositId: lockedDeposit.id,
-            orderId,
-            providerPaymentId: paymentId,
-            providerStatus: paymentStatus,
-            providerPayAddress: lockedDeposit.providerPayAddress,
-            requestedAmountUsd: lockedDeposit.requestedAmountUsd,
-            actualOutcomeAmount: payload.outcome_amount ?? null,
-            creditedBalanceAmount: lockedDeposit.creditedBalanceAmount,
-            botInstanceId: lockedDeposit.botInstanceId,
-            productId: readRequestedProductId(lockedDeposit.rawPayload) ?? null
-          },
-          "NOWPayments status still pending; credit skipped"
-        );
-        await tx.depositTransaction.update({
-          where: { id: lockedDeposit.id },
-          data: {
-            status: "PENDING",
-            providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
-            rawPayload: mergeDepositRawPayload(lockedDeposit.rawPayload, payloadRecord)
-          }
-        });
+      const normalizedPayStatus = normalizeNowPaymentsStatus(paymentStatus);
+      const allowCreditablePartialStatus =
+        normalizedPayStatus === "partially_paid" || normalizedPayStatus === "partially_paid_overpaid";
 
-        await tx.providerEventLog.update({
-          where: { id: eventLog.id },
-          data: {
-            status: "received",
-            errorMessage: `Status ${paymentStatus}`
+      if (mappedStatus === "PENDING") {
+        if (allowCreditablePartialStatus) {
+          const actualOutcomeProbe = readNowPaymentsAmount(payload.outcome_amount, 0);
+          const payAmountProbe = readNowPaymentsAmount(payload.pay_amount, 0);
+          const receivedProbe = actualOutcomeProbe > 0 ? actualOutcomeProbe : payAmountProbe;
+          if (receivedProbe <= 0) {
+            logger.info(
+              {
+                provider: PROVIDER,
+                source,
+                depositId: lockedDeposit.id,
+                orderId,
+                providerPaymentId: paymentId,
+                providerStatus: paymentStatus,
+                providerPayAddress: lockedDeposit.providerPayAddress,
+                requestedAmountUsd: lockedDeposit.requestedAmountUsd,
+                actualOutcomeAmount: payload.outcome_amount ?? null,
+                creditedBalanceAmount: lockedDeposit.creditedBalanceAmount,
+                botInstanceId: lockedDeposit.botInstanceId,
+                productId: readRequestedProductId(lockedDeposit.rawPayload) ?? null
+              },
+              "NOWPayments partially_paid without outcome/pay amount yet; credit skipped"
+            );
+            await tx.depositTransaction.update({
+              where: { id: lockedDeposit.id },
+              data: {
+                status: "PENDING",
+                providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
+                rawPayload: mergeDepositRawPayload(lockedDeposit.rawPayload, payloadRecord)
+              }
+            });
+
+            await tx.providerEventLog.update({
+              where: { id: eventLog.id },
+              data: {
+                status: "received",
+                errorMessage: `Status ${paymentStatus}`
+              }
+            });
+            return;
           }
-        });
-        return;
+        } else {
+          logger.info(
+            {
+              provider: PROVIDER,
+              source,
+              depositId: lockedDeposit.id,
+              orderId,
+              providerPaymentId: paymentId,
+              providerStatus: paymentStatus,
+              providerPayAddress: lockedDeposit.providerPayAddress,
+              requestedAmountUsd: lockedDeposit.requestedAmountUsd,
+              actualOutcomeAmount: payload.outcome_amount ?? null,
+              creditedBalanceAmount: lockedDeposit.creditedBalanceAmount,
+              botInstanceId: lockedDeposit.botInstanceId,
+              productId: readRequestedProductId(lockedDeposit.rawPayload) ?? null
+            },
+            "NOWPayments status still pending; credit skipped"
+          );
+          await tx.depositTransaction.update({
+            where: { id: lockedDeposit.id },
+            data: {
+              status: "PENDING",
+              providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
+              rawPayload: mergeDepositRawPayload(lockedDeposit.rawPayload, payloadRecord)
+            }
+          });
+
+          await tx.providerEventLog.update({
+            where: { id: eventLog.id },
+            data: {
+              status: "received",
+              errorMessage: `Status ${paymentStatus}`
+            }
+          });
+          return;
+        }
       }
 
       const actualOutcome = readNowPaymentsAmount(payload.outcome_amount, 0);
@@ -1107,7 +1171,7 @@ export class BalanceService {
   async pollPendingDeposits(opts?: { limit?: number }): Promise<{ polled: number; credited: number }> {
     if (!this.nowPayments) return { polled: 0, credited: 0 };
 
-    const limit = opts?.limit ?? 20;
+    const limit = opts?.limit ?? 40;
     const pending = await this.prisma.depositTransaction.findMany({
       where: {
         status: "PENDING",

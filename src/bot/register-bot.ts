@@ -926,6 +926,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       "",
       `${escapeHtml(services.i18n.t(languageCode, "invoice_exact_amount_prefix"))}: <b>${escapeHtml(opts.amount)}</b>`,
       "",
+      `📎 ${escapeHtml(services.i18n.t(languageCode, "invoice_parallel_deposits_hint"))}`,
+      "",
       `<b>👇 ${escapeHtml(services.i18n.t(languageCode, "invoice_cta_copy_and_transfer"))}</b>`
     );
 

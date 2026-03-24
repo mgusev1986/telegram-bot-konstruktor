@@ -331,6 +331,49 @@ describe("BalanceService NOWPayments flow", () => {
     expect(state.account.balance).toBe(10);
   });
 
+  it("credits on partially_paid when outcome meets tolerance (provider stays non-finished)", async () => {
+    const { service, state } = createBalanceHarness();
+    Object.assign(state.deposit, { requestedAmountUsd: 10 });
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "partially_paid",
+      price_amount: 10,
+      pay_amount: 9.8,
+      outcome_amount: 9.8
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const result = await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, credited: true, status: "partially_paid" }));
+    expect(state.deposit.status).toBe("CONFIRMED");
+    expect(state.account.balance).toBe(10);
+  });
+
+  it("does not credit partially_paid when no outcome/pay amount in payload yet", async () => {
+    const { service, state } = createBalanceHarness();
+    Object.assign(state.deposit, { requestedAmountUsd: 10 });
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "partially_paid",
+      price_amount: 10
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const result = await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(result).toEqual({ ok: true, status: "partially_paid" });
+    expect("credited" in result && (result as { credited?: boolean }).credited).toBeFalsy();
+    expect(state.deposit.status).toBe("PENDING");
+    expect(state.account.balance).toBe(0);
+  });
+
   it("credits actual 9.79 when below 98% of 10 USDT", async () => {
     const { service, state } = createBalanceHarness();
     Object.assign(state.deposit, { requestedAmountUsd: 10 });

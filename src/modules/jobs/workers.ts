@@ -61,7 +61,7 @@ export const startWorkers = ({
           await scheduler.markCompleted(scheduledJobId);
           return;
         }
-        const { polled, credited } = await balance.pollPendingDeposits({ limit: 20 });
+        const { polled, credited } = await balance.pollPendingDeposits({ limit: 40 });
         const nextRunAt = new Date(Date.now() + 5 * 60 * 1000);
         const nextKey = `poll-pending-deposits-${Math.floor(nextRunAt.getTime() / (5 * 60 * 1000))}`;
         await scheduler.schedule("POLL_PENDING_DEPOSITS", {}, nextRunAt, nextKey);
