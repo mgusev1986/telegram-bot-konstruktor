@@ -123,6 +123,8 @@ function renderPage(title: string, body: string): string {
       a { color: #60a5fa; }
       .wrap { width: 100%; max-width: none; margin: 0; padding: 14px 16px; box-sizing: border-box; }
       .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); overflow-x: auto; }
+      .top-nav { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
+      .top-nav a { text-decoration: none; }
       .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
       .row > * { flex: 1 1 auto; }
       label { display: block; margin-bottom: 6px; font-size: 13px; color: #cbd5e1; }
@@ -212,7 +214,13 @@ function renderPage(title: string, body: string): string {
   </head>
   <body>
     <div class="wrap">
-      <div class="card">${body}</div>
+      <div class="card">
+        <div class="top-nav">
+          <button class="secondary" type="button" onclick="history.back()">← Назад</button>
+          <a href="/backoffice"><button class="secondary" type="button">🏠 На главную backoffice</button></a>
+        </div>
+        ${body}
+      </div>
     </div>
     <script>
       (function () {
