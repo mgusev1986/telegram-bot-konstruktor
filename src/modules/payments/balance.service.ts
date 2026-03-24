@@ -20,6 +20,10 @@ import { logger } from "../../common/logger";
 import { NowPaymentsAdapter } from "./nowpayments.adapter";
 import { isTemporaryAccessProduct } from "../subscription-channel/subscription-access-policy";
 import { grantOrExtendAccess } from "./access-grant";
+import {
+  attributeOwnerUserIdFromDepositor,
+  loadActiveOwnerUserIdsForBot
+} from "./owner-settlement-attribution";
 
 const PROVIDER = "nowpayments";
 const NOWPAYMENTS_FINAL_SUCCESS_STATUSES = new Set(["finished"]);
@@ -269,8 +273,7 @@ export class BalanceService {
           lastError = err;
           const errMsg = err instanceof Error ? err.message : String(err);
           const isRetryable =
-            /(^|\s)500(\s|$)/.test(errMsg) ||
-            errMsg.toUpperCase().includes("INTERNAL_ERROR");
+            /\b500\b/.test(errMsg) || errMsg.toUpperCase().includes("INTERNAL_ERROR");
           const willRetry = isRetryable && attempt < maxAttempts;
 
           logger.warn(
@@ -727,6 +730,12 @@ export class BalanceService {
           0,
           creditAmount - processorFeeAmount - platformFeeAmount
         );
+        const depositor = await tx.user.findUnique({
+          where: { id: lockedDeposit.userId },
+          select: { invitedByUserId: true, mentorUserId: true }
+        });
+        const ownerIds = await loadActiveOwnerUserIdsForBot(tx, lockedDeposit.botInstanceId);
+        const attributedOwnerUserId = attributeOwnerUserIdFromDepositor(ownerIds, depositor);
         await tx.ownerSettlementEntry.create({
           data: {
             botInstanceId: lockedDeposit.botInstanceId,
@@ -736,6 +745,7 @@ export class BalanceService {
             processorFeeAmount,
             platformFeeAmount,
             netAmountBeforePayoutFee,
+            attributedOwnerUserId,
             status: "PENDING"
           }
         });
@@ -1300,6 +1310,12 @@ export class BalanceService {
             (creditAmount * platformFeePercent) / 100 + platformFeeFixedUsd
           );
           const netAmountBeforePayoutFee = Math.max(0, creditAmount - platformFeeAmount);
+          const depositor = await tx.user.findUnique({
+            where: { id: locked.userId },
+            select: { invitedByUserId: true, mentorUserId: true }
+          });
+          const ownerIds = await loadActiveOwnerUserIdsForBot(tx, locked.botInstanceId);
+          const attributedOwnerUserId = attributeOwnerUserIdFromDepositor(ownerIds, depositor);
           await tx.ownerSettlementEntry.create({
             data: {
               botInstanceId: locked.botInstanceId,
@@ -1309,6 +1325,7 @@ export class BalanceService {
               processorFeeAmount: 0,
               platformFeeAmount,
               netAmountBeforePayoutFee,
+              attributedOwnerUserId,
               status: "PENDING"
             }
           });

@@ -339,6 +339,57 @@ function formatIsoDate(value: Date | string | null | undefined): string {
   return date.toISOString().slice(0, 16).replace("T", " ");
 }
 
+/** YYYY-MM-DD in a given IANA time zone (for «сегодня» / «вчера» в таймзоне выплат). */
+function calendarDateInTimeZone(d: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timeZone || "UTC",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(d);
+}
+
+function parseYmd(value: unknown): string | null {
+  const s = String(value ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const t = Date.parse(`${s}T12:00:00.000Z`);
+  if (Number.isNaN(t)) return null;
+  return s;
+}
+
+/** Subtract N calendar days from a Y-M-D string (Gregorian, UTC date math). */
+function subtractCalendarDaysFromYmd(ymd: string, days: number): string {
+  const parts = ymd.split("-").map((v) => Number(v));
+  const y = parts[0] ?? 1970;
+  const m = parts[1] ?? 1;
+  const d = parts[2] ?? 1;
+  const base = new Date(Date.UTC(y, m - 1, d));
+  base.setUTCDate(base.getUTCDate() - days);
+  return base.toISOString().slice(0, 10);
+}
+
+function ymdInInclusiveRange(ymd: string, fromInc: string, toInc: string): boolean {
+  return ymd >= fromInc && ymd <= toInc;
+}
+
+function normalizeOwnerReportRange(fromRaw: string | null, toRaw: string | null, payoutTz: string): { from: string; to: string } {
+  const defaultTo = calendarDateInTimeZone(new Date(), payoutTz);
+  const defaultFrom = subtractCalendarDaysFromYmd(defaultTo, 30);
+  let from = fromRaw ?? defaultFrom;
+  let to = toRaw ?? defaultTo;
+  if (from > to) {
+    const t = from;
+    from = to;
+    to = t;
+  }
+  return { from, to };
+}
+
+function csvEscapeCell(value: string): string {
+  if (/[;"\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
 function formatProductDuration(product: { billingType?: string | null; durationDays?: number | null; durationMinutes?: number | null }): string {
   if (Number(product.durationMinutes ?? 0) > 0) {
     return `${product.durationMinutes} мин`;
@@ -2022,6 +2073,7 @@ export async function registerBackofficeRoutes(
 
     const simulateOk = (req.query as any)?.simulateOk === "1";
     const simulateError = String((req.query as any)?.simulateError ?? "").trim();
+    const paidPageError = String((req.query as any)?.error ?? "").trim();
 
     const template = await prisma.presentationTemplate.findFirst({
       where: { botInstanceId: bot.id, isActive: true },
@@ -2109,8 +2161,27 @@ export async function registerBackofficeRoutes(
     const liveProducts = products.filter((product) => !isTestProduct(product));
     const testProducts = products.filter((product) => isTestProduct(product));
 
-    const [activeAccessCount, expiringSoonCount, recentAccessRights, recentPayments, recentDeposits, recentPurchases, recentNotifications, nowPaymentsConfig, settlementAgg, payoutBatches, settlementEntries, webhookLogs] =
-      await Promise.all([
+    const [
+      activeAccessCount,
+      expiringSoonCount,
+      recentAccessRights,
+      recentPayments,
+      recentDeposits,
+      recentPurchases,
+      recentNotifications,
+      nowPaymentsConfig,
+      settlementAgg,
+      payoutBatches,
+      settlementEntries,
+      webhookLogs,
+      botOwnerAssignments,
+      botOwnerPayoutWallets,
+      pendingSettlementsForOwners,
+      settlementPaidByAttributedOwner,
+      ownerAccrualsForEarned,
+      paidSettlementEntriesForPeriod,
+      ownerPayoutRecipientLog
+    ] = await Promise.all([
         productIds.length
           ? prisma.userAccessRight.count({
               where: {
@@ -2200,7 +2271,14 @@ export async function registerBackofficeRoutes(
         }),
         prisma.ownerSettlementEntry.findMany({
           where: { botInstanceId: bot.id },
-          include: { depositTransaction: { select: { orderId: true } } },
+          include: {
+            depositTransaction: {
+              select: {
+                orderId: true,
+                user: { select: { invitedByUserId: true, mentorUserId: true } }
+              }
+            }
+          },
           orderBy: { createdAt: "desc" },
           take: 20
         }),
@@ -2218,8 +2296,239 @@ export async function registerBackofficeRoutes(
               return match ? match[1] === bot.id : false;
             })
           )
-          .then((filtered) => filtered.slice(0, 20))
+          .then((filtered) => filtered.slice(0, 20)),
+        prisma.botRoleAssignment.findMany({
+          where: { botInstanceId: bot.id, role: "OWNER", status: "ACTIVE" },
+          include: {
+            user: { select: { id: true, fullName: true, username: true, telegramUserId: true } }
+          },
+          orderBy: { telegramUsernameNormalized: "asc" }
+        }),
+        prisma.botOwnerPayoutWallet.findMany({ where: { botInstanceId: bot.id } }),
+        prisma.ownerSettlementEntry.findMany({
+          where: { botInstanceId: bot.id, status: "PENDING" },
+          include: {
+            depositTransaction: {
+              include: {
+                user: { select: { invitedByUserId: true, mentorUserId: true } }
+              }
+            }
+          }
+        }),
+        prisma.ownerSettlementEntry.groupBy({
+          by: ["attributedOwnerUserId"],
+          where: {
+            botInstanceId: bot.id,
+            status: { in: ["BATCHED", "PAID"] },
+            batchId: { not: null },
+            batch: { status: { not: "FAILED" } }
+          },
+          _sum: { netAmountBeforePayoutFee: true }
+        }),
+        prisma.ownerSettlementEntry.findMany({
+          where: {
+            botInstanceId: bot.id,
+            createdAt: { gte: new Date(Date.now() - 450 * 86_400_000) }
+          },
+          select: {
+            attributedOwnerUserId: true,
+            netAmountBeforePayoutFee: true,
+            createdAt: true
+          }
+        }),
+        prisma.ownerSettlementEntry.findMany({
+          where: {
+            botInstanceId: bot.id,
+            status: { in: ["BATCHED", "PAID"] },
+            batchId: { not: null },
+            batch: {
+              status: { not: "FAILED" },
+              createdAt: { gte: new Date(Date.now() - 450 * 86_400_000) }
+            }
+          },
+          select: {
+            attributedOwnerUserId: true,
+            netAmountBeforePayoutFee: true,
+            batch: { select: { executedAt: true, runDate: true } }
+          }
+        }),
+        prisma.ownerPayoutBatchRecipient.findMany({
+          where: { batch: { botInstanceId: bot.id } },
+          orderBy: { createdAt: "desc" },
+          take: 50,
+          include: {
+            batch: { select: { executedAt: true, runDate: true, status: true } },
+            ownerUser: { select: { id: true, fullName: true, username: true, telegramUserId: true } }
+          }
+        })
       ]);
+
+    const ownerUserIdSet = new Set(
+      botOwnerAssignments.map((a) => a.userId).filter((id): id is string => Boolean(id))
+    );
+    const ownerWalletByUserId = new Map(botOwnerPayoutWallets.map((w) => [w.ownerUserId, w.walletAddress]));
+    type OwnerRowUser = { id: string; fullName: string; username: string | null; telegramUserId: bigint };
+    const ownerUserById = new Map<string, OwnerRowUser>();
+    for (const a of botOwnerAssignments) {
+      if (a.user) ownerUserById.set(a.user.id, a.user);
+    }
+
+    const attributeSettlementToOwnerUserId = (
+      u: { invitedByUserId: string | null; mentorUserId: string | null } | null | undefined
+    ): string | null => {
+      if (!u) return null;
+      if (u.invitedByUserId && ownerUserIdSet.has(u.invitedByUserId)) return u.invitedByUserId;
+      if (u.mentorUserId && ownerUserIdSet.has(u.mentorUserId)) return u.mentorUserId;
+      return null;
+    };
+
+    const pendingNetByOwner = new Map<string, number>();
+    let pendingNetUnallocated = 0;
+    for (const e of pendingSettlementsForOwners) {
+      const net = Number(e.netAmountBeforePayoutFee);
+      const oid =
+        e.attributedOwnerUserId && ownerUserIdSet.has(e.attributedOwnerUserId)
+          ? e.attributedOwnerUserId
+          : attributeSettlementToOwnerUserId(e.depositTransaction?.user ?? null);
+      if (oid) pendingNetByOwner.set(oid, (pendingNetByOwner.get(oid) ?? 0) + net);
+      else pendingNetUnallocated += net;
+    }
+
+    const paidNetByOwner = new Map<string | null, number>();
+    for (const row of settlementPaidByAttributedOwner) {
+      paidNetByOwner.set(row.attributedOwnerUserId, Number(row._sum.netAmountBeforePayoutFee ?? 0));
+    }
+
+    const payoutTz = nowPaymentsConfig?.payoutTimeZone?.trim() || "UTC";
+    const orFromQ = parseYmd((req.query as Record<string, unknown>).orFrom);
+    const orToQ = parseYmd((req.query as Record<string, unknown>).orTo);
+    const { from: orFromYmd, to: orToYmd } = normalizeOwnerReportRange(orFromQ, orToQ, payoutTz);
+
+    const paidInPeriodByOwner = new Map<string | null, number>();
+    for (const e of paidSettlementEntriesForPeriod) {
+      const when = e.batch?.executedAt ?? e.batch?.runDate;
+      if (!when) continue;
+      const ymd = calendarDateInTimeZone(when, payoutTz);
+      if (!ymdInInclusiveRange(ymd, orFromYmd, orToYmd)) continue;
+      const k = e.attributedOwnerUserId;
+      paidInPeriodByOwner.set(k, (paidInPeriodByOwner.get(k) ?? 0) + Number(e.netAmountBeforePayoutFee));
+    }
+
+    const earnedInPeriodByOwner = new Map<string | null, number>();
+    for (const row of ownerAccrualsForEarned) {
+      const dk = calendarDateInTimeZone(row.createdAt, payoutTz);
+      if (!ymdInInclusiveRange(dk, orFromYmd, orToYmd)) continue;
+      const key = row.attributedOwnerUserId;
+      earnedInPeriodByOwner.set(key, (earnedInPeriodByOwner.get(key) ?? 0) + Number(row.netAmountBeforePayoutFee));
+    }
+
+    const generalOwnerWalletCode =
+      nowPaymentsConfig?.ownerWalletAddress?.trim() != null && nowPaymentsConfig.ownerWalletAddress.trim() !== ""
+        ? `<code>${escapeHtml(nowPaymentsConfig.ownerWalletAddress.trim())}</code>`
+        : `<span class="small">не задан</span>`;
+
+    const formatOwnerReportingLabel = (userId: string | null) => {
+      if (userId == null) return `<span class="small">Общий пул</span>`;
+      const u = ownerUserById.get(userId);
+      if (!u) return `<code>${escapeHtml(userId)}</code>`;
+      const name = escapeHtml(u.fullName?.trim() || "—");
+      const login = u.username ? `@${escapeHtml(u.username)}` : `<span class="small">нет @</span>`;
+      return `${name} · ${login}`;
+    };
+
+    const ownerReportingRows: string[] = [];
+    for (const a of botOwnerAssignments) {
+      if (!a.userId || !a.user) continue;
+      const uid = a.userId;
+      const w = ownerWalletByUserId.get(uid) ?? "";
+      ownerReportingRows.push(`<tr>
+        <td>${formatOwnerReportingLabel(uid)}</td>
+        <td class="mono-wrap">${w ? `<code>${escapeHtml(w)}</code>` : `<span class="small">→ общий</span>`}</td>
+        <td>${(pendingNetByOwner.get(uid) ?? 0).toFixed(2)}</td>
+        <td>${(paidNetByOwner.get(uid) ?? 0).toFixed(2)}</td>
+        <td>${(paidInPeriodByOwner.get(uid) ?? 0).toFixed(2)}</td>
+        <td>${(earnedInPeriodByOwner.get(uid) ?? 0).toFixed(2)}</td>
+      </tr>`);
+    }
+    const poolPending = pendingNetUnallocated;
+    const poolPaid = paidNetByOwner.get(null) ?? 0;
+    if (
+      poolPending > 0 ||
+      poolPaid > 0 ||
+      (paidInPeriodByOwner.get(null) ?? 0) > 0 ||
+      (earnedInPeriodByOwner.get(null) ?? 0) > 0
+    ) {
+      ownerReportingRows.push(`<tr>
+        <td><span class="small">Общий пул</span></td>
+        <td class="mono-wrap">${generalOwnerWalletCode}</td>
+        <td>${poolPending.toFixed(2)}</td>
+        <td>${poolPaid.toFixed(2)}</td>
+        <td>${(paidInPeriodByOwner.get(null) ?? 0).toFixed(2)}</td>
+        <td>${(earnedInPeriodByOwner.get(null) ?? 0).toFixed(2)}</td>
+      </tr>`);
+    }
+
+    const ownerPayoutHistoryFiltered = ownerPayoutRecipientLog.filter((r) => {
+      const when = r.batch.executedAt ?? r.batch.runDate;
+      const ymd = calendarDateInTimeZone(when, payoutTz);
+      return ymdInInclusiveRange(ymd, orFromYmd, orToYmd);
+    });
+
+    const ownerPayoutHistoryRows = ownerPayoutHistoryFiltered.length
+      ? ownerPayoutHistoryFiltered
+          .map((r) => {
+            const batchWhen = r.batch.executedAt ?? r.batch.runDate;
+            const ownerCell = r.ownerUser
+              ? `${escapeHtml(r.ownerUser.fullName?.trim() || "—")} · ${
+                  r.ownerUser.username
+                    ? `@${escapeHtml(r.ownerUser.username)}`
+                    : `<span class="small">нет @</span>`
+                }`
+              : `<span class="small">Общий пул</span>`;
+            const batchRu: Record<string, string> = {
+              CREATED: "Создан",
+              SENT: "Отправлен",
+              PARTIAL: "Частично",
+              PAID: "Выплачен",
+              FAILED: "Ошибка"
+            };
+            const st = batchRu[r.batch.status] ?? r.batch.status;
+            return `<tr>
+              <td>${formatIsoDate(batchWhen)}</td>
+              <td>${ownerCell}</td>
+              <td class="mono-wrap"><code>${escapeHtml(r.walletAddress)}</code></td>
+              <td>${Number(r.netAmount).toFixed(2)}</td>
+              <td>${r.entryCount}</td>
+              <td>${escapeHtml(st)}</td>
+            </tr>`;
+          })
+          .join("")
+      : "";
+
+    const ownerReportQuery = `orFrom=${encodeURIComponent(orFromYmd)}&orTo=${encodeURIComponent(orToYmd)}`;
+    const ownerReportingBlock = `<div class="section-title" style="margin-top:16px">Отчётность по владельцам (USDT нетто)</div>
+       <form method="GET" action="/backoffice/bots/${escapeHtml(bot.id)}/paid#nowpayments" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+         <div class="field-wrap"><label class="small" for="or-from">Период с</label><input id="or-from" class="field" type="date" name="orFrom" value="${escapeHtml(orFromYmd)}" /></div>
+         <div class="field-wrap"><label class="small" for="or-to">по</label><input id="or-to" class="field" type="date" name="orTo" value="${escapeHtml(orToYmd)}" /></div>
+         <button type="submit">Применить</button>
+         <a href="/backoffice/bots/${escapeHtml(bot.id)}/paid/owner-report.csv?${ownerReportQuery}" style="text-decoration:none"><button type="button" class="secondary">Скачать CSV</button></a>
+       </form>
+       <div class="small" style="margin-bottom:8px">Ожидает — текущие PENDING. <b>Выплачено (накопл.)</b> — все успешные батчи. Колонки <b>за период</b> — дата выплаты (батч) и дата начисления в TZ <code>${escapeHtml(payoutTz)}</code>, интервал <code>${escapeHtml(orFromYmd)}</code> … <code>${escapeHtml(orToYmd)}</code> включительно.</div>
+       ${
+         ownerReportingRows.length
+           ? `<table class="paid-table" style="margin-bottom:12px">
+           <thead><tr><th>Владелец</th><th>Кошелёк (учёт)</th><th>Ожидает выплаты</th><th>Выплачено (накопл.)</th><th>Выплачено за период</th><th>Начислено за период</th></tr></thead>
+           <tbody>${ownerReportingRows.join("")}</tbody>
+         </table>`
+           : `<div class="small" style="margin-bottom:12px">Нет строк отчёта (нет OWNER с привязкой User).</div>`
+       }
+       <div class="section-title" style="margin-top:12px">История выплат по получателям</div>
+       <div class="small" style="margin-bottom:8px">Только выбранный период (дата батча в TZ выплат).</div>
+       ${
+         ownerPayoutHistoryRows
+           ? `<table class="paid-table" style="margin-bottom:12px"><thead><tr><th>Когда (батч)</th><th>Получатель</th><th>Кошелёк</th><th>Нетто</th><th>Начислений</th><th>Статус батча</th></tr></thead><tbody>${ownerPayoutHistoryRows}</tbody></table>`
+           : `<div class="small">Нет записей получателей за этот период (или выплат ещё не было).</div>`
+       }`;
 
     const accessRightIdSet = new Set(recentAccessRights.map((item) => item.id));
     const recentJobs = accessRightIdSet.size
@@ -2502,6 +2811,57 @@ export async function registerBackofficeRoutes(
       };
     });
 
+    const ownersRowsHtml = botOwnerAssignments
+      .map((a) => {
+        if (a.userId && a.user) {
+          const uid = a.userId;
+          const w = ownerWalletByUserId.get(uid) ?? "";
+          const pend = (pendingNetByOwner.get(uid) ?? 0).toFixed(2);
+          return `<tr>
+            <td>${escapeHtml(a.user.fullName?.trim() || "—")}</td>
+            <td>${a.user.username ? `@${escapeHtml(a.user.username)}` : `<span class="small">—</span>`}</td>
+            <td><code>${escapeHtml(String(a.user.telegramUserId))}</code></td>
+            <td>${pend}</td>
+            <td>
+              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/owner-payout-wallet" style="margin:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+                <input type="hidden" name="ownerUserId" value="${escapeHtml(uid)}" />
+                <input name="walletAddress" type="text" placeholder="0x…" value="${escapeHtml(w)}" style="min-width:200px;max-width:min(280px,100%)" class="field" />
+                <button type="submit" class="secondary">Сохранить</button>
+              </form>
+            </td>
+          </tr>`;
+        }
+        const raw = a.telegramUsernameRaw?.trim() || a.telegramUsernameNormalized;
+        return `<tr>
+          <td colspan="2"><code>${escapeHtml(raw)}</code> <span class="small">(OWNER, пользователь ещё не заходил в бота)</span></td>
+          <td>—</td>
+          <td>—</td>
+          <td><span class="small">После первого входа появится строка с именем и полем кошелька.</span></td>
+        </tr>`;
+      })
+      .join("");
+
+    const nowpaymentsOwnersBlock = `<div class="small" style="margin-bottom:10px;padding:10px;border-radius:8px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.2)">
+         Массовая выплата NOWPayments: суммы объединяются по <b>адресу</b>. У OWNER с индивидуальным BEP20 — выплата на него; без своего кошелька или для <b>общего пула</b> — на общий кошелёк: ${generalOwnerWalletCode}.
+         Ниже — OWNER, логины Telegram и ожидающие нетто (привязка: пригласитель среди OWNER, иначе наставник).
+       </div>
+       <div class="section-title" style="margin-top:4px">Владельцы, логины и кошельки</div>
+       ${
+         botOwnerAssignments.length === 0
+           ? `<div class="small" style="margin-bottom:12px">Нет активных назначений OWNER. Назначьте владельцев в настройках ролей бота.</div>`
+           : `<table class="paid-table" style="margin-bottom:12px">
+           <thead><tr><th>Имя</th><th>Логин Telegram</th><th>Telegram ID</th><th>Ожидает нетто (USDT)</th><th>Индив. кошелёк BEP20 (учёт)</th></tr></thead>
+           <tbody>${ownersRowsHtml}</tbody>
+         </table>`
+       }
+       ${
+         pendingNetUnallocated > 0
+           ? `<div class="small" style="margin-bottom:12px;padding:10px;border-radius:8px;background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.25)">
+                <b>${pendingNetUnallocated.toFixed(2)} USDT</b> (нетто) в ожидании <b>без привязки</b> к владельцу — учитываются в общем пуле и уйдут на общий кошелёк при выплате.
+              </div>`
+           : ""
+       }`;
+
     return reply.type("text/html").send(
       renderPage(
         "Платный доступ",
@@ -2509,6 +2869,7 @@ export async function registerBackofficeRoutes(
          <div class="small" style="margin-top:6px">Бот: <code>${escapeHtml(bot.id)}</code></div>
          ${simulateOk ? `<div class="success" style="margin-top:12px">Тестовый сценарий запущен: доступ выдан, reminders и expiry/removal будут отработаны по policy продукта.</div>` : ""}
          ${simulateError ? `<div class="error" style="margin-top:12px">Ошибка тестового сценария: ${escapeHtml(simulateError)}</div>` : ""}
+         ${paidPageError ? `<div class="error" style="margin-top:12px">${escapeHtml(paidPageError)}</div>` : ""}
          ${misconfiguredProducts.length ? `<div class="warning-card" style="margin-top:12px">Найдены продукты с истечением без привязки чатов, пригодных для удаления. Кнопки приглашения покажутся, но по истечении срока нельзя гарантировать исключение из чата/канала: ${misconfiguredProducts.map((product) => `<code>${escapeHtml(productLabelById.get(product.id) ?? product.code)}</code>`).join(", ")}</div>` : ""}
 
          <div class="paid-nav">
@@ -2767,6 +3128,8 @@ export async function registerBackofficeRoutes(
          <div id="nowpayments" class="card" style="margin-top:16px">
            <h3 style="margin-top:0">NOWPayments / выплаты владельцу</h3>
            <div class="small" style="margin-bottom:12px">Настройка пополнения баланса и ежедневных выплат владельцу бота.</div>
+           ${nowpaymentsOwnersBlock}
+           ${ownerReportingBlock}
            <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/nowpayments-config">
             <div class="nowpayments-grid">
               <div class="toggle-field"><label class="small" for="np-enabled">Включить NOWPayments</label><input id="np-enabled" type="checkbox" name="enabled" value="1" ${nowPaymentsConfig?.enabled ? "checked" : ""} /></div>
@@ -2802,7 +3165,22 @@ export async function registerBackofficeRoutes(
              </div>
            </div>
            <div class="section-title" style="margin-top:16px">Записи начислений (последние)</div>
-           ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Заказ</th><th>Валовая</th><th>Нетто</th><th>Статус</th></tr></thead><tbody>${settlementEntries.map((e) => `<tr><td>${formatIsoDate(e.createdAt)}</td><td><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${renderPaymentStatus(e.status)}</td></tr>`).join("")}</tbody></table>` : `<div class="small">Нет записей</div>`}
+           ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Заказ</th><th>Валовая</th><th>Нетто</th><th>Справочно: владелец</th><th>Статус</th></tr></thead><tbody>${settlementEntries
+             .map((e) => {
+               const attributed =
+                 e.attributedOwnerUserId && ownerUserIdSet.has(e.attributedOwnerUserId)
+                   ? e.attributedOwnerUserId
+                   : attributeSettlementToOwnerUserId(e.depositTransaction?.user ?? null);
+               const ou = attributed ? ownerUserById.get(attributed) : undefined;
+               const attCell =
+                 attributed && ou
+                   ? renderUserLabel(ou)
+                   : attributed
+                     ? `<code>${escapeHtml(attributed)}</code>`
+                     : `<span class="small">общий пул</span>`;
+               return `<tr><td>${formatIsoDate(e.createdAt)}</td><td><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${attCell}</td><td>${renderPaymentStatus(e.status)}</td></tr>`;
+             })
+             .join("")}</tbody></table>` : `<div class="small">Нет записей</div>`}
 <details style="margin-top:16px">
             <summary class="small" style="cursor:pointer">Логи webhook (NOWPayments, только этот бот)</summary>
              ${webhookLogs.length ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Событие</th><th>Подпись</th><th>Результат</th></tr></thead><tbody>${webhookLogs.map((w) => `<tr><td>${formatIsoDate(w.createdAt)}</td><td><code>${escapeHtml(String((w.bodyJson as any)?.payment_id ?? "-"))}</code></td><td>${w.signatureValid ? "✓" : "✗"}</td><td>${escapeHtml(w.processingResult ?? "-")}</td></tr>`).join("")}</tbody></table>` : `<div class="small" style="margin-top:8px">Нет логов</div>`}
@@ -2850,6 +3228,275 @@ export async function registerBackofficeRoutes(
          </div>`
       )
     );
+  });
+
+  server.get("/backoffice/bots/:botId/paid/owner-report.csv", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const npCfg = await prisma.botPaymentProviderConfig.findUnique({ where: { botInstanceId: bot.id } });
+    const payoutTz = npCfg?.payoutTimeZone?.trim() || "UTC";
+    const orFromQ = parseYmd((req.query as Record<string, unknown>).orFrom);
+    const orToQ = parseYmd((req.query as Record<string, unknown>).orTo);
+    const { from: orFromYmd, to: orToYmd } = normalizeOwnerReportRange(orFromQ, orToQ, payoutTz);
+
+    const [
+      csvBotOwnerAssignments,
+      csvBotOwnerPayoutWallets,
+      csvPendingSettlements,
+      csvSettlementPaidByAttr,
+      csvAccruals,
+      csvPaidInBatches,
+      csvRecipientLog
+    ] = await Promise.all([
+      prisma.botRoleAssignment.findMany({
+        where: { botInstanceId: bot.id, role: "OWNER", status: "ACTIVE" },
+        include: {
+          user: { select: { id: true, fullName: true, username: true, telegramUserId: true } }
+        },
+        orderBy: { telegramUsernameNormalized: "asc" }
+      }),
+      prisma.botOwnerPayoutWallet.findMany({ where: { botInstanceId: bot.id } }),
+      prisma.ownerSettlementEntry.findMany({
+        where: { botInstanceId: bot.id, status: "PENDING" },
+        include: {
+          depositTransaction: {
+            include: {
+              user: { select: { invitedByUserId: true, mentorUserId: true } }
+            }
+          }
+        }
+      }),
+      prisma.ownerSettlementEntry.groupBy({
+        by: ["attributedOwnerUserId"],
+        where: {
+          botInstanceId: bot.id,
+          status: { in: ["BATCHED", "PAID"] },
+          batchId: { not: null },
+          batch: { status: { not: "FAILED" } }
+        },
+        _sum: { netAmountBeforePayoutFee: true }
+      }),
+      prisma.ownerSettlementEntry.findMany({
+        where: {
+          botInstanceId: bot.id,
+          createdAt: { gte: new Date(Date.now() - 450 * 86_400_000) }
+        },
+        select: {
+          attributedOwnerUserId: true,
+          netAmountBeforePayoutFee: true,
+          createdAt: true
+        }
+      }),
+      prisma.ownerSettlementEntry.findMany({
+        where: {
+          botInstanceId: bot.id,
+          status: { in: ["BATCHED", "PAID"] },
+          batchId: { not: null },
+          batch: {
+            status: { not: "FAILED" },
+            createdAt: { gte: new Date(Date.now() - 450 * 86_400_000) }
+          }
+        },
+        select: {
+          attributedOwnerUserId: true,
+          netAmountBeforePayoutFee: true,
+          batch: { select: { executedAt: true, runDate: true } }
+        }
+      }),
+      prisma.ownerPayoutBatchRecipient.findMany({
+        where: { batch: { botInstanceId: bot.id } },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        include: {
+          batch: { select: { executedAt: true, runDate: true, status: true } },
+          ownerUser: { select: { id: true, fullName: true, username: true, telegramUserId: true } }
+        }
+      })
+    ]);
+
+    const csvOwnerUserIdSet = new Set(
+      csvBotOwnerAssignments.map((a) => a.userId).filter((id): id is string => Boolean(id))
+    );
+    const csvOwnerWalletByUserId = new Map(csvBotOwnerPayoutWallets.map((w) => [w.ownerUserId, w.walletAddress]));
+
+    const csvAttr = (
+      u: { invitedByUserId: string | null; mentorUserId: string | null } | null | undefined
+    ): string | null => {
+      if (!u) return null;
+      if (u.invitedByUserId && csvOwnerUserIdSet.has(u.invitedByUserId)) return u.invitedByUserId;
+      if (u.mentorUserId && csvOwnerUserIdSet.has(u.mentorUserId)) return u.mentorUserId;
+      return null;
+    };
+
+    const csvPendingByOwner = new Map<string, number>();
+    let csvPoolPending = 0;
+    for (const e of csvPendingSettlements) {
+      const net = Number(e.netAmountBeforePayoutFee);
+      const oid =
+        e.attributedOwnerUserId && csvOwnerUserIdSet.has(e.attributedOwnerUserId)
+          ? e.attributedOwnerUserId
+          : csvAttr(e.depositTransaction?.user ?? null);
+      if (oid) csvPendingByOwner.set(oid, (csvPendingByOwner.get(oid) ?? 0) + net);
+      else csvPoolPending += net;
+    }
+
+    const csvPaidTotal = new Map<string | null, number>();
+    for (const row of csvSettlementPaidByAttr) {
+      csvPaidTotal.set(row.attributedOwnerUserId, Number(row._sum.netAmountBeforePayoutFee ?? 0));
+    }
+
+    const csvPaidPeriod = new Map<string | null, number>();
+    for (const e of csvPaidInBatches) {
+      const when = e.batch?.executedAt ?? e.batch?.runDate;
+      if (!when) continue;
+      const ymd = calendarDateInTimeZone(when, payoutTz);
+      if (!ymdInInclusiveRange(ymd, orFromYmd, orToYmd)) continue;
+      const k = e.attributedOwnerUserId;
+      csvPaidPeriod.set(k, (csvPaidPeriod.get(k) ?? 0) + Number(e.netAmountBeforePayoutFee));
+    }
+
+    const csvEarnedPeriod = new Map<string | null, number>();
+    for (const row of csvAccruals) {
+      const dk = calendarDateInTimeZone(row.createdAt, payoutTz);
+      if (!ymdInInclusiveRange(dk, orFromYmd, orToYmd)) continue;
+      const key = row.attributedOwnerUserId;
+      csvEarnedPeriod.set(key, (csvEarnedPeriod.get(key) ?? 0) + Number(row.netAmountBeforePayoutFee));
+    }
+
+    const sep = ";";
+    const lines: string[] = [];
+    lines.push(
+      [
+        "section",
+        "owner_name",
+        "telegram_login",
+        "telegram_id",
+        "wallet_bep20",
+        "pending_usdt",
+        "paid_total_usdt",
+        "paid_in_period_usdt",
+        "accrued_in_period_usdt",
+        "payout_tz",
+        "period_from",
+        "period_to",
+        "bot_id"
+      ].join(sep)
+    );
+
+    const poolWallet = npCfg?.ownerWalletAddress?.trim() ?? "";
+
+    for (const a of csvBotOwnerAssignments) {
+      if (!a.userId || !a.user) continue;
+      const u = a.user;
+      const w = csvOwnerWalletByUserId.get(a.userId) ?? "";
+      lines.push(
+        [
+          "OWNER",
+          csvEscapeCell(u.fullName?.trim() || ""),
+          csvEscapeCell(u.username ? `@${u.username}` : ""),
+          csvEscapeCell(String(u.telegramUserId)),
+          csvEscapeCell(w || "-> pool"),
+          csvEscapeCell((csvPendingByOwner.get(a.userId) ?? 0).toFixed(2)),
+          csvEscapeCell((csvPaidTotal.get(a.userId) ?? 0).toFixed(2)),
+          csvEscapeCell((csvPaidPeriod.get(a.userId) ?? 0).toFixed(2)),
+          csvEscapeCell((csvEarnedPeriod.get(a.userId) ?? 0).toFixed(2)),
+          csvEscapeCell(payoutTz),
+          csvEscapeCell(orFromYmd),
+          csvEscapeCell(orToYmd),
+          csvEscapeCell(bot.id)
+        ].join(sep)
+      );
+    }
+
+    if (
+      csvPoolPending > 0 ||
+      (csvPaidTotal.get(null) ?? 0) > 0 ||
+      (csvPaidPeriod.get(null) ?? 0) > 0 ||
+      (csvEarnedPeriod.get(null) ?? 0) > 0
+    ) {
+      lines.push(
+        [
+          "POOL",
+          csvEscapeCell("Общий пул"),
+          "",
+          "",
+          csvEscapeCell(poolWallet),
+          csvEscapeCell(csvPoolPending.toFixed(2)),
+          csvEscapeCell((csvPaidTotal.get(null) ?? 0).toFixed(2)),
+          csvEscapeCell((csvPaidPeriod.get(null) ?? 0).toFixed(2)),
+          csvEscapeCell((csvEarnedPeriod.get(null) ?? 0).toFixed(2)),
+          csvEscapeCell(payoutTz),
+          csvEscapeCell(orFromYmd),
+          csvEscapeCell(orToYmd),
+          csvEscapeCell(bot.id)
+        ].join(sep)
+      );
+    }
+
+    lines.push("");
+    lines.push(
+      [
+        "section",
+        "batch_datetime",
+        "recipient_name",
+        "telegram_login",
+        "wallet",
+        "net_usdt",
+        "entry_count",
+        "batch_status"
+      ].join(sep)
+    );
+
+    const batchRu: Record<string, string> = {
+      CREATED: "Создан",
+      SENT: "Отправлен",
+      PARTIAL: "Частично",
+      PAID: "Выплачен",
+      FAILED: "Ошибка"
+    };
+    const csvHist = csvRecipientLog.filter((r) => {
+      const when = r.batch.executedAt ?? r.batch.runDate;
+      const ymd = calendarDateInTimeZone(when, payoutTz);
+      return ymdInInclusiveRange(ymd, orFromYmd, orToYmd);
+    });
+    for (const r of csvHist) {
+      const when = r.batch.executedAt ?? r.batch.runDate;
+      const name = r.ownerUser?.fullName?.trim() ?? "Общий пул";
+      const login = r.ownerUser?.username ? `@${r.ownerUser.username}` : "";
+      lines.push(
+        [
+          "payout_line",
+          csvEscapeCell(formatIsoDate(when)),
+          csvEscapeCell(name),
+          csvEscapeCell(login),
+          csvEscapeCell(r.walletAddress),
+          csvEscapeCell(Number(r.netAmount).toFixed(2)),
+          csvEscapeCell(String(r.entryCount)),
+          csvEscapeCell(batchRu[r.batch.status] ?? r.batch.status)
+        ].join(sep)
+      );
+    }
+
+    const filename = `owner-report-${bot.id.slice(0, 8)}-${orFromYmd}-${orToYmd}.csv`;
+    const csv = "\uFEFF" + lines.join("\n");
+    return reply
+      .header("Content-Type", "text/csv; charset=utf-8")
+      .header("Content-Disposition", `attachment; filename="${filename}"`)
+      .send(csv);
   });
 
   server.post("/backoffice/api/bots/:botId/paid/toggle", async (req, reply) => {
@@ -2929,6 +3576,57 @@ export async function registerBackofficeRoutes(
     });
 
     return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/paid#nowpayments`);
+  });
+
+  server.post("/backoffice/api/bots/:botId/paid/owner-payout-wallet", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const body = req.body as any;
+    const ownerUserId = String(body?.ownerUserId ?? "").trim();
+    const walletAddressRaw = String(body?.walletAddress ?? "").trim();
+    if (!ownerUserId) {
+      return reply.redirect(`/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Не указан владелец")}#nowpayments`);
+    }
+
+    const assignment = await prisma.botRoleAssignment.findFirst({
+      where: { botInstanceId: bot.id, userId: ownerUserId, role: "OWNER", status: "ACTIVE" }
+    });
+    if (!assignment) {
+      return reply.redirect(`/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Пользователь не является активным OWNER")}#nowpayments`);
+    }
+
+    if (!walletAddressRaw) {
+      await prisma.botOwnerPayoutWallet.deleteMany({ where: { botInstanceId: bot.id, ownerUserId } });
+      return reply.redirect(`/backoffice/bots/${encodeURIComponent(bot.id)}/paid#nowpayments`);
+    }
+
+    if (!/^0x[0-9a-fA-F]{40}$/.test(walletAddressRaw)) {
+      return reply.redirect(
+        `/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Неверный адрес BEP20 (ожидается 0x + 40 hex)")}#nowpayments`
+      );
+    }
+
+    await prisma.botOwnerPayoutWallet.upsert({
+      where: { botInstanceId_ownerUserId: { botInstanceId: bot.id, ownerUserId } },
+      create: { botInstanceId: bot.id, ownerUserId, walletAddress: walletAddressRaw },
+      update: { walletAddress: walletAddressRaw }
+    });
+
+    return reply.redirect(`/backoffice/bots/${encodeURIComponent(bot.id)}/paid#nowpayments`);
   });
 
   server.post("/backoffice/api/bots/:botId/paid/paywall-message", async (req, reply) => {

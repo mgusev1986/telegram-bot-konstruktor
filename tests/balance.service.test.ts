@@ -142,7 +142,8 @@ function createBalanceHarness(opts?: { onDepositCredited?: (p: any) => Promise<v
         creditedAt: null
       });
       return { ...state.deposit };
-    })
+    }),
+    count: vi.fn().mockResolvedValue(0)
   };
 
   const userBalanceAccount = {
@@ -187,6 +188,17 @@ function createBalanceHarness(opts?: { onDepositCredited?: (p: any) => Promise<v
     depositTransaction,
     userBalanceAccount,
     balanceLedgerEntry,
+    user: {
+      findUnique: vi.fn(async ({ where }: any) => {
+        if (where.id === state.user.id || where.id === state.deposit.userId) {
+          return { invitedByUserId: null as string | null, mentorUserId: null as string | null };
+        }
+        return null;
+      })
+    },
+    botRoleAssignment: {
+      findMany: vi.fn(async () => [])
+    },
     botPaymentProviderConfig: {
       findUnique: vi.fn(async () => null)
     },

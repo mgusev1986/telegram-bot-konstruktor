@@ -426,6 +426,22 @@ model BotPaymentProviderConfig {
   @@map("bot_payment_provider_configs")
 }
 
+// Per-Telegram-owner USDT BEP20 wallet for this bot (used for split mass payouts; pool entries use BotPaymentProviderConfig.ownerWalletAddress).
+model BotOwnerPayoutWallet {
+  id            String      @id @default(uuid())
+  botInstanceId String      @map("bot_instance_id")
+  ownerUserId   String      @map("owner_user_id")
+  walletAddress String      @map("wallet_address")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  botInstance   BotInstance @relation(fields: [botInstanceId], references: [id], onDelete: Cascade)
+  ownerUser     User        @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  @@unique([botInstanceId, ownerUserId])
+  @@index([botInstanceId])
+  @@map("bot_owner_payout_wallets")
+}
+
 // Owner accrual per confirmed user top-up (NOWPayments v1)
 model OwnerSettlementEntry {
   id                       String                     @id @default(uuid())
@@ -438,6 +454,10 @@ model OwnerSettlementEntry {
   payoutNetworkFeeAmount   Decimal                    @default(0) @map("payout_network_fee_amount") @db.Decimal(18, 8)
   netAmountBeforePayoutFee Decimal                    @map("net_amount_before_payout_fee") @db.Decimal(18, 8)
   finalPayoutNetAmount     Decimal?                   @map("final_payout_net_amount") @db.Decimal(18, 8)
+  /// Telegram user (OWNER) this accrual is attributed to for payout split; null = общий пул (общий кошелёк).
+  attributedOwnerUserId    String?                    @map("attributed_owner_user_id")
+  /// Address used when entry was included in a mass payout batch.
+  payoutWalletAddress      String?                    @map("payout_wallet_address")
   status                   OwnerSettlementEntryStatus @default(PENDING)
   batchId                  String?                    @map("batch_id")
   errorMessage             String?                    @map("error_message")
@@ -446,10 +466,12 @@ model OwnerSettlementEntry {
   depositTransaction       DepositTransaction         @relation(fields: [depositTransactionId], references: [id], onDelete: Cascade)
   batch                    OwnerPayoutBatch?          @relation(fields: [batchId], references: [id], onDelete: SetNull)
   botInstance              BotInstance                @relation(fields: [botInstanceId], references: [id], onDelete: Cascade)
+  attributedOwner          User?                      @relation("OwnerSettlementAttributedOwner", fields: [attributedOwnerUserId], references: [id], onDelete: SetNull)
 
   @@index([botInstanceId, status])
   @@index([batchId])
   @@index([status, createdAt])
+  @@index([botInstanceId, attributedOwnerUserId])
   @@map("owner_settlement_entries")
 }
 
@@ -469,15 +491,34 @@ model OwnerPayoutBatch {
   providerBatchId       String?                @map("provider_batch_id")
   providerResponseJson  Json?                  @map("provider_response_json")
   errorMessage          String?                @map("error_message")
-  executedAt            DateTime?              @map("executed_at")
-  finishedAt            DateTime?              @map("finished_at")
-  createdAt             DateTime               @default(now()) @map("created_at")
-  botInstance           BotInstance            @relation(fields: [botInstanceId], references: [id], onDelete: Cascade)
+  executedAt            DateTime?                    @map("executed_at")
+  finishedAt            DateTime?                    @map("finished_at")
+  createdAt             DateTime                     @default(now()) @map("created_at")
+  botInstance           BotInstance                  @relation(fields: [botInstanceId], references: [id], onDelete: Cascade)
   entries               OwnerSettlementEntry[]
+  recipients            OwnerPayoutBatchRecipient[]
 
   @@index([botInstanceId, runDate])
   @@index([status])
   @@map("owner_payout_batches")
+}
+
+/// Per-owner (or pool) slice inside a mass payout batch — for backoffice reporting.
+model OwnerPayoutBatchRecipient {
+  id            String           @id @default(uuid())
+  batchId       String           @map("batch_id")
+  /// null = общий пул (общий кошелёк бота)
+  ownerUserId   String?          @map("owner_user_id")
+  walletAddress String           @map("wallet_address")
+  netAmount     Decimal          @map("net_amount") @db.Decimal(18, 8)
+  entryCount    Int              @map("entry_count")
+  createdAt     DateTime         @default(now()) @map("created_at")
+  batch         OwnerPayoutBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  ownerUser     User?            @relation("OwnerPayoutBatchRecipientUser", fields: [ownerUserId], references: [id], onDelete: SetNull)
+
+  @@index([batchId])
+  @@index([ownerUserId])
+  @@map("owner_payout_batch_recipients")
 }
 
 enum AccessType {
@@ -604,6 +645,9 @@ model User {
   depositTransactions       DepositTransaction[]
   productPurchases          ProductPurchase[]
   withdrawalRequests        WithdrawalRequest[]
+  botOwnerPayoutWallets            BotOwnerPayoutWallet[]
+  attributedOwnerSettlements       OwnerSettlementEntry[]       @relation("OwnerSettlementAttributedOwner")
+  ownerPayoutBatchRecipientEntries OwnerPayoutBatchRecipient[]  @relation("OwnerPayoutBatchRecipientUser")
 
   @@unique([telegramUserId, botInstanceId])
   @@index([invitedByUserId])
@@ -656,6 +700,7 @@ model BotInstance {
   paymentProviderConfig   BotPaymentProviderConfig?
   ownerSettlementEntries  OwnerSettlementEntry[]
   ownerPayoutBatches      OwnerPayoutBatch[]
+  botOwnerPayoutWallets   BotOwnerPayoutWallet[]
 
   @@index([ownerBackofficeUserId, status])
   @@map("bot_instances")

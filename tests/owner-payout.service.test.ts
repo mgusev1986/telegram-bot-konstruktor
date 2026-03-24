@@ -57,12 +57,18 @@ describe("OwnerPayoutService", () => {
           enabled: true,
           ownerPayoutEnabled: true,
           dailyPayoutEnabled: true,
-          ownerWalletAddress: "Txxx",
+          ownerWalletAddress: "0x1111111111111111111111111111111111111111",
           dailyPayoutMinAmount: 0,
           settlementCurrency: "usdttrc20"
         })
       },
       ownerSettlementEntry: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      botRoleAssignment: {
+        findMany: vi.fn().mockResolvedValue([])
+      },
+      botOwnerPayoutWallet: {
         findMany: vi.fn().mockResolvedValue([])
       }
     } as any;
