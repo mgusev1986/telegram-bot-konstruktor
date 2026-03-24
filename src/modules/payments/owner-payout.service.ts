@@ -84,7 +84,7 @@ export class OwnerPayoutService {
       };
     }
 
-    const settlementCurrency = (config.settlementCurrency ?? "usdttrc20").toLowerCase();
+    const settlementCurrency = (config.settlementCurrency ?? "usdtbep20").toLowerCase().replace("usdttrc20", "usdtbep20");
     const runDate = new Date();
     runDate.setHours(0, 0, 0, 0);
 

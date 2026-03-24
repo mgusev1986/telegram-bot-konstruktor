@@ -864,7 +864,6 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
   const formatNetworkLabel = (value: string) => {
     if (value === "USDT_BEP20") return "USDT (BEP20)";
-    if (value === "USDT_TRC20") return "USDT (TRC20)";
     return value.replace(/_/g, " ");
   };
 
@@ -922,28 +921,14 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     productId: string,
     productCta: string,
     payAddress: string,
+    depositId: string,
     returnPageId: string | null
   ) => ({
     reply_markup: {
       inline_keyboard: [
-        [{ text: payAddress, copy_text: { text: payAddress } }],
+        [{ text: services.i18n.t(languageCode, "copy_wallet_address"), copy_text: { text: payAddress } }],
         [{ text: productCta, callback_data: makeCallbackData("pay", "balance", productId) }],
-        [
-          { text: services.i18n.t(languageCode, "back"), callback_data: returnPageId ? makeCallbackData("menu", "open", returnPageId) : NAV_BACK_DATA },
-          { text: services.i18n.t(languageCode, "to_main_menu"), callback_data: NAV_ROOT_DATA }
-        ]
-      ]
-    }
-  });
-
-  const buildDirectCheckoutKeyboard = (
-    languageCode: string,
-    payAddress: string,
-    returnPageId: string | null
-  ) => ({
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: payAddress, copy_text: { text: payAddress } }],
+        [{ text: services.i18n.t(languageCode, "request_payment_review"), callback_data: makeCallbackData("pay", "check", depositId) }],
         [
           { text: services.i18n.t(languageCode, "back"), callback_data: returnPageId ? makeCallbackData("menu", "open", returnPageId) : NAV_BACK_DATA },
           { text: services.i18n.t(languageCode, "to_main_menu"), callback_data: NAV_ROOT_DATA }
@@ -1008,30 +993,10 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const description = productLoc?.description?.trim() ?? "";
     const payButtonText = getProductPayButtonText(product, user.selectedLanguage)?.trim() || services.i18n.t(user.selectedLanguage, "pay_from_balance");
 
-    const showDirectCheckoutScreen = async () => {
-      const { payment } = await services.payments.createPaymentRequest(user, productId, "USDT_BEP20" as PaymentNetwork);
-      const checkoutText = buildCheckoutText(user.selectedLanguage, {
-        title,
-        description,
-        amount: `${payment.amount} ${payment.currency}`,
-        wallet: payment.walletAddress,
-        currency: payment.currency,
-        network: payment.network,
-        reference: payment.referenceCode
-      });
-
-      setNavBeforeShow(ctx, "pay:checkout:" + productId);
-      await services.navigation.replaceScreen(
-        user,
-        ctx.telegram,
-        ctx.chat?.id ?? user.telegramUserId,
-        { text: checkoutText },
-        buildDirectCheckoutKeyboard(user.selectedLanguage, payment.walletAddress, returnPageId)
-      );
-    };
-
     if (!services.balance.isNowPaymentsEnabled()) {
-      await showDirectCheckoutScreen();
+      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "payment_temporarily_unavailable"), {
+        show_alert: true
+      });
       return;
     }
 
@@ -1040,11 +1005,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const network = "USDT_BEP20" as PaymentNetwork;
     const intent = await services.balance.createDepositIntent(user, amount, currency, network);
     if (!intent) {
-      logger.warn(
-        { userId: user.id, productId, mode: "direct_fallback" },
-        "Balance checkout unavailable; falling back to direct payment request"
-      );
-      await showDirectCheckoutScreen();
+      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "payment_temporarily_unavailable"), {
+        show_alert: true
+      });
       return;
     }
 
@@ -1066,7 +1029,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       ctx.telegram,
       ctx.chat?.id ?? user.telegramUserId,
       { text: checkoutText },
-      buildCheckoutScreenKeyboard(user.selectedLanguage, productId, payButtonText, intent.payAddress, returnPageId)
+      buildCheckoutScreenKeyboard(user.selectedLanguage, productId, payButtonText, intent.payAddress, intent.depositId, returnPageId)
     );
   };
 

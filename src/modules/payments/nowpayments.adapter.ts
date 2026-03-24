@@ -5,10 +5,10 @@
 import type { PaymentNetwork } from "@prisma/client";
 
 const PAY_CURRENCY_MAP: Record<string, string> = {
-  USDT_TRC20: "usdttrc20",
+  USDT_TRC20: "usdtbsc",
   USDT_BEP20: "usdtbsc",
   TON: "ton",
-  OTHER: "usdttrc20"
+  OTHER: "usdtbsc"
 };
 
 export interface CreatePaymentParams {
@@ -58,7 +58,7 @@ export class NowPaymentsAdapter {
   ) {}
 
   static payCurrencyFromNetwork(network: PaymentNetwork): string {
-    return PAY_CURRENCY_MAP[network] ?? "usdttrc20";
+    return PAY_CURRENCY_MAP[network] ?? "usdtbsc";
   }
 
   async createPayment(params: CreatePaymentParams): Promise<CreatePaymentResponse> {

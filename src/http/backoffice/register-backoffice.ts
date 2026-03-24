@@ -2226,7 +2226,6 @@ export async function registerBackofficeRoutes(
           <div class="section-title">Платежи и доступ</div>
           <div class="product-form-grid">
             <div class="field-wrap"><label class="small">Минуты доступа для TEST</label><input name="durationMinutes" type="number" min="1" max="1440" value="${product.durationMinutes ?? ""}" placeholder="пусто = live" /></div>
-            <div class="field-wrap"><label class="small">Резервный кошелёк (только manual mode)</label><input name="walletBep20" type="text" placeholder="0x..." value="${escapeHtml((product as any).walletBep20 ?? "")}" /><div class="small" style="margin-top:4px">Используется только в direct/manual payment flow. Если включён NOWPayments balance-flow, фактический адрес пополнения берётся из payout wallet, привязанного к API key.</div></div>
           </div>
           <div style="margin-top:12px">
             <label class="small">Ссылки доступа в чат / канал</label>
@@ -2314,7 +2313,6 @@ export async function registerBackofficeRoutes(
            <a href="#payments-balance"><button class="secondary" type="button">Платежи / баланс</button></a>
            <a href="#nowpayments"><button class="secondary" type="button">NOWPayments / Payouts</button></a>
            <a href="#access-audit"><button class="secondary" type="button">Аудит доступа</button></a>
-           <a href="/backoffice/bots/${escapeHtml(bot.id)}/payments"><button class="secondary" type="button">Manual payments</button></a>
          </div>
 
          <div id="overview" class="card" style="margin-top:16px">
@@ -2342,7 +2340,7 @@ export async function registerBackofficeRoutes(
              <div class="card" style="padding:14px">
                <div class="section-title">Checkout mode</div>
                <div>${balanceFlowEnabled ? renderStatusBadge("TOP-UP + PAY FROM BALANCE", "active") : renderStatusBadge("DIRECT / MANUAL PAYMENT REQUEST", "pending")}</div>
-               <div class="small" style="margin-top:8px">${balanceFlowEnabled ? "Locked section сразу показывает balance-aware CTA: пользователь может пополнить баланс и оплатить продукт без лишних меню." : "Locked section показывает pay-button с реквизитами продукта/кошельком. Для manual review используйте экран Manual payments."}</div>
+               <div class="small" style="margin-top:8px">Оплата работает автоматически через NOWPayments. Сеть: USDT (BEP20). Владелец получает выплаты на указанный кошелёк owner.</div>
              </div>
            </div>
          </div>
@@ -2430,11 +2428,6 @@ export async function registerBackofficeRoutes(
               <details style="margin-top:12px">
                  <summary class="small" style="cursor:pointer">Платежи и доступ</summary>
                  <div style="margin-top:12px">
-                 <label class="small">Резервный кошелёк (только manual mode)</label>
-                  <input name="walletBep20" type="text" placeholder="0x..." />
-                  <div class="small" style="margin-top:4px">Используется только как fallback для direct/manual payment. Для balance-flow фактический адрес пополнения берётся из NOWPayments dashboard по API key.</div>
-                </div>
-                <div style="margin-top:12px">
                   <label class="small">Ссылки доступа в чат / канал</label>
                    <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890&#10;https://t.me/channel"></textarea>
                    <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
@@ -2469,11 +2462,6 @@ export async function registerBackofficeRoutes(
                  <div class="field-wrap"><label class="small">Срок в минутах</label><input name="durationMinutes" type="number" required min="1" max="1440" value="5" /></div>
                </div>
                <div style="margin-top:12px">
-                 <label class="small">Резервный кошелёк (только manual mode)</label>
-                 <input name="walletBep20" type="text" placeholder="0x..." />
-                 <div class="small" style="margin-top:4px">Нужен только как запасной кошелёк для direct/manual payment flow. Для balance-flow тестовый checkout берёт реальный адрес пополнения из NOWPayments.</div>
-               </div>
-               <div style="margin-top:12px">
                  <label class="small">Ссылки доступа в чат / канал</label>
                  <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890"></textarea>
                </div>
@@ -2497,12 +2485,12 @@ export async function registerBackofficeRoutes(
            <div class="subgrid">
              <div class="card" style="padding:14px">
                <div class="section-title">Режим оплаты</div>
-               <div>${balanceFlowEnabled ? renderStatusBadge("Balance flow active", "active") : renderStatusBadge("Manual/direct payment flow", "pending")}</div>
+               <div>${balanceFlowEnabled ? renderStatusBadge("NOWPayments active (USDT BEP20)", "active") : renderStatusBadge("NOWPayments не настроен", "pending")}</div>
                <ul class="mono-list" style="margin-top:10px">
                  <li><code>invoice/pending</code>: пользователь открыл оплату, ждём подтверждение.</li>
                  <li><code>deposit/confirmed</code>: баланс пополнен через NOWPayments.</li>
                  <li><code>balance purchase/completed</code>: продукт куплен с баланса.</li>
-                 <li><code>manual confirm</code>: подтверждение через экран Manual payments.</li>
+                 <li><code>NOWPayments IPN</code>: автоматическое подтверждение после оплаты.</li>
                </ul>
              </div>
              <div class="card" style="padding:14px">
@@ -2543,8 +2531,8 @@ export async function registerBackofficeRoutes(
                <div class="field-wrap"><label class="small">Включить NOWPayments</label><input type="checkbox" name="enabled" value="1" ${nowPaymentsConfig?.enabled ? "checked" : ""} /></div>
                <div class="field-wrap"><label class="small">Owner payout включён</label><input type="checkbox" name="ownerPayoutEnabled" value="1" ${nowPaymentsConfig?.ownerPayoutEnabled ? "checked" : ""} /></div>
                <div class="field-wrap"><label class="small">Ежедневные выплаты</label><input type="checkbox" name="dailyPayoutEnabled" value="1" ${nowPaymentsConfig?.dailyPayoutEnabled !== false ? "checked" : ""} /></div>
-               <div class="field-wrap"><label class="small">Кошелёк owner (USDT TRC20/BEP20)</label><input name="ownerWalletAddress" type="text" placeholder="T..." value="${escapeHtml(nowPaymentsConfig?.ownerWalletAddress ?? "")}" style="width:100%" /></div>
-               <div class="field-wrap"><label class="small">Settlement currency</label><input name="settlementCurrency" type="text" value="${escapeHtml(nowPaymentsConfig?.settlementCurrency ?? "usdttrc20")}" /></div>
+               <div class="field-wrap"><label class="small">Кошелёк owner (USDT BEP20)</label><input name="ownerWalletAddress" type="text" placeholder="0x..." value="${escapeHtml(nowPaymentsConfig?.ownerWalletAddress ?? "")}" style="width:100%" /></div>
+               <input type="hidden" name="settlementCurrency" value="usdtbep20" />
                <div class="field-wrap"><label class="small">Минимум для выплаты (USDT)</label><input name="dailyPayoutMinAmount" type="text" value="${escapeHtml(String(nowPaymentsConfig?.dailyPayoutMinAmount ?? 0))}" /></div>
              </div>
              <button type="submit">Сохранить конфиг</button>
@@ -2658,7 +2646,7 @@ export async function registerBackofficeRoutes(
     const ownerPayoutEnabled = body?.ownerPayoutEnabled === "1" || body?.ownerPayoutEnabled === true;
     const dailyPayoutEnabled = body?.dailyPayoutEnabled !== "0" && body?.dailyPayoutEnabled !== false;
     const ownerWalletAddress = String(body?.ownerWalletAddress ?? "").trim() || null;
-    const settlementCurrency = String(body?.settlementCurrency ?? "usdttrc20").toLowerCase().trim();
+    const settlementCurrency = "usdtbep20";
     const dailyPayoutMinAmount = Math.max(0, Number(body?.dailyPayoutMinAmount) || 0);
 
     await prisma.botPaymentProviderConfig.upsert({
