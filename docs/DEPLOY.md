@@ -6,39 +6,40 @@
 
 | Платформа | PostgreSQL | Redis | Сложность | Рекомендация |
 |-----------|------------|-------|-----------|--------------|
-| **Railway** | ✅ Плагин | ✅ Плагин | Низкая | ✅ Рекомендуется |
-| **Render** | ✅ Blueprint | ✅ Blueprint | Низкая | ✅ Рекомендуется |
-| **Cloudflare Tunnel** | — | — | Средняя | Прокси к приложению на Railway/Render |
+| **Hetzner VPS** | Docker | Docker | Низкая | ✅ Рекомендуется |
+| **Render** | ✅ Blueprint | ✅ Blueprint | Низкая | Альтернатива |
+| **Cloudflare Tunnel** | — | — | Средняя | Прокси к приложению на VPS/Render |
 
 ---
 
-## 1. Деплой на Railway
+## 1. Деплой на Hetzner VPS
 
-1. **Создайте проект** на [railway.app](https://railway.app) и подключите GitHub-репозиторий.
-2. **Добавьте сервисы**:
-   - **PostgreSQL** (New → Database → PostgreSQL)
-   - **Redis** (New → Database → Redis)
-3. **Создайте сервис приложения**:
-   - New → GitHub Repo → выберите репозиторий
-   - Railway подхватит `Dockerfile` и `railway.json`
-4. **Свяжите сервисы**: в настройках приложения → Variables → Add Reference:
-   - `DATABASE_URL` ← PostgreSQL (Connection String)
-   - `REDIS_URL` ← Redis (Connection URL)
-5. **Добавьте переменные** (или через Dashboard → Variables):
-   ```
-   SUPER_ADMIN_TELEGRAM_ID=ваш_telegram_id
-   BOT_TOKEN=токен_от_BotFather
-   BOT_USERNAME=имя_бота
-   BACKOFFICE_ADMIN_EMAIL=admin@example.com
-   BACKOFFICE_ADMIN_PASSWORD=надежный_пароль
-   BOT_TOKEN_ENCRYPTION_KEY=сгенерируйте_32+_символов
-   BACKOFFICE_JWT_SECRET=сгенерируйте_секрет
-   NODE_ENV=production
-   TRANSLATION_PROVIDER=cerebras
-   CEREBRAS_API_KEY=ключ_cerebras
-   ```
-6. **Домен**: Settings → Networking → Generate Domain — получите URL вида `xxx.railway.app`.
-7. **Деплой** произойдёт автоматически при push.
+**Быстрый старт:**
+
+```bash
+npm run deploy
+```
+
+Скрипт `scripts/deploy-hetzner.sh`:
+1. Коммитит и пушит изменения (если есть)
+2. Подключается по SSH к серверу
+3. Делает бэкап БД
+4. Обновляет код, собирает Docker, применяет миграции, перезапускает бота
+
+**Настройка** (если SSH по ключу не настроен):
+
+Создайте `.env.deploy` (не коммитится в git):
+
+```
+HETZNER_HOST=77.42.79.54
+HETZNER_USER=root
+HETZNER_APP_DIR=/opt/telegram-bot-konstruktor
+HETZNER_SSH_PASSWORD=ваш_пароль
+```
+
+Или настройте SSH-ключ: `ssh-copy-id root@77.42.79.54`
+
+Подробнее: `docs/DEPLOY_GUIDE.md`, `docs/DEPLOY_SIMPLE.md`
 
 ---
 
@@ -62,10 +63,10 @@
 
 ### Вариант A: DNS + прокси (без Tunnel)
 
-Если приложение уже на Railway/Render:
+Если приложение уже на VPS/Render:
 
 1. Добавьте домен в Cloudflare (DNS).
-2. Создайте CNAME: `app` → `xxx.railway.app` (или `xxx.onrender.com`).
+2. Создайте CNAME: `app` → IP или домен вашего VPS (или `xxx.onrender.com`).
 3. Включите оранжевое облако (прокси) — трафик пойдёт через Cloudflare (DDoS, SSL).
 
 ### Вариант B: Cloudflare Tunnel
@@ -90,9 +91,9 @@
    ```bash
    cloudflared tunnel run telegram-bot-konstruktor
    ```
-6. `service` в конфиге укажите на URL вашего приложения (Railway/Render), например:
+6. `service` в конфиге укажите на URL вашего приложения, например:
    ```yaml
-   service: https://xxx.railway.app
+   service: https://ваш-домен.com
    ```
    Или `http://localhost:3000`, если cloudflared и приложение на одной машине.
 
@@ -129,6 +130,6 @@
 - Нет полноценного Node.js и нативных модулей.
 - Нет долгоживущих TCP-соединений к PostgreSQL и Redis.
 - BullMQ и Telegraf требуют постоянно работающего процесса.
-- Cloudflare Containers (бета) могут засыпать — фоновые job’ы будут теряться.
+- Cloudflare Containers (бета) могут засыпать — фоновые job'ы будут теряться.
 
-Поэтому приложение размещается на Railway/Render (или VPS) и при необходимости выставляется через Cloudflare (DNS/прокси или Tunnel).
+Поэтому приложение размещается на VPS (Hetzner) или Render и при необходимости выставляется через Cloudflare (DNS/прокси или Tunnel).

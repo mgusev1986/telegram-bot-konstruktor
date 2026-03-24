@@ -75,7 +75,7 @@ const envSchema = z.object({
   /** Secret for triggering owner payout via HTTP (cron). If set, POST /webhooks/payments/owner-payout-trigger?secret=xxx triggers payout. */
   NOWPAYMENTS_PAYOUT_TRIGGER_SECRET: z.string().optional().default(""),
   HTTP_PORT: z.coerce.number().int().positive().default(3000),
-  // PORT используется Railway, Render и др. — приоритет над HTTP_PORT
+  // PORT используется Render, Docker и др. — приоритет над HTTP_PORT
   PORT: z.coerce.number().int().positive().optional(),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 

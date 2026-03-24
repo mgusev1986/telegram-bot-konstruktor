@@ -1,62 +1,60 @@
-# Деплой за 5 минут — сделай это
+# Деплой за 5 минут — Hetzner VPS
 
 ## Шаг 1: Открой терминал в папке проекта
 
 ```bash
-cd "/Users/maksimgusev/Desktop/Автоматизация/Telegram Bot - Konstruktor"
+cd "/Users/maksimgusev/Desktop/Automatization/Telegram Bot - Konstruktor"
 ```
 
-## Шаг 2: Запусти скрипт деплоя
+## Шаг 2: Запусти деплой
 
 ```bash
-bash scripts/deploy.sh
+npm run deploy
 ```
 
-## Шаг 3: Следуй подсказкам
-
-1. **Авторизация** — откроется браузер. Войди в Railway (или зарегистрируйся на [railway.app](https://railway.app)).
-2. **Создание проекта** — если спросят, выбери "Create new project".
-3. **PostgreSQL и Redis** — скрипт добавит их сам.
-4. **Деплой** — подожди 2–5 минут.
-
-## Шаг 4: Получи ссылку
-
-В конце скрипт покажет URL. Или выполни:
+или с сообщением коммита:
 
 ```bash
-railway open
+npm run deploy "Мои изменения"
 ```
 
-И в настройках сервиса: **Settings → Networking → Generate Domain**.
+## Шаг 3: Что происходит
+
+1. **Git** — если есть изменения, скрипт закоммитит и запушит их.
+2. **SSH** — подключение к Hetzner VPS (нужен SSH-ключ или пароль в `.env.deploy`).
+3. **Бэкап БД** — перед обновлением создаётся резервная копия.
+4. **Обновление** — `git pull`, сборка Docker, миграции, перезапуск бота.
+
+---
+
+## Настройка (.env.deploy)
+
+Если SSH по ключу не настроен, создайте `.env.deploy` (не коммитится в git):
+
+```
+HETZNER_HOST=77.42.79.54
+HETZNER_USER=root
+HETZNER_APP_DIR=/opt/telegram-bot-konstruktor
+HETZNER_SSH_PASSWORD=ваш_пароль
+```
+
+Или настройте SSH-ключ:
+
+```bash
+ssh-copy-id root@77.42.79.54
+```
 
 ---
 
 ## Готово
 
-- **Backoffice:** `https://твой-домен.railway.app/backoffice`  
-- **Health:** `https://твой-домен.railway.app/health`
-
-Логин в backoffice — email и пароль из твоего `.env` (BACKOFFICE_ADMIN_EMAIL, BACKOFFICE_ADMIN_PASSWORD).
+- **Backoffice:** `https://ваш-домен/backoffice`
+- **Health:** `https://ваш-домен/health`
 
 ---
 
-## Если что-то пошло не так
+## Логи на сервере
 
-### Ошибка "DATABASE_URL" или "REDIS_URL"
-
-Зайди в [railway.app](https://railway.app) → твой проект → сервис приложения → **Variables**.  
-Нажми **Add Reference** и подключи:
-- `DATABASE_URL` от сервиса Postgres  
-- `REDIS_URL` от сервиса Redis  
-
-### Ошибка при деплое
-
-Посмотри логи: `railway logs`
-
-### Нужен Cloudflare перед Railway
-
-Когда приложение работает, добавь свой домен в Cloudflare DNS:
-- Тип: **CNAME**
-- Имя: `app` (или любое)
-- Значение: `твой-проект.railway.app`
-- Proxy: включён (оранжевое облако)
+```bash
+ssh root@77.42.79.54 "cd /opt/telegram-bot-konstruktor && docker compose -f docker-compose.prod.yml logs -f bot --tail 50"
+```

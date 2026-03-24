@@ -46,7 +46,7 @@ HEAD: `cab3fc812efc2b8885e82a534b8101c0fcf8b44b`
 - **Drip step buttons:** add-drip-step-buttons.scene.ts — кнопки (inline) к шагам drip; create-drip-campaign и drip.service расширены.
 - **Database section в Backoffice:** статистика по ботам (пользователи, активность).
 - **Backup/restore:** scripts/backup-db.sh, restore-db.sh, full-backup-to-local.sh, server-backup-rotating.sh, install-backup-cron.sh, fetch-db-from-server.sh; docs/BACKUP.md, DATA_PERSISTENCE.md.
-- **Deploy:** deploy-hetzner.sh с .env.deploy (HETZNER_HOST, HETZNER_USER, HETZNER_APP_DIR); migrate в deploy.sh; .env.deploy.example.
+- **Deploy:** npm run deploy → scripts/deploy-hetzner.sh с .env.deploy (HETZNER_HOST, HETZNER_USER, HETZNER_APP_DIR); migrate в скрипте; .env.deploy.example.
 - **Edit content submenu:** подменю редактирования контента в админке.
 
 ### Checkpoint notes (2026-03-20) — деплой и bootstrap
@@ -308,7 +308,7 @@ Telegram Bot - Konstruktor/
 - **Subscription channel:** привязка продукта к каналам/чатам (linkedChats); напоминания за 3/2/1 день до истечения; ban при expiry; кнопки «Канал»/«Чат» в оплаченной секции.
 - **Drip step buttons:** inline-кнопки к шагам drip-кампании.
 - **Backup:** backup-db.sh, restore-db.sh, full-backup-to-local.sh, server-backup-rotating.sh; docs/BACKUP.md.
-- **Deploy:** deploy-hetzner.sh с .env.deploy; migrate в deploy.sh.
+- **Deploy:** npm run deploy → deploy-hetzner.sh с .env.deploy; migrate в скрипте.
 
 ---
 

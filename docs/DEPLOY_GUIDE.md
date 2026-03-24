@@ -7,7 +7,7 @@
 ## Одна команда
 
 ```bash
-npm run deploy:hetzner
+npm run deploy
 ```
 
 Скрипт автоматически:
@@ -27,7 +27,7 @@ git commit -m "Update: описание изменений"
 git push origin main
 
 # 2. Деплой (всё остальное скрипт сделает сам)
-npm run deploy:hetzner
+npm run deploy
 ```
 
 ---
@@ -35,7 +35,7 @@ npm run deploy:hetzner
 ## С произвольным сообщением коммита
 
 ```bash
-npm run deploy:hetzner "Добавлены кнопки к письмам"
+npm run deploy "Добавлены кнопки к письмам"
 ```
 
 ---

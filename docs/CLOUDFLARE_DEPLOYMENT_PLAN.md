@@ -26,7 +26,7 @@
   - Workers AI как AI-провайдер (`AI_TRANSLATION_PROVIDER=workers_ai`);
   - опционально Pages для web/admin UI;
   - опционально Worker как edge ingress.
-- **Отдельный Node.js runtime (VM/Container/Fly/Railway/Render/etc.)**:
+- **Отдельный Node.js runtime (VM/Container/Fly/Render/etc.)**:
   - `src/index.ts` (бот + API + job workers runtime);
   - BullMQ workers/scheduler.
 - **Managed data services**:
