@@ -3,14 +3,22 @@
 Один snapshot проекта для переноса контекста в новый чат или онбординга разработчика. Обновляйте этот файл после крупных изменений.
 
 ### Last checkpoint
-Дата: 2026-03-23
-Снапшот: `.snapshots/snapshot-2026-03-23_18-12-39_full-project.tar.gz`
-SHA256: `f2a38d9b38447dda2b9d183ca9edf304eb991027dc03f77d576b59654a65fcf0`
-HEAD: `cab3fc812efc2b8885e82a534b8101c0fcf8b44b`
+Дата: 2026-03-24
+Снапшот: `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz`
+SHA256: `67c58eb07fa1faf30befd10c33c4aa0d1072aa57e116a05e7c71ec5ebcf09b9a`
+HEAD: `397765ea0c195ded84a327ec65d580b316b1fd8e`
 Ветка: `main`
-Сборка: не запускалась в рамках этого snapshot
+Сборка: `npm run lint:types` (tsc --noEmit) — OK
 Деплой: Hetzner VPS (77.42.79.54), Docker Compose
-Тесты: не запускались в рамках этого snapshot
+Тесты: полный `npm test` не гонялся в рамках этого snapshot; см. примечания в checkpoint
+
+### Checkpoint notes (2026-03-24) — full snapshot + handoff refresh
+
+- **Новый full-project snapshot:** `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz` (~122 MB без `node_modules`/`dist`).
+- **SHA256:** `67c58eb07fa1faf30befd10c33c4aa0d1072aa57e116a05e7c71ec5ebcf09b9a` (файл: `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz.sha256`). Архив пересобран после коммита handoff, чтобы внутри был актуальный `HANDOFF.md`.
+- **Checkpoint:** `.snapshots/checkpoint-2026-03-24_22-07-55.md`.
+- **Контекст кода:** сплит выплат NOWPayments по кошелькам OWNER/пул; атрибуция начислений; `OwnerPayoutBatchRecipient`; бэкофис отчётность, фильтр периода `orFrom`/`orTo`, CSV `GET /backoffice/bots/:botId/paid/owner-report.csv`; миграции `bot_owner_payout_wallets`, `owner_settlement_attribution_split_payouts`.
+- **Известно:** часть тестов требует живой Postgres (`postgres:5432`); harness balance-тесты дополнены моками `user`/`botRoleAssignment`/`depositTransaction.count` где нужно.
 
 ### Checkpoint notes (2026-03-23) — backup snapshot refresh
 
