@@ -226,7 +226,7 @@ function renderPage(title: string, body: string): string {
       (function () {
         function extractIdentifierFromPostLink(value) {
           if (!value) return "";
-          var m = String(value).trim().match(/^https?:\/\/t\.me\/c\/(\d+)(?:\/\d+)?$/i);
+          var m = String(value).trim().match(/^https?:\/\/t\.me\/(?:c|o)\/(\d+)(?:\/\d+)?\/?(?:\?.*)?$/i);
           if (!m) return "";
           return "-100" + m[1];
         }
@@ -241,10 +241,13 @@ function renderPage(title: string, body: string): string {
           if (!form) return;
           var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
           if (!idInput) return;
-          if (String(idInput.value || "").trim()) return; // do not overwrite manual value
 
           var extracted = extractIdentifierFromPostLink(target.value);
-          if (extracted) idInput.value = extracted;
+          if (!extracted) return;
+          var current = String(idInput.value || "").trim();
+          if (!current || /^-100\d{6,}$/.test(current)) {
+            idInput.value = extracted;
+          }
         });
       })();
     </script>
@@ -265,10 +268,19 @@ function formatLinkedChatsForEdit(linkedChats: unknown): string {
 }
 
 function validatePrivateLinkedChatsOnly(linkedChats: Array<{ link?: string; identifier?: string; label?: string }>): string | null {
+  const normalizePrivateIdentifier = (value: string): string => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    if (/^-100\d{6,}$/.test(raw)) return raw;
+    if (/^100\d{6,}$/.test(raw)) return `-${raw}`;
+    if (/^\d{6,}$/.test(raw)) return `-100${raw}`;
+    return raw;
+  };
+
   for (let i = 0; i < linkedChats.length; i++) {
     const row = linkedChats[i] ?? {};
     const idx = i + 1;
-    const identifier = String(row.identifier ?? "").trim();
+    const identifier = normalizePrivateIdentifier(String(row.identifier ?? "").trim());
     const link = String(row.link ?? "").trim();
 
     if (!identifier) {
@@ -277,7 +289,7 @@ function validatePrivateLinkedChatsOnly(linkedChats: Array<{ link?: string; iden
     if (!/^-100\d{6,}$/.test(identifier)) {
       return `linkedChats: строка ${idx} — разрешен только приватный identifier вида -100... (публичные @username запрещены).`;
     }
-    if (link && !/^https:\/\/t\.me\/(?:\+|joinchat\/)/i.test(link) && !/^https:\/\/t\.me\/c\/\d+(?:\/\d+)?$/i.test(link)) {
+    if (link && !/^https:\/\/t\.me\/(?:\+|joinchat\/)/i.test(link) && !/^https:\/\/t\.me\/(?:c|o)\/\d+(?:\/\d+)?\/?(?:\?.*)?$/i.test(link)) {
       return `linkedChats: строка ${idx} — разрешены invite-ссылки https://t.me/+... / joinchat/... или ссылка на пост вида https://t.me/c/...`;
     }
   }
@@ -285,13 +297,22 @@ function validatePrivateLinkedChatsOnly(linkedChats: Array<{ link?: string; iden
 }
 
 function readStructuredLinkedChatsFromBody(body: any): Array<{ link?: string; identifier?: string; label?: string }> {
+  const normalizePrivateIdentifier = (value: string): string => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    if (/^-100\d{6,}$/.test(raw)) return raw;
+    if (/^100\d{6,}$/.test(raw)) return `-${raw}`;
+    if (/^\d{6,}$/.test(raw)) return `-100${raw}`;
+    return raw;
+  };
+
   const rows: Array<{ link?: string; identifier?: string; label?: string }> = [];
   for (const i of [1, 2]) {
     const label = String(body?.[`linkedChatLabel${i}`] ?? "").trim();
     const link = String(body?.[`linkedChatLink${i}`] ?? "").trim();
     const rawIdentifier = String(body?.[`linkedChatIdentifier${i}`] ?? "").trim();
-    const postLinkMatch = link.match(/^https?:\/\/t\.me\/c\/(\d+)(?:\/\d+)?$/i);
-    const identifier = rawIdentifier || (postLinkMatch ? `-100${postLinkMatch[1]}` : "");
+    const postLinkMatch = link.match(/^https?:\/\/t\.me\/(?:c|o)\/(\d+)(?:\/\d+)?\/?(?:\?.*)?$/i);
+    const identifier = normalizePrivateIdentifier(rawIdentifier || (postLinkMatch ? `-100${postLinkMatch[1]}` : ""));
     const normalizedLink = postLinkMatch ? "" : link;
     if (!label && !link && !identifier) continue;
     rows.push({
