@@ -263,7 +263,7 @@ function renderPage(title: string, body: string): string {
           var linkInput = form.querySelector('input[name="linkedChatLink' + idx + '"]');
           var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
           if (!linkInput || !idInput) return;
-          var extracted = extractIdentifierFromPostLink(linkInput.value);
+          var extracted = extractIdentifierFromPostLink(linkInput.value) || extractIdentifierFromPostLink(idInput.value);
           if (extracted) {
             idInput.value = extracted;
           }
