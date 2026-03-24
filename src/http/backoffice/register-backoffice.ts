@@ -229,43 +229,58 @@ function renderPage(title: string, body: string): string {
       </div>
     </div>
     <script>
-      function __extractIdFromPostLink(value) {
-        if (!value) return "";
-        var text = String(value).trim();
-        var match = text.match(/t\.me\/(?:c|o)\/(\d+)/i);
-        if (match && match[1]) return "-100" + match[1];
-        return "";
-      }
-
-      function __setIdHint(form, idx, mode, text) {
-        var hint = form.querySelector('[data-id-hint="' + idx + '"]');
-        if (!hint) return;
-        hint.textContent = text || "";
-        hint.className = "id-hint" + (mode ? " " + mode : "");
-      }
-
-      function __fillIdentifier(form, idx, showError) {
-        var postInput = form.querySelector('input[name="linkedChatPostLink' + idx + '"]');
-        var linkInput = form.querySelector('input[name="linkedChatLink' + idx + '"]');
-        var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
-        if (!idInput) return false;
-        var extracted = __extractIdFromPostLink((postInput && postInput.value) || "")
-          || __extractIdFromPostLink((linkInput && linkInput.value) || "")
-          || __extractIdFromPostLink(idInput.value || "");
-        if (!extracted) {
-          if (showError) __setIdHint(form, idx, "err", "Не удалось распознать post-link");
-          return false;
+      (function () {
+        function __extractIdFromPostLink(value) {
+          if (!value) return "";
+          var text = String(value).trim();
+          var match = text.match(/t\\.me\\/(c|o)\\/(\\d+)/i);
+          if (match && match[2]) return "-100" + match[2];
+          return "";
         }
-        idInput.value = extracted;
-        __setIdHint(form, idx, "ok", "ID извлечен ✅");
-        return true;
-      }
 
-      window.extractLinkedChatId = function (button, idx) {
-        var form = button && button.closest ? button.closest("form") : null;
-        if (!form) return;
-        __fillIdentifier(form, String(idx), true);
-      };
+        function __setIdHint(form, idx, mode, text) {
+          var hint = form.querySelector('[data-id-hint="' + idx + '"]');
+          if (!hint) return;
+          hint.textContent = text || "";
+          hint.className = "id-hint" + (mode ? " " + mode : "");
+        }
+
+        function __fillIdentifier(form, idx, showError) {
+          var postInput = form.querySelector('input[name="linkedChatPostLink' + idx + '"]');
+          var linkInput = form.querySelector('input[name="linkedChatLink' + idx + '"]');
+          var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
+          if (!idInput) return false;
+          var extracted =
+            __extractIdFromPostLink((postInput && postInput.value) || "") ||
+            __extractIdFromPostLink((linkInput && linkInput.value) || "") ||
+            __extractIdFromPostLink(idInput.value || "");
+          if (!extracted) {
+            if (showError) __setIdHint(form, idx, "err", "Не удалось распознать post-link");
+            return false;
+          }
+          idInput.value = extracted;
+          __setIdHint(form, idx, "ok", "ID извлечен");
+          return true;
+        }
+
+        document.addEventListener(
+          "click",
+          function (ev) {
+            var t = ev.target;
+            while (t && t.nodeType !== 1) t = t.parentNode;
+            while (t && !t.getAttribute("data-linked-chat-extract")) t = t.parentNode;
+            if (!t) return;
+            var idx = t.getAttribute("data-linked-chat-extract");
+            if (!idx) return;
+            ev.preventDefault();
+            var form = t;
+            while (form && form.nodeName !== "FORM") form = form.parentNode;
+            if (!form) return;
+            __fillIdentifier(form, String(idx), true);
+          },
+          false
+        );
+      })();
     </script>
   </body>
 </html>`;
@@ -526,7 +541,9 @@ export function renderDashboardBody(params: DashboardParams): string {
       ? `<div class="success" role="status"><strong>Бот успешно создан</strong>: ${escapeHtml(createdBot.name)}${createdBot.telegramBotUsername ? ` (@${escapeHtml(createdBot.telegramBotUsername)})` : ""}. <a href="/backoffice/bots/${escapeHtml(createdBot.id)}/settings">Настройки</a> · <a href="${createdBot.telegramBotUsername ? `https://t.me/${createdBot.telegramBotUsername}` : "#"}" target="_blank">Открыть в Telegram</a></div>`
       : "";
   const createForm = buildCreateBotForm({ createError, formValues, languageOptions });
-  const scrollScript = createdBotId ? `<script>document.getElementById("bot-${escapeHtml(createdBotId)}")?.scrollIntoView({behavior:"smooth",block:"nearest"});</script>` : "";
+  const scrollScript = createdBotId
+    ? `<script>(function(){var el=document.getElementById("bot-${escapeHtml(createdBotId)}");if(el&&el.scrollIntoView)el.scrollIntoView({behavior:"smooth",block:"nearest"});})();</script>`
+    : "";
   return `<div class="row" style="justify-content:space-between">
           <div>
             <h2 style="margin:0">Back-office</h2>
@@ -2394,14 +2411,14 @@ export async function registerBackofficeRoutes(
                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" value="${escapeHtml(String(chat1.label ?? ""))}" /></div>
                 <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" value="${escapeHtml(String(chat1.link ?? ""))}" /></div>
                 <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" value="${escapeHtml(postLinkFromIdentifier(String(chat1.identifier ?? "")))}" /></div>
-                <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" onclick="window.extractLinkedChatId(this, '1')">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+                <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
               </div>
               <div class="linked-chat-card">
                 <div class="title">Кнопка 2</div>
                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" value="${escapeHtml(String(chat2.label ?? ""))}" /></div>
                 <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" value="${escapeHtml(String(chat2.link ?? ""))}" /></div>
                 <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" value="${escapeHtml(postLinkFromIdentifier(String(chat2.identifier ?? "")))}" /></div>
-                <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" onclick="window.extractLinkedChatId(this, '2')">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+                <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
               </div>
             </div>
             <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
@@ -2657,14 +2674,14 @@ export async function registerBackofficeRoutes(
                       <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
                       <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
                       <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
-                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" onclick="window.extractLinkedChatId(this, '1')">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
                     </div>
                     <div class="linked-chat-card">
                       <div class="title">Кнопка 2</div>
                       <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
                       <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
                       <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
-                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" onclick="window.extractLinkedChatId(this, '2')">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
                     </div>
                   </div>
                    <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
@@ -2708,14 +2725,14 @@ export async function registerBackofficeRoutes(
                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
                     <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
                     <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" onclick="window.extractLinkedChatId(this, '1')">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+                    <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
                   </div>
                   <div class="linked-chat-card">
                     <div class="title">Кнопка 2</div>
                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
                     <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
                     <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" onclick="window.extractLinkedChatId(this, '2')">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+                    <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
                   </div>
                 </div>
                  <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
