@@ -34,12 +34,9 @@ import {
 const COOKIE_NAME = env.BACKOFFICE_COOKIE_NAME;
 const i18n = new I18nService((env.DEFAULT_LANGUAGE || "ru") as SupportedDictionaryLanguage);
 
-function getBackofficeLang(req: FastifyRequest): "ru" | "en" {
-  const raw = req.headers["accept-language"];
-  if (!raw) return "ru";
-  const first = raw.split(",")[0]?.trim();
-  const code = first?.split("-")[0]?.toLowerCase();
-  return code === "en" ? "en" : "ru";
+function getBackofficeLang(_req: FastifyRequest): "ru" | "en" {
+  // Интерфейс backoffice всегда на русском (см. требования владельца).
+  return "ru";
 }
 
 function base64UrlEncode(input: Buffer): string {
@@ -358,8 +355,8 @@ function renderStatusBadge(label: string, tone: "live" | "test" | "active" | "pe
 
 function renderProductModeBadge(product: { durationMinutes?: number | null }): string {
   return getProductModeLabel(product) === "TEST"
-    ? renderStatusBadge("TEST", "test")
-    : renderStatusBadge("LIVE", "live");
+    ? renderStatusBadge("ТЕСТ", "test")
+    : renderStatusBadge("БОЕВОЙ", "live");
 }
 
 function renderLinkedChatReadiness(product: { linkedChats?: unknown; billingType?: string | null; durationDays?: number | null; durationMinutes?: number | null }): string {
@@ -371,7 +368,7 @@ function renderLinkedChatReadiness(product: { linkedChats?: unknown; billingType
     return renderStatusBadge(`Ссылки: ${diagnostics.displayLinkCount}`, "active");
   }
   if (!diagnostics.removalReady) {
-    return renderStatusBadge("REMOVAL UNAVAILABLE", "failed");
+    return renderStatusBadge("Удаление по expiry недоступно", "failed");
   }
   return renderStatusBadge(`Удаление готово (${diagnostics.banIdentifierCount})`, "active");
 }
@@ -484,7 +481,7 @@ export function renderDashboardBody(params: DashboardParams): string {
               <div class="small" style="margin-top:4px">@${b.telegramBotUsername ?? "—"}</div>
             </div>
             <div style="text-align:right">
-              <span class="pill">${b.status}</span>
+              <span class="pill">${escapeHtml(b.status === "ACTIVE" ? "Активен" : b.status === "DISABLED" ? "Отключён" : b.status)}</span>
               <div class="small" style="margin-top:6px">${b.createdAt.toISOString().slice(0, 10)}</div>
             </div>
           </div>
@@ -515,13 +512,13 @@ export function renderDashboardBody(params: DashboardParams): string {
     : "";
   return `<div class="row" style="justify-content:space-between">
           <div>
-            <h2 style="margin:0">Back-office</h2>
+            <h2 style="margin:0">Панель управления</h2>
             <div class="small" style="margin-top:4px">Мои bot instances</div>
           </div>
           <div class="row" style="flex:0 0 auto; gap:8px">
             ${audienceLink}
             ${databaseLink}
-            <a href="/backoffice/logout" style="text-decoration:none"><button class="secondary" type="button">Logout</button></a>
+            <a href="/backoffice/logout" style="text-decoration:none"><button class="secondary" type="button">Выйти</button></a>
           </div>
         </div>
         ${successBanner}
@@ -682,7 +679,7 @@ export async function registerBackofficeRoutes(
   server.get("/backoffice/login", async (_req, reply) => {
     return reply.type("text/html").send(
       renderPage(
-        "Backoffice login",
+        "Вход в панель",
         `<h2 style="margin-top:0">Telegram Bot Konstruktor</h2>
          <p class="small">Вход в back-office по email/password</p>
          <form method="POST" action="/backoffice/login" style="margin-top:14px">
@@ -722,7 +719,7 @@ export async function registerBackofficeRoutes(
     const prev = loginAttempts.get(attemptKey);
     if (prev && now - prev.firstAt < windowMs && prev.count >= maxAttempts) {
       reply.code(429);
-      return reply.type("text/html").send(renderPage("Backoffice login", `<div class="error">Слишком много попыток. Попробуйте позже.</div>`));
+      return reply.type("text/html").send(renderPage("Вход в панель", `<div class="error">Слишком много попыток. Попробуйте позже.</div>`));
     }
 
     loginAttempts.set(attemptKey, {
@@ -733,13 +730,13 @@ export async function registerBackofficeRoutes(
     const user = await prisma.backofficeUser.findUnique({ where: { email } });
     if (!user) {
       reply.code(401);
-      return reply.type("text/html").send(renderPage("Backoffice login", `<div class="error">Неверный email или пароль.</div>`));
+      return reply.type("text/html").send(renderPage("Вход в панель", `<div class="error">Неверный email или пароль.</div>`));
     }
 
     const ok = await argon2.verify(user.passwordHash, password).catch(() => false);
     if (!ok) {
       reply.code(401);
-      return reply.type("text/html").send(renderPage("Backoffice login", `<div class="error">Неверный email или пароль.</div>`));
+      return reply.type("text/html").send(renderPage("Вход в панель", `<div class="error">Неверный email или пароль.</div>`));
     }
 
     const token = createBackofficeSessionToken(user.id);
@@ -787,7 +784,7 @@ export async function registerBackofficeRoutes(
       canViewAudience: canViewGlobalUserDirectory(role, email),
       languageOptions: i18n.availableLanguages()
     });
-    return reply.type("text/html").send(renderPage("Backoffice", body));
+    return reply.type("text/html").send(renderPage("Панель управления", body));
   });
 
   server.get("/backoffice/audience", async (req, reply) => {
@@ -878,7 +875,7 @@ export async function registerBackofficeRoutes(
             <h2 style="margin:0">Аудитория</h2>
             <div class="small" style="margin-top:4px">Централизованная база пользователей по всем ботам</div>
           </div>
-          <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">← На dashboard</button></a>
+          <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">← К списку ботов</button></a>
         </div>
         ${summaryCards}
         <form method="GET" action="/backoffice/audience" style="margin-bottom:16px" class="row">
@@ -1017,7 +1014,7 @@ export async function registerBackofficeRoutes(
   <table>
     <thead>
       <tr>
-        <th>ID</th><th>Username</th><th>Telegram ID</th><th>Имя</th><th>Бот</th><th>Язык</th><th>Последняя активность</th><th>Регистрация</th>
+        <th>ID</th><th>Логин</th><th>Telegram ID</th><th>Имя</th><th>Бот</th><th>Язык</th><th>Последняя активность</th><th>Регистрация</th>
       </tr>
     </thead>
     <tbody>${rowsHtml || "<tr><td colspan=\"8\">Нет данных</td></tr>"}
@@ -1124,7 +1121,7 @@ export async function registerBackofficeRoutes(
           <h3 style="margin-top:0">Пользователь</h3>
           <p><strong>ID:</strong> ${escapeHtml(user.id)}</p>
           <p><strong>Telegram ID:</strong> ${escapeHtml(String(user.telegramUserId))}</p>
-          <p><strong>Username:</strong> ${user.username ? `<a href="https://t.me/${escapeHtml(user.username)}" target="_blank">@${escapeHtml(user.username)}</a>` : "—"}</p>
+          <p><strong>Логин:</strong> ${user.username ? `<a href="https://t.me/${escapeHtml(user.username)}" target="_blank">@${escapeHtml(user.username)}</a>` : "—"}</p>
           <p><strong>Имя:</strong> ${escapeHtml(user.fullName || user.firstName || "—")}</p>
           <p><strong>Бот:</strong> ${user.botInstance ? escapeHtml(user.botInstance.name) : "—"}</p>
           <p><strong>Регистрация:</strong> ${escapeHtml(user.createdAt.toISOString().slice(0, 19))}</p>
@@ -1315,7 +1312,7 @@ export async function registerBackofficeRoutes(
             <h2 style="margin:0">База данных</h2>
             <div class="small" style="margin-top:4px">Статистика по каждому боту</div>
           </div>
-          <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">← На dashboard</button></a>
+          <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">← К списку ботов</button></a>
         </div>
         <div class="table-wrap" style="overflow-x:auto; margin-top:20px">
           <table style="width:100%; border-collapse:collapse">
@@ -1325,7 +1322,7 @@ export async function registerBackofficeRoutes(
                 <th style="text-align:left; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Username</th>
                 <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Пользователи</th>
                 <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Рассылки</th>
-                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Drip</th>
+                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Цепочки</th>
                 <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Платежи</th>
                 <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Оплачено</th>
                 <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Шаблоны</th>
@@ -1384,7 +1381,7 @@ export async function registerBackofficeRoutes(
         canViewAudience: canViewGlobalUserDirectory(role, email),
         languageOptions: i18n.availableLanguages()
       });
-      return reply.code(statusCode).type("text/html").send(renderPage("Backoffice", dashboardBody));
+      return reply.code(statusCode).type("text/html").send(renderPage("Панель управления", dashboardBody));
     };
 
     if (!name || !token) {
@@ -1517,18 +1514,18 @@ export async function registerBackofficeRoutes(
 
     return reply.type("text/html").send(
       renderPage(
-        "Bot settings",
+        "Настройки бота",
         `<h2 style="margin-top:0">Настройки бота</h2>
-         <div class="small">BotInstance ID: <code>${escapeHtml(bot.id)}</code></div>
-         <div style="margin-top:8px" class="small">status: <code>${escapeHtml(bot.status)}</code> · archived: <code>${bot.isArchived ? "true" : "false"}</code></div>
-         <div class="small" style="margin-top:2px">createdAt: ${bot.createdAt.toISOString()} · updatedAt: ${bot.updatedAt.toISOString()}</div>
-         <div class="small" style="margin-top:2px">paidAccessEnabled: <code>${bot.paidAccessEnabled ? "true" : "false"}</code></div>
+         <div class="small">ID экземпляра бота: <code>${escapeHtml(bot.id)}</code></div>
+         <div style="margin-top:8px" class="small">Статус: <code>${escapeHtml(bot.status)}</code> · в архиве: <code>${bot.isArchived ? "да" : "нет"}</code></div>
+         <div class="small" style="margin-top:2px">Создан: ${bot.createdAt.toISOString()} · обновлён: ${bot.updatedAt.toISOString()}</div>
+         <div class="small" style="margin-top:2px">Платный доступ: <code>${bot.paidAccessEnabled ? "вкл" : "выкл"}</code></div>
          
          <div style="margin-top:16px" class="card">
            <h3 style="margin-top:0">Техническая информация шаблона</h3>
-           <div class="small">Active template:</div>
+           <div class="small">Активный шаблон:</div>
            <div class="small" style="margin-top:6px">
-             ${activeTemplate ? `id: <code>${escapeHtml(activeTemplate.id)}</code> · baseLanguageCode: <code>${escapeHtml(activeTemplate.baseLanguageCode)}</code> · title: ${escapeHtml(activeTemplate.title)}` : "—"}
+             ${activeTemplate ? `ID: <code>${escapeHtml(activeTemplate.id)}</code> · язык: <code>${escapeHtml(activeTemplate.baseLanguageCode)}</code> · название: ${escapeHtml(activeTemplate.title)}` : "—"}
            </div>
          </div>
 
@@ -1578,10 +1575,10 @@ export async function registerBackofficeRoutes(
            ${
              canPauseResume
                ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/pause" style="margin-top:12px">
-                    <button type="submit">Пауза (DISABLED)</button>
+                    <button type="submit">Пауза (остановить бота)</button>
                   </form>
                   <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/resume" style="margin-top:12px">
-                    <button type="submit">Включить (ACTIVE)</button>
+                    <button type="submit">Запустить (включить)</button>
                   </form>`
                : `<div class="error">Недостаточно прав для управления статусом.</div>`
            }
@@ -1615,7 +1612,7 @@ export async function registerBackofficeRoutes(
           }
            
            <div style="margin-top:16px" class="small">
-             Paid access и блокировки контента настраиваются в разделе:
+             Платный доступ и блокировки контента настраиваются в разделе:
              <a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">/backoffice/bots/${escapeHtml(bot.id)}/paid</a>
            </div>
          </div>
@@ -1704,7 +1701,7 @@ export async function registerBackofficeRoutes(
       const me = await tokenValidateViaTelegram(token);
       if (!telegramBotUsername && me.username) telegramBotUsername = me.username;
     } catch (e) {
-      return reply.code(400).type("text/html").send(renderPage("Update token", `<div class="error">Токен невалиден: ${(e as any)?.message ?? "unknown error"}</div>`));
+      return reply.code(400).type("text/html").send(renderPage("Обновление токена", `<div class="error">Токен невалиден: ${(e as any)?.message ?? "неизвестная ошибка"}</div>`));
     }
 
     const encryptedToken = encryptTelegramBotToken(token, env.BOT_TOKEN_ENCRYPTION_KEY);
@@ -1881,10 +1878,10 @@ export async function registerBackofficeRoutes(
 
     return reply.type("text/html").send(
       renderPage(
-        "Clone bot",
+        "Клонирование бота",
         `<h2 style="margin-top:0">Клонировать шаблон</h2>
-         <div class="small">Источник: BotInstance ID <code>${escapeHtml(sourceBot.id)}</code></div>
-         <div class="small" style="margin-top:4px">baseLanguageCode: <code>${escapeHtml(activeTemplate?.baseLanguageCode ?? "ru")}</code></div>
+         <div class="small">Источник: ID бота <code>${escapeHtml(sourceBot.id)}</code></div>
+         <div class="small" style="margin-top:4px">Базовый язык шаблона: <code>${escapeHtml(activeTemplate?.baseLanguageCode ?? "ru")}</code></div>
          <form method="POST" action="/backoffice/api/bots/${escapeHtml(sourceBot.id)}/clone" style="margin-top:16px">
            <div style="margin-bottom:10px">
              <label>Название нового бота</label>
@@ -1899,10 +1896,10 @@ export async function registerBackofficeRoutes(
              <input name="telegramBotUsername" type="text" placeholder="my_bot" />
            </div>
            <div style="margin-bottom:10px">
-             <label>Paid access enabled</label>
+             <label>Платный доступ включён</label>
              <select name="paidAccessEnabled">
-               <option value="true" ${sourceBot.paidAccessEnabled ? "selected" : ""}>true</option>
-               <option value="false" ${!sourceBot.paidAccessEnabled ? "selected" : ""}>false</option>
+               <option value="true" ${sourceBot.paidAccessEnabled ? "selected" : ""}>Да</option>
+               <option value="false" ${!sourceBot.paidAccessEnabled ? "selected" : ""}>Нет</option>
              </select>
            </div>
            <button type="submit">Создать клон</button>
@@ -1946,7 +1943,7 @@ export async function registerBackofficeRoutes(
       const me = await tokenValidateViaTelegram(token);
       if (!telegramBotUsername && me.username) telegramBotUsername = me.username;
     } catch (e) {
-      return reply.code(400).type("text/html").send(renderPage("Clone bot", `<div class="error">Токен невалиден: ${(e as any)?.message ?? "unknown error"}</div>`));
+      return reply.code(400).type("text/html").send(renderPage("Клонирование бота", `<div class="error">Токен невалиден: ${(e as any)?.message ?? "неизвестная ошибка"}</div>`));
     }
 
     const tokenHash = hashTelegramBotToken(token);
@@ -1954,7 +1951,7 @@ export async function registerBackofficeRoutes(
       where: { telegramBotTokenHash: tokenHash }
     });
     if (existingByHash) {
-      return reply.code(409).type("text/html").send(renderPage("Clone bot", `<div class="error">Бот с таким токеном уже существует.</div>`));
+      return reply.code(409).type("text/html").send(renderPage("Клонирование бота", `<div class="error">Бот с таким токеном уже существует.</div>`));
     }
 
     const encryptedToken = encryptTelegramBotToken(token, env.BOT_TOKEN_ENCRYPTION_KEY);
@@ -1977,9 +1974,9 @@ export async function registerBackofficeRoutes(
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code;
       if (code === "P2002") {
-        return reply.code(409).type("text/html").send(renderPage("Clone bot", `<div class="error">Бот с таким токеном уже существует.</div>`));
+        return reply.code(409).type("text/html").send(renderPage("Клонирование бота", `<div class="error">Бот с таким токеном уже существует.</div>`));
       }
-      return reply.code(500).type("text/html").send(renderPage("Clone bot", `<div class="error">Clone failed: ${(e as any)?.message ?? "unknown error"}</div>`));
+      return reply.code(500).type("text/html").send(renderPage("Клонирование бота", `<div class="error">Ошибка клонирования: ${(e as any)?.message ?? "неизвестная ошибка"}</div>`));
     }
 
     await runtimeManager.startBotInstance(cloned.newBotInstanceId, { launch: true });
@@ -1990,13 +1987,13 @@ export async function registerBackofficeRoutes(
     const openUrl = clonedBot?.telegramBotUsername ? `https://t.me/${clonedBot.telegramBotUsername}` : "#";
     return reply.type("text/html").send(
       renderPage(
-        "Bot cloned",
+        "Бот склонирован",
         `<h2 style="margin-top:0">Клон создан</h2>
-         <div class="small">New bot instance: <code>${escapeHtml(cloned.newBotInstanceId)}</code></div>
-         <div class="small" style="margin-top:10px">Дальше конфигурируйте структуру внутри Telegram через существующий конструктор.</div>
+         <div class="small">Новый экземпляр бота: <code>${escapeHtml(cloned.newBotInstanceId)}</code></div>
+         <div class="small" style="margin-top:10px">Дальше настройте структуру в Telegram через конструктор.</div>
          <div style="margin-top:14px" class="row">
            <a href="${openUrl}" target="_blank" style="text-decoration:none"><button type="button">Открыть в Telegram</button></a>
-           <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">На dashboard</button></a>
+           <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">К списку ботов</button></a>
          </div>`
       )
     );
@@ -2264,35 +2261,33 @@ export async function registerBackofficeRoutes(
       user.username ? `@${escapeHtml(user.username)}` : escapeHtml(user.fullName || String(user.telegramUserId));
 
     const renderPaymentStatus = (status: string) => {
-      switch (status) {
-        case "PAID":
-        case "CONFIRMED":
-        case "COMPLETED":
-        case "ACTIVE":
-          return renderStatusBadge(status, "active");
-        case "PENDING":
-        case "UNPAID":
-          return renderStatusBadge(status, "pending");
-        case "FAILED":
-        case "CANCELLED":
-        case "REJECTED":
-          return renderStatusBadge(status, "failed");
-        case "EXPIRED":
-        case "REVOKED":
-          return renderStatusBadge(status, "expired");
-        default:
-          return renderStatusBadge(status, "muted");
-      }
+      const ru: Record<string, { label: string; tone: Parameters<typeof renderStatusBadge>[1] }> = {
+        PAID: { label: "Оплачено", tone: "active" },
+        CONFIRMED: { label: "Подтверждено", tone: "active" },
+        COMPLETED: { label: "Завершено", tone: "active" },
+        ACTIVE: { label: "Активно", tone: "active" },
+        PENDING: { label: "В ожидании", tone: "pending" },
+        UNPAID: { label: "Не оплачено", tone: "pending" },
+        BATCHED: { label: "В пакете выплаты", tone: "pending" },
+        FAILED: { label: "Ошибка", tone: "failed" },
+        CANCELLED: { label: "Отменено", tone: "failed" },
+        REJECTED: { label: "Отклонено", tone: "failed" },
+        EXPIRED: { label: "Истекло", tone: "expired" },
+        REVOKED: { label: "Отозвано", tone: "expired" }
+      };
+      const mapped = ru[status];
+      if (mapped) return renderStatusBadge(mapped.label, mapped.tone);
+      return renderStatusBadge(status, "muted");
     };
 
     const renderAccessStatus = (right: (typeof recentAccessRights)[number]) => {
-      if (right.status === "EXPIRED") return renderStatusBadge("EXPIRED", "expired");
-      if (right.status === "REVOKED") return renderStatusBadge("REVOKED", "failed");
-      if (!right.activeUntil) return renderStatusBadge("ACTIVE", "active");
+      if (right.status === "EXPIRED") return renderStatusBadge("Истёк", "expired");
+      if (right.status === "REVOKED") return renderStatusBadge("Отозван", "failed");
+      if (!right.activeUntil) return renderStatusBadge("Активен", "active");
       const msLeft = right.activeUntil.getTime() - Date.now();
-      if (msLeft <= 0) return renderStatusBadge("EXPIRED", "expired");
-      if (msLeft <= 3 * 24 * 60 * 60 * 1000) return renderStatusBadge("EXPIRES SOON", "expiring");
-      return renderStatusBadge("ACTIVE", "active");
+      if (msLeft <= 0) return renderStatusBadge("Истёк", "expired");
+      if (msLeft <= 3 * 24 * 60 * 60 * 1000) return renderStatusBadge("Скоро истечёт", "expiring");
+      return renderStatusBadge("Активен", "active");
     };
 
     const renderReminderSummary = (accessRightId: string) => {
@@ -2302,9 +2297,9 @@ export async function registerBackofficeRoutes(
       const failed = jobs.filter((job) => job.status === "FAILED").length;
       const pending = jobs.filter((job) => job.status === "PENDING").length;
       const chunks: string[] = [];
-      if (sent) chunks.push(`sent ${sent}`);
-      if (pending) chunks.push(`pending ${pending}`);
-      if (failed) chunks.push(`failed ${failed}`);
+      if (sent) chunks.push(`отпр. ${sent}`);
+      if (pending) chunks.push(`ожид. ${pending}`);
+      if (failed) chunks.push(`ошиб. ${failed}`);
       return `${renderStatusBadge(chunks.join(" · "), failed ? "failed" : pending ? "pending" : "active")}`;
     };
 
@@ -2312,7 +2307,7 @@ export async function registerBackofficeRoutes(
       const job = expiryJobByAccessId.get(accessRightId);
       if (!job) return `<span class="small">—</span>`;
       if (job.status === "FAILED") {
-        return `${renderStatusBadge("REMOVAL FAILED", "failed")}<div class="small" style="margin-top:4px">${escapeHtml(job.errorMessage ?? "unknown error")}</div>`;
+        return `${renderStatusBadge("Ошибка удаления", "failed")}<div class="small" style="margin-top:4px">${escapeHtml(job.errorMessage ?? "неизвестная ошибка")}</div>`;
       }
       return `${renderPaymentStatus(job.status)}<div class="small" style="margin-top:4px">${formatIsoDate(job.runAt)}</div>`;
     };
@@ -2337,7 +2332,7 @@ export async function registerBackofficeRoutes(
         <div class="product-card-header">
           <span><b>${escapeHtml(loc?.title ?? product.code)}</b></span>
           ${renderProductModeBadge(product)}
-          ${renderStatusBadge(product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "EXPIRING ACCESS" : "LIFETIME", product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "pending" : "active")}
+          ${renderStatusBadge(product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "Временный доступ" : "Бессрочно", product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "pending" : "active")}
           <span class="small">${escapeHtml(formatMoney(product.price))} ${escapeHtml(product.currency)} · ${escapeHtml(formatProductDuration(product))}</span>
           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/archive" style="margin-left:auto">
             <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Архивировать</button>
@@ -2350,10 +2345,10 @@ export async function registerBackofficeRoutes(
           <div>${renderLinkedChatReadiness(product)}</div>
         </div>
         ${removalWarning ? `<div class="warning-card" style="margin-bottom:12px">${escapeHtml(removalWarning)}</div>` : ""}
-        ${diagnostics.hasLinkedChats ? `<div class="small" style="margin-bottom:12px">linked chats: ссылки ${diagnostics.displayLinkCount} · chat identifiers ${diagnostics.banIdentifierCount}</div>` : ""}
+        ${diagnostics.hasLinkedChats ? `<div class="small" style="margin-bottom:12px">Связанные чаты: ссылок ${diagnostics.displayLinkCount} · ID для удаления ${diagnostics.banIdentifierCount}</div>` : ""}
 
         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/update">
-          <div class="section-title">Basic</div>
+          <div class="section-title">Основное</div>
           <div class="product-form-grid">
             <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required value="${escapeHtml(loc?.title ?? "")}" /></div>
             <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required value="${escapeHtml(loc?.payButtonText ?? "")}" /></div>
@@ -2378,16 +2373,16 @@ export async function registerBackofficeRoutes(
               <div class="linked-chat-card">
                 <div class="title">Кнопка 1</div>
                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" value="${escapeHtml(String(chat1.label ?? ""))}" /></div>
-                <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" value="${escapeHtml(String(chat1.link ?? ""))}" /></div>
-                <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" value="${escapeHtml(postLinkFromIdentifier(String(chat1.identifier ?? "")))}" /></div>
-                <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+                <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" value="${escapeHtml(String(chat1.link ?? ""))}" /></div>
+                <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" value="${escapeHtml(postLinkFromIdentifier(String(chat1.identifier ?? "")))}" /></div>
+                <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
               </div>
               <div class="linked-chat-card">
                 <div class="title">Кнопка 2</div>
                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" value="${escapeHtml(String(chat2.label ?? ""))}" /></div>
-                <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" value="${escapeHtml(String(chat2.link ?? ""))}" /></div>
-                <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" value="${escapeHtml(postLinkFromIdentifier(String(chat2.identifier ?? "")))}" /></div>
-                <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+                <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" value="${escapeHtml(String(chat2.link ?? ""))}" /></div>
+                <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" value="${escapeHtml(postLinkFromIdentifier(String(chat2.identifier ?? "")))}" /></div>
+                <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
               </div>
             </div>
             <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
@@ -2439,7 +2434,7 @@ export async function registerBackofficeRoutes(
         kind: "deposit",
         status: deposit.status,
         user: deposit.user,
-        productLabel: "Balance top-up",
+        productLabel: "Пополнение баланса",
         amount: `${formatMoney(deposit.amount)} ${deposit.currency}`,
         note: deposit.orderId,
         walletAddress: deposit.providerPayAddress ?? null
@@ -2469,11 +2464,11 @@ export async function registerBackofficeRoutes(
       return trimmed || null;
     };
     const diagnoseDepositReason = (deposit: (typeof recentDeposits)[number]): string => {
-      if (deposit.status === "CONFIRMED") return "credited";
-      if (deposit.status === "FAILED") return "failed_by_provider";
-      if (!deposit.providerPaymentId) return "create_payment_failed_or_not_created";
-      if (!deposit.providerPayAddress) return "provider_pay_address_missing";
-      return "waiting_provider_or_ipn";
+      if (deposit.status === "CONFIRMED") return "Зачислено";
+      if (deposit.status === "FAILED") return "Отклонено провайдером";
+      if (!deposit.providerPaymentId) return "Инвойс не создан";
+      if (!deposit.providerPayAddress) return "Нет адреса оплаты";
+      return "Ожидание провайдера / webhook";
     };
     const depositDiagnosticsRows = recentDeposits.slice(0, 12).map((deposit) => {
       const requested = Number(deposit.requestedAmountUsd ?? deposit.amount ?? 0);
@@ -2485,6 +2480,8 @@ export async function registerBackofficeRoutes(
           : outcome >= minAccepted
             ? "pass"
             : "fail";
+      const toleranceLabel =
+        tolerance === "pass" ? "OK (≥98%)" : tolerance === "fail" ? "Ниже порога" : "—";
 
       return {
         createdAt: deposit.createdAt,
@@ -2500,7 +2497,8 @@ export async function registerBackofficeRoutes(
         productId: readRequestedProductId(deposit.rawPayload),
         reason: diagnoseDepositReason(deposit),
         minAccepted,
-        tolerance
+        tolerance,
+        toleranceLabel
       };
     });
 
@@ -2508,47 +2506,47 @@ export async function registerBackofficeRoutes(
       renderPage(
         "Платный доступ",
         `<h2 style="margin-top:0">Оплаты и доступ</h2>
-         <div class="small" style="margin-top:6px">Bot: <code>${escapeHtml(bot.id)}</code></div>
+         <div class="small" style="margin-top:6px">Бот: <code>${escapeHtml(bot.id)}</code></div>
          ${simulateOk ? `<div class="success" style="margin-top:12px">Тестовый сценарий запущен: доступ выдан, reminders и expiry/removal будут отработаны по policy продукта.</div>` : ""}
          ${simulateError ? `<div class="error" style="margin-top:12px">Ошибка тестового сценария: ${escapeHtml(simulateError)}</div>` : ""}
-         ${misconfiguredProducts.length ? `<div class="warning-card" style="margin-top:12px">Найдены expiring-продукты без ban-capable linked chats. Они смогут показать invite buttons, но не смогут гарантированно удалить пользователя из чата/канала по expiry: ${misconfiguredProducts.map((product) => `<code>${escapeHtml(productLabelById.get(product.id) ?? product.code)}</code>`).join(", ")}</div>` : ""}
+         ${misconfiguredProducts.length ? `<div class="warning-card" style="margin-top:12px">Найдены продукты с истечением без привязки чатов, пригодных для удаления. Кнопки приглашения покажутся, но по истечении срока нельзя гарантировать исключение из чата/канала: ${misconfiguredProducts.map((product) => `<code>${escapeHtml(productLabelById.get(product.id) ?? product.code)}</code>`).join(", ")}</div>` : ""}
 
          <div class="paid-nav">
            <a href="#overview"><button class="secondary" type="button">Обзор</button></a>
            <a href="#bindings"><button class="secondary" type="button">Контент и доступ</button></a>
-           <a href="#live-products"><button class="secondary" type="button">Live products</button></a>
-           <a href="#test-lab"><button class="secondary" type="button">Test Lab</button></a>
+           <a href="#live-products"><button class="secondary" type="button">Боевые продукты</button></a>
+           <a href="#test-lab"><button class="secondary" type="button">Тестовая лаборатория</button></a>
            <a href="#payments-balance"><button class="secondary" type="button">Платежи / баланс</button></a>
-           <a href="#nowpayments"><button class="secondary" type="button">NOWPayments / Payouts</button></a>
+           <a href="#nowpayments"><button class="secondary" type="button">NOWPayments / выплаты</button></a>
            <a href="#access-audit"><button class="secondary" type="button">Аудит доступа</button></a>
          </div>
 
          <div id="overview" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Dashboard / Обзор</h3>
-           <div class="small">Один экран для alpha-owner: сколько продуктов активны, какие разделы locked, где ближайшие истечения и есть ли ошибки в removal pipeline.</div>
+           <h3 style="margin-top:0">Обзор</h3>
+           <div class="small">Сводка для владельца: продукты, закрытые разделы, истекающие доступы и ошибки при удалении из чатов.</div>
            <div class="overview-grid">
-             <div class="overview-card"><div class="small">Paid access</div><div class="value">${bot.paidAccessEnabled ? "ON" : "OFF"}</div><div style="margin-top:6px">${bot.paidAccessEnabled ? renderStatusBadge("ACTIVE", "active") : renderStatusBadge("DISABLED", "failed")}</div></div>
-             <div class="overview-card"><div class="small">Locked sections</div><div class="value">${menuItems.filter((item) => Boolean(item.productId)).length}</div><div class="small" style="margin-top:6px">${menuItems.length} всего разделов</div></div>
-             <div class="overview-card"><div class="small">Products</div><div class="value">${products.length}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`LIVE ${liveProducts.length}`, "live")} ${renderStatusBadge(`TEST ${testProducts.length}`, "test")}</div></div>
-             <div class="overview-card"><div class="small">Active accesses</div><div class="value">${activeAccessCount}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Expiring soon ${expiringSoonCount}`, expiringSoonCount ? "expiring" : "muted")}</div></div>
-             <div class="overview-card"><div class="small">Pending payments</div><div class="value">${pendingPaymentsCount}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Deposits pending ${pendingDepositsCount}`, pendingDepositsCount ? "pending" : "muted")}</div></div>
-             <div class="overview-card"><div class="small">Expiry issues</div><div class="value">${failedExpiryJobsCount}</div><div class="small" style="margin-top:6px">${failedExpiryJobsCount ? renderStatusBadge("Removal failures require review", "failed") : renderStatusBadge("No detected failures", "active")}</div></div>
+             <div class="overview-card"><div class="small">Платный доступ</div><div class="value">${bot.paidAccessEnabled ? "Вкл" : "Выкл"}</div><div style="margin-top:6px">${bot.paidAccessEnabled ? renderStatusBadge("Активен", "active") : renderStatusBadge("Выключен", "failed")}</div></div>
+             <div class="overview-card"><div class="small">Закрытые разделы</div><div class="value">${menuItems.filter((item) => Boolean(item.productId)).length}</div><div class="small" style="margin-top:6px">${menuItems.length} всего разделов</div></div>
+             <div class="overview-card"><div class="small">Продукты</div><div class="value">${products.length}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Боевые ${liveProducts.length}`, "live")} ${renderStatusBadge(`Тест ${testProducts.length}`, "test")}</div></div>
+             <div class="overview-card"><div class="small">Активные доступы</div><div class="value">${activeAccessCount}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Скоро истекут ${expiringSoonCount}`, expiringSoonCount ? "expiring" : "muted")}</div></div>
+             <div class="overview-card"><div class="small">Ожидающие платежи</div><div class="value">${pendingPaymentsCount}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Депозиты в ожидании ${pendingDepositsCount}`, pendingDepositsCount ? "pending" : "muted")}</div></div>
+             <div class="overview-card"><div class="small">Проблемы по истечению</div><div class="value">${failedExpiryJobsCount}</div><div class="small" style="margin-top:6px">${failedExpiryJobsCount ? renderStatusBadge("Ошибки удаления — проверьте", "failed") : renderStatusBadge("Сбоев не найдено", "active")}</div></div>
            </div>
            <div class="subgrid" style="margin-top:16px">
              <div class="card" style="padding:14px">
-               <div class="section-title">Quick flow</div>
+               <div class="section-title">Быстрый порядок действий</div>
                <ol class="flow-list">
-                 <li>Создайте live- или test-продукт.</li>
-                 <li>Привяжите продукт к разделу в блоке “Контент и доступ”.</li>
-                 <li>Проверьте CTA-кнопку оплаты и linked chat readiness.</li>
-                 <li>Для TEST используйте “Выдать тестовый доступ”, чтобы прогнать весь lifecycle за минуты.</li>
-                 <li>Следите за reminders / expiry / removal в “Аудит доступа”.</li>
+                 <li>Создайте боевой или тестовый продукт.</li>
+                 <li>Привяжите продукт к разделу в блоке «Контент и доступ».</li>
+                 <li>Проверьте кнопку оплаты и готовность ссылок на чаты.</li>
+                 <li>Для теста используйте «Выдать тестовый доступ», чтобы прогнать сценарий за минуты.</li>
+                 <li>Следите за напоминаниями и удалением в «Аудит доступа».</li>
                </ol>
              </div>
              <div class="card" style="padding:14px">
-               <div class="section-title">Checkout mode</div>
-               <div>${balanceFlowEnabled ? renderStatusBadge("TOP-UP + PAY FROM BALANCE", "active") : renderStatusBadge("DIRECT / MANUAL PAYMENT REQUEST", "pending")}</div>
-               <div class="small" style="margin-top:8px">Оплата работает автоматически через NOWPayments. Сеть: USDT (BEP20). Владелец получает выплаты на указанный кошелёк owner.</div>
+               <div class="section-title">Режим оформления оплаты</div>
+               <div>${balanceFlowEnabled ? renderStatusBadge("ПОПОЛНЕНИЕ БАЛАНСА + ОПЛАТА С БАЛАНСА", "active") : renderStatusBadge("ПРЯМОЙ СЧЁТ / РУЧНОЙ ЗАПРОС ОПЛАТЫ", "pending")}</div>
+               <div class="small" style="margin-top:8px">Оплата через NOWPayments. Сеть: USDT (BEP20). Владелец получает выплаты на указанный кошелёк.</div>
              </div>
            </div>
          </div>
@@ -2582,7 +2580,7 @@ export async function registerBackofficeRoutes(
                        return mi.productId
                          ? `<tr>
                               <td><b>${escapeHtml(title)}</b></td>
-                              <td>${renderStatusBadge("LOCKED", "pending")}</td>
+                              <td>${renderStatusBadge("Закрыто", "pending")}</td>
                               <td><code>${escapeHtml(productLabel ?? "")}</code> ${product ? renderProductModeBadge(product) : ""}</td>
                               <td><code>${escapeHtml(productButtonText)}</code></td>
                               <td>
@@ -2593,7 +2591,7 @@ export async function registerBackofficeRoutes(
                             </tr>`
                          : `<tr>
                               <td><b>${escapeHtml(title)}</b></td>
-                              <td>${renderStatusBadge("FREE", "active")}</td>
+                              <td>${renderStatusBadge("Открыто", "active")}</td>
                               <td>
                                 <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" style="margin:0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; max-width:560px">
                                   <div class="field" style="min-width:220px; flex:1 1 260px">
@@ -2641,16 +2639,16 @@ export async function registerBackofficeRoutes(
                     <div class="linked-chat-card">
                       <div class="title">Кнопка 1</div>
                       <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
-                      <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
-                      <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
-                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+                      <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
+                      <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
+                      <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
                     </div>
                     <div class="linked-chat-card">
                       <div class="title">Кнопка 2</div>
                       <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
-                      <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
-                      <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
-                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+                      <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
+                      <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
+                      <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
                     </div>
                   </div>
                    <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
@@ -2673,8 +2671,8 @@ export async function registerBackofficeRoutes(
          </div>
 
          <div id="test-lab" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Test Lab</h3>
-           <div class="small">Отдельное пространство для ручной проверки полного lifecycle доступа без ожидания днями. TEST-продукты используют reminders за 3/2/1 минуты и истекают в минутах, но идут по тому же grant / invite / expiry / removal pipeline.</div>
+           <h3 style="margin-top:0">Тестовая лаборатория</h3>
+           <div class="small">Отдельное место для проверки полного цикла доступа без ожидания днями. Тестовые продукты: напоминания за 3/2/1 минуту и истечение в минутах, тот же сценарий выдачи и удаления.</div>
            <div class="card test-block" style="margin-top:12px">
              <h4 style="margin-top:0">Создать тестовый продукт</h4>
              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create">
@@ -2692,16 +2690,16 @@ export async function registerBackofficeRoutes(
                   <div class="linked-chat-card">
                     <div class="title">Кнопка 1</div>
                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
-                    <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
-                    <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+                    <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
+                    <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
+                    <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
                   </div>
                   <div class="linked-chat-card">
                     <div class="title">Кнопка 2</div>
                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
-                    <div class="field-wrap"><label class="small">Invite link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
-                    <div class="field-wrap"><label class="small">Post link</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+                    <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
+                    <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
+                    <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
                   </div>
                 </div>
                  <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
@@ -2727,7 +2725,7 @@ export async function registerBackofficeRoutes(
            <div class="subgrid">
              <div class="card" style="padding:14px">
                <div class="section-title">Режим оплаты</div>
-               <div>${balanceFlowEnabled ? renderStatusBadge("NOWPayments active (USDT BEP20)", "active") : renderStatusBadge("NOWPayments не настроен", "pending")}</div>
+               <div>${balanceFlowEnabled ? renderStatusBadge("NOWPayments активен (USDT BEP20)", "active") : renderStatusBadge("NOWPayments не настроен", "pending")}</div>
                <ul class="mono-list" style="margin-top:10px">
                  <li><code>invoice/pending</code>: пользователь открыл оплату, ждём подтверждение.</li>
                  <li><code>deposit/confirmed</code>: баланс пополнен через NOWPayments.</li>
@@ -2740,7 +2738,7 @@ export async function registerBackofficeRoutes(
                ${
                  recentNotifications.length
                    ? recentNotifications.map((notification) => `<div style="margin-top:8px"><div>${renderPaymentStatus(notification.status)} <code>${escapeHtml(notification.type)}</code></div><div class="small">${renderUserLabel(notification.user)} · ${formatIsoDate(notification.createdAt)}</div></div>`).join("")
-                   : `<div class="small">Пока нет notification events.</div>`
+                   : `<div class="small">Пока нет уведомлений по событиям.</div>`
                }
              </div>
            </div>
@@ -2748,7 +2746,7 @@ export async function registerBackofficeRoutes(
            ${
              paymentEvents.length
               ? `<div class="events-scroll"><table class="paid-table">
-                  <thead><tr><th>Когда</th><th>Событие</th><th>Пользователь</th><th>Продукт</th><th>Сумма</th><th>Статус</th><th>Ref / Order</th><th>Wallet</th></tr></thead>
+                  <thead><tr><th>Когда</th><th>Событие</th><th>Пользователь</th><th>Продукт</th><th>Сумма</th><th>Статус</th><th>Референс / заказ</th><th>Кошелёк</th></tr></thead>
                    <tbody>
                      ${paymentEvents.map((event) => `<tr>
                        <td>${formatIsoDate(event.createdAt)}</td>
@@ -2767,8 +2765,8 @@ export async function registerBackofficeRoutes(
          </div>
 
          <div id="nowpayments" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">NOWPayments / Owner Payouts</h3>
-           <div class="small" style="margin-bottom:12px">Конфигурация для пополнения баланса и ежедневных выплат owner'у бота.</div>
+           <h3 style="margin-top:0">NOWPayments / выплаты владельцу</h3>
+           <div class="small" style="margin-bottom:12px">Настройка пополнения баланса и ежедневных выплат владельцу бота.</div>
            <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/nowpayments-config">
             <div class="nowpayments-grid">
               <div class="toggle-field"><label class="small" for="np-enabled">Включить NOWPayments</label><input id="np-enabled" type="checkbox" name="enabled" value="1" ${nowPaymentsConfig?.enabled ? "checked" : ""} /></div>
@@ -2782,28 +2780,38 @@ export async function registerBackofficeRoutes(
            </form>
            <div class="subgrid" style="margin-top:16px">
              <div class="card" style="padding:14px">
-               <div class="section-title">Settlement summary</div>
+               <div class="section-title">Сводка по начислениям</div>
                <div class="overview-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
-                 <div><div class="small">Pending entries</div><div class="value">${settlementAgg._count}</div></div>
-                 <div><div class="small">Pending net (USDT)</div><div class="value">${Number(settlementAgg._sum.netAmountBeforePayoutFee ?? 0).toFixed(2)}</div></div>
+                 <div><div class="small">Записей в ожидании</div><div class="value">${settlementAgg._count}</div></div>
+                 <div><div class="small">К выплате нетто (USDT)</div><div class="value">${Number(settlementAgg._sum.netAmountBeforePayoutFee ?? 0).toFixed(2)}</div></div>
                </div>
              </div>
              <div class="card" style="padding:14px">
-               <div class="section-title">Payout batches</div>
-               ${payoutBatches.length ? payoutBatches.slice(0, 5).map((b) => `<div class="small" style="margin-top:6px">${formatIsoDate(b.runDate)} · ${b.status} · ${Number(b.netTotal).toFixed(2)} USDT</div>`).join("") : `<div class="small">Нет батчей</div>`}
+               <div class="section-title">Пакеты выплат</div>
+               ${payoutBatches.length ? payoutBatches.slice(0, 5).map((b) => {
+                 const batchRu: Record<string, string> = {
+                   CREATED: "Создан",
+                   SENT: "Отправлен",
+                   PARTIAL: "Частично",
+                   PAID: "Выплачен",
+                   FAILED: "Ошибка"
+                 };
+                 const st = batchRu[b.status] ?? b.status;
+                 return `<div class="small" style="margin-top:6px">${formatIsoDate(b.runDate)} · ${escapeHtml(st)} · ${Number(b.netTotal).toFixed(2)} USDT</div>`;
+               }).join("") : `<div class="small">Нет батчей</div>`}
              </div>
            </div>
-           <div class="section-title" style="margin-top:16px">Settlement entries (последние)</div>
-           ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Order</th><th>Gross</th><th>Net</th><th>Статус</th></tr></thead><tbody>${settlementEntries.map((e) => `<tr><td>${formatIsoDate(e.createdAt)}</td><td><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${renderPaymentStatus(e.status)}</td></tr>`).join("")}</tbody></table>` : `<div class="small">Нет записей</div>`}
+           <div class="section-title" style="margin-top:16px">Записи начислений (последние)</div>
+           ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Заказ</th><th>Валовая</th><th>Нетто</th><th>Статус</th></tr></thead><tbody>${settlementEntries.map((e) => `<tr><td>${formatIsoDate(e.createdAt)}</td><td><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${renderPaymentStatus(e.status)}</td></tr>`).join("")}</tbody></table>` : `<div class="small">Нет записей</div>`}
 <details style="margin-top:16px">
-            <summary class="small" style="cursor:pointer">Webhook logs (NOWPayments, this bot only)</summary>
-             ${webhookLogs.length ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Event</th><th>Sig</th><th>Result</th></tr></thead><tbody>${webhookLogs.map((w) => `<tr><td>${formatIsoDate(w.createdAt)}</td><td><code>${escapeHtml(String((w.bodyJson as any)?.payment_id ?? "-"))}</code></td><td>${w.signatureValid ? "✓" : "✗"}</td><td>${escapeHtml(w.processingResult ?? "-")}</td></tr>`).join("")}</tbody></table>` : `<div class="small" style="margin-top:8px">Нет логов</div>`}
+            <summary class="small" style="cursor:pointer">Логи webhook (NOWPayments, только этот бот)</summary>
+             ${webhookLogs.length ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Событие</th><th>Подпись</th><th>Результат</th></tr></thead><tbody>${webhookLogs.map((w) => `<tr><td>${formatIsoDate(w.createdAt)}</td><td><code>${escapeHtml(String((w.bodyJson as any)?.payment_id ?? "-"))}</code></td><td>${w.signatureValid ? "✓" : "✗"}</td><td>${escapeHtml(w.processingResult ?? "-")}</td></tr>`).join("")}</tbody></table>` : `<div class="small" style="margin-top:8px">Нет логов</div>`}
            </details>
           <details style="margin-top:12px">
-            <summary class="small" style="cursor:pointer">Deposit diagnostics (this bot only)</summary>
+            <summary class="small" style="cursor:pointer">Диагностика депозитов (только этот бот)</summary>
             ${depositDiagnosticsRows.length
-              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Order</th><th>PaymentId</th><th>Provider status</th><th>Wallet</th><th>Req</th><th>Min 98%</th><th>Outcome</th><th>Tolerance</th><th>Credited</th><th>Deposit status</th><th>Product</th><th>Reason</th><th>Support</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(String(d.tolerance))}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td><td>${d.status === "CONFIRMED" ? `<span class="small">—</span>` : `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/deposits/${escapeHtml(d.orderId)}/emergency-confirm" style="margin:0"><input name="reason" type="text" placeholder="Support reason" style="min-width:180px" /><button type="submit" class="secondary" style="margin-top:6px;background:rgba(34,197,94,0.18);border-color:rgba(34,197,94,0.45);">Emergency confirm</button></form>`}</td></tr>`).join("")}</tbody></table>`
-              : `<div class="small" style="margin-top:8px">Нет deposit rows</div>`}
+              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Заказ</th><th>ID платежа</th><th>Статус провайдера</th><th>Кошелёк</th><th>Сумма</th><th>Мин. 98%</th><th>Поступило</th><th>Порог</th><th>Зачислено</th><th>Статус депозита</th><th>Продукт</th><th>Причина</th><th>Поддержка</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(d.toleranceLabel)}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td><td>${d.status === "CONFIRMED" ? `<span class="small">—</span>` : `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/deposits/${escapeHtml(d.orderId)}/emergency-confirm" style="margin:0"><input name="reason" type="text" placeholder="Комментарий" style="min-width:180px" /><button type="submit" class="secondary" style="margin-top:6px;background:rgba(34,197,94,0.18);border-color:rgba(34,197,94,0.45);">Подтвердить вручную</button></form>`}</td></tr>`).join("")}</tbody></table>`
+              : `<div class="small" style="margin-top:8px">Нет строк депозитов</div>`}
           </details>
          </div>
 
@@ -2813,7 +2821,7 @@ export async function registerBackofficeRoutes(
            ${
              recentAccessRights.length
                ? `<table class="paid-table" style="margin-top:12px">
-                   <thead><tr><th>Пользователь</th><th>Продукт</th><th>Mode</th><th>Статус</th><th>Expires</th><th>linked chats</th><th>Reminders</th><th>Expiry / removal</th></tr></thead>
+                   <thead><tr><th>Пользователь</th><th>Продукт</th><th>Режим</th><th>Статус</th><th>Истекает</th><th>Чаты</th><th>Напоминания</th><th>Истечение / удаление</th></tr></thead>
                    <tbody>
                      ${recentAccessRights.map((right) => {
                        const loc =
@@ -2833,7 +2841,7 @@ export async function registerBackofficeRoutes(
                      }).join("")}
                    </tbody>
                  </table>`
-               : `<div class="small" style="margin-top:10px">Пока нет access events для этого бота.</div>`
+               : `<div class="small" style="margin-top:10px">Пока нет событий доступа для этого бота.</div>`
            }
          </div>
 
@@ -3327,9 +3335,9 @@ export async function registerBackofficeRoutes(
 
     return reply.type("text/html").send(
       renderPage(
-        "Bot roles / team",
+        t("bo_roles_title"),
         `<h2 style="margin-top:0">${escapeHtml(t("bo_roles_title"))}</h2>
-         <div class="small">Bot: <code>${escapeHtml(bot.id)}</code></div>
+         <div class="small">Бот: <code>${escapeHtml(bot.id)}</code></div>
          ${errorMsg ? `<div class="error" role="alert" style="margin-top:12px">${escapeHtml(errorMsg)}</div>` : ""}
 
          <div class="card" style="margin-top:16px">
@@ -3393,7 +3401,7 @@ export async function registerBackofficeRoutes(
                      const userIdLabel = a.userId ? a.userId : "—";
                      return `<div style="margin-top:12px; padding:12px; border:1px solid rgba(255,255,255,0.12); border-radius:12px; background:rgba(255,255,255,0.04)">
                        <div><b>${escapeHtml(usernameLabel)}</b></div>
-                       <div class="small" style="margin-top:6px">role: <code>${escapeHtml(a.role)}</code> · status: <code>${escapeHtml(a.status)}</code></div>
+                       <div class="small" style="margin-top:6px">Роль: <code>${escapeHtml(a.role)}</code> · статус: <code>${escapeHtml(a.status)}</code></div>
                        <div class="small" style="margin-top:4px">userId: <code>${escapeHtml(userIdLabel)}</code></div>
                        <div class="small" style="margin-top:4px">updatedAt: <code>${escapeHtml(a.updatedAt.toISOString())}</code></div>
 
@@ -3745,20 +3753,20 @@ export async function registerBackofficeRoutes(
 
     return reply.type("text/html").send(
       renderPage(
-        "Payments (manual confirm)",
-        `<h2 style="margin-top:0">Payments (manual confirm)</h2>
-         <div class="small">Bot: <code>${escapeHtml(bot.id)}</code></div>
-         <div class="small" style="margin-top:6px">${payments.length} payments pending</div>
+        "Платежи (ручное подтверждение)",
+        `<h2 style="margin-top:0">Платежи (ручное подтверждение)</h2>
+         <div class="small">Бот: <code>${escapeHtml(bot.id)}</code></div>
+         <div class="small" style="margin-top:6px">Ожидают подтверждения: ${payments.length}</div>
 
          ${
            payments.length
              ? payments
                  .map((p) => {
                    return `<div style="margin-top:12px; padding:10px; border:1px solid rgba(255,255,255,0.12); border-radius:12px; background:rgba(255,255,255,0.04)">
-                     <div><b>Payment</b> <code>${escapeHtml(p.id)}</code> · status <code>${escapeHtml(p.status)}</code></div>
-                     <div class="small" style="margin-top:4px">user telegramUserId: <code>${escapeHtml(String(p.user.telegramUserId))}</code></div>
-                     <div class="small" style="margin-top:4px">product: <code>${escapeHtml(p.product.code)}</code> · amount: <code>${escapeHtml(String(p.product.price))}</code> ${escapeHtml(p.product.currency)}</div>
-                     <div class="small" style="margin-top:4px">referenceCode: <code>${escapeHtml(p.referenceCode)}</code></div>
+                     <div><b>Платёж</b> <code>${escapeHtml(p.id)}</code> · статус <code>${escapeHtml(p.status)}</code></div>
+                     <div class="small" style="margin-top:4px">Telegram ID пользователя: <code>${escapeHtml(String(p.user.telegramUserId))}</code></div>
+                     <div class="small" style="margin-top:4px">Продукт: <code>${escapeHtml(p.product.code)}</code> · сумма: <code>${escapeHtml(String(p.product.price))}</code> ${escapeHtml(p.product.currency)}</div>
+                     <div class="small" style="margin-top:4px">Референс: <code>${escapeHtml(p.referenceCode)}</code></div>
                      <div style="margin-top:10px" class="row">
                        <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/payments/${escapeHtml(p.id)}/confirm" style="margin:0">
                          <button type="submit">Подтвердить</button>
