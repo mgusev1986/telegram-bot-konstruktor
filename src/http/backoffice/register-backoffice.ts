@@ -237,38 +237,69 @@ function renderPage(title: string, body: string): string {
           return "-100" + m[1];
         }
 
+        function tryFillIdentifier(form, idx, sourceValue, hintMode) {
+          var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
+          var hint = form.querySelector('[data-id-hint="' + idx + '"]');
+          if (!idInput) return false;
+          var extracted = extractIdentifierFromPostLink(sourceValue || "");
+          if (!extracted) {
+            if (hint && hintMode === "error") {
+              hint.textContent = "Не удалось распознать post-link";
+              hint.className = "id-hint err";
+            }
+            return false;
+          }
+          var current = String(idInput.value || "").trim();
+          if (!current || /^-100\d{6,}$/.test(current) || /^https?:\/\/t\.me\/(?:c|o)\//i.test(current)) {
+            idInput.value = extracted;
+            if (hint) {
+              hint.textContent = "ID извлечен ✅";
+              hint.className = "id-hint ok";
+            }
+            return true;
+          }
+          return false;
+        }
+
         document.addEventListener("input", function (event) {
           var target = event && event.target;
           if (!target || !target.name) return;
-          if (!/^linkedChat(?:Link|PostLink)[12]$/.test(target.name)) return;
+          if (!/^linkedChat(?:Link|PostLink|Identifier)[12]$/.test(target.name)) return;
 
           var idxMatch = target.name.match(/([12])$/);
           var idx = idxMatch ? idxMatch[1] : "";
           if (!idx) return;
           var form = target.closest("form");
           if (!form) return;
+          var postInput = form.querySelector('input[name="linkedChatPostLink' + idx + '"]');
+          var linkInput = form.querySelector('input[name="linkedChatLink' + idx + '"]');
           var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
           var hint = form.querySelector('[data-id-hint="' + idx + '"]');
-          if (!idInput) return;
-
-          var postInput = form.querySelector('input[name="linkedChatPostLink' + idx + '"]');
-          var extracted = extractIdentifierFromPostLink((postInput && postInput.value) || target.value);
-          if (!extracted) {
-            if (hint) {
+          var source = (postInput && postInput.value) || (linkInput && linkInput.value) || target.value;
+          var ok = tryFillIdentifier(form, idx, source, "silent");
+          if (!ok && hint) {
+            var idValue = String((idInput && idInput.value) || "").trim();
+            if (!idValue || /^-100\d{6,}$/.test(idValue)) {
               hint.textContent = "";
               hint.className = "id-hint";
             }
-            return;
-          }
-          var current = String(idInput.value || "").trim();
-          if (!current || /^-100\d{6,}$/.test(current)) {
-            idInput.value = extracted;
-            if (hint) {
-              hint.textContent = "ID извлечен ✅";
-              hint.className = "id-hint ok";
-            }
           }
         });
+
+        document.addEventListener("blur", function (event) {
+          var target = event && event.target;
+          if (!target || !target.name) return;
+          if (!/^linkedChat(?:Link|PostLink|Identifier)[12]$/.test(target.name)) return;
+          var idxMatch = target.name.match(/([12])$/);
+          var idx = idxMatch ? idxMatch[1] : "";
+          if (!idx) return;
+          var form = target.closest("form");
+          if (!form) return;
+          var postInput = form.querySelector('input[name="linkedChatPostLink' + idx + '"]');
+          var linkInput = form.querySelector('input[name="linkedChatLink' + idx + '"]');
+          var source = (postInput && postInput.value) || (linkInput && linkInput.value) || target.value;
+          tryFillIdentifier(form, idx, source, "error");
+        }, true);
 
         window.extractLinkedChatId = function (button, idx) {
           var form = button && button.closest ? button.closest("form") : null;
@@ -276,22 +307,9 @@ function renderPage(title: string, body: string): string {
           var postInput = form.querySelector('input[name="linkedChatPostLink' + idx + '"]');
           var linkInput = form.querySelector('input[name="linkedChatLink' + idx + '"]');
           var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
-          var hint = form.querySelector('[data-id-hint="' + idx + '"]');
           if (!idInput) return;
-          var extracted =
-            extractIdentifierFromPostLink((postInput && postInput.value) || "")
-            || extractIdentifierFromPostLink((linkInput && linkInput.value) || "")
-            || extractIdentifierFromPostLink(idInput.value);
-          if (extracted) {
-            idInput.value = extracted;
-            if (hint) {
-              hint.textContent = "ID извлечен ✅";
-              hint.className = "id-hint ok";
-            }
-          } else if (hint) {
-            hint.textContent = "Не удалось распознать post-link";
-            hint.className = "id-hint err";
-          }
+          var source = (postInput && postInput.value) || (linkInput && linkInput.value) || idInput.value;
+          tryFillIdentifier(form, idx, source, "error");
         };
       })();
     </script>
@@ -315,6 +333,8 @@ function validatePrivateLinkedChatsOnly(linkedChats: Array<{ link?: string; iden
   const normalizePrivateIdentifier = (value: string): string => {
     const raw = String(value ?? "").trim();
     if (!raw) return "";
+    const linkMatch = raw.match(/^https?:\/\/t\.me\/(?:c|o)\/(\d+)(?:\/\d+)?\/?(?:\?.*)?$/i);
+    if (linkMatch) return `-100${linkMatch[1]}`;
     if (/^-100\d{6,}$/.test(raw)) return raw;
     if (/^100\d{6,}$/.test(raw)) return `-${raw}`;
     if (/^\d{6,}$/.test(raw)) return `-100${raw}`;
@@ -344,6 +364,8 @@ function readStructuredLinkedChatsFromBody(body: any): Array<{ link?: string; id
   const normalizePrivateIdentifier = (value: string): string => {
     const raw = String(value ?? "").trim();
     if (!raw) return "";
+    const linkMatch = raw.match(/^https?:\/\/t\.me\/(?:c|o)\/(\d+)(?:\/\d+)?\/?(?:\?.*)?$/i);
+    if (linkMatch) return `-100${linkMatch[1]}`;
     if (/^-100\d{6,}$/.test(raw)) return raw;
     if (/^100\d{6,}$/.test(raw)) return `-${raw}`;
     if (/^\d{6,}$/.test(raw)) return `-100${raw}`;
