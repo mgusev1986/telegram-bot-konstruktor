@@ -159,6 +159,9 @@ function renderPage(title: string, body: string): string {
       .toggle-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); }
       .toggle-field label { margin: 0; font-size: 12px; color: #cbd5e1; }
       .toggle-field input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 auto; padding: 0; margin: 0; accent-color: #2563eb; }
+      .mini-btn { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
+      .field-inline { display: flex; gap: 8px; align-items: center; }
+      .field-inline input { flex: 1 1 auto; min-width: 0; }
       @media (max-width: 560px) { .product-form-grid { grid-template-columns: 1fr; } }
       .test-block { margin-top: 12px; padding: 12px; border-radius: 10px; border: 1px dashed rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.06); }
       .form-row .btn { flex-shrink: 0; }
@@ -246,6 +249,22 @@ function renderPage(title: string, body: string): string {
           if (!extracted) return;
           var current = String(idInput.value || "").trim();
           if (!current || /^-100\d{6,}$/.test(current)) {
+            idInput.value = extracted;
+          }
+        });
+
+        document.addEventListener("click", function (event) {
+          var target = event && event.target;
+          if (!target || !target.getAttribute) return;
+          var idx = target.getAttribute("data-extract-id");
+          if (!idx) return;
+          var form = target.closest("form");
+          if (!form) return;
+          var linkInput = form.querySelector('input[name="linkedChatLink' + idx + '"]');
+          var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
+          if (!linkInput || !idInput) return;
+          var extracted = extractIdentifierFromPostLink(linkInput.value);
+          if (extracted) {
             idInput.value = extracted;
           }
         });
@@ -2366,13 +2385,13 @@ export async function registerBackofficeRoutes(
                 <div class="title">Кнопка 1</div>
                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" value="${escapeHtml(String(chat1.label ?? ""))}" /></div>
                 <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" value="${escapeHtml(String(chat1.link ?? ""))}" /></div>
-                <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /></div>
+                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" data-extract-id="1">Извлечь</button></div></div>
               </div>
               <div class="linked-chat-card">
                 <div class="title">Кнопка 2</div>
                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" value="${escapeHtml(String(chat2.label ?? ""))}" /></div>
                 <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" value="${escapeHtml(String(chat2.link ?? ""))}" /></div>
-                <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /></div>
+                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /><button class="secondary mini-btn" type="button" data-extract-id="2">Извлечь</button></div></div>
               </div>
             </div>
             <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
@@ -2627,13 +2646,13 @@ export async function registerBackofficeRoutes(
                       <div class="title">Кнопка 1</div>
                       <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
                       <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" /></div>
-                      <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /></div>
+                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-extract-id="1">Извлечь</button></div></div>
                     </div>
                     <div class="linked-chat-card">
                       <div class="title">Кнопка 2</div>
                       <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
                       <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" /></div>
-                      <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /></div>
+                      <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-extract-id="2">Извлечь</button></div></div>
                     </div>
                   </div>
                    <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
@@ -2676,13 +2695,13 @@ export async function registerBackofficeRoutes(
                     <div class="title">Кнопка 1</div>
                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
                     <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /></div>
+                    <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-extract-id="1">Извлечь</button></div></div>
                   </div>
                   <div class="linked-chat-card">
                     <div class="title">Кнопка 2</div>
                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
                     <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /></div>
+                    <div class="field-wrap"><label class="small">Identifier</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-extract-id="2">Извлечь</button></div></div>
                   </div>
                 </div>
                  <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
