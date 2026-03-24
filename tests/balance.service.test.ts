@@ -416,6 +416,50 @@ describe("BalanceService NOWPayments flow", () => {
     );
   });
 
+  it("keeps requestedProductId after PENDING IPN so CONFIRMED callback still gets productId", async () => {
+    const onDepositCredited = vi.fn().mockResolvedValue(undefined);
+    const { service, state } = createBalanceHarness({ onDepositCredited });
+    Object.assign(state.deposit, {
+      requestedAmountUsd: 10,
+      botInstanceId: "bot-A",
+      rawPayload: { requestedProductId: "product-after-pending", createPaymentResponse: { saved: true } }
+    });
+
+    const pendingPayload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "waiting",
+      price_amount: 10,
+      pay_amount: 10
+    };
+    await service.processNowPaymentsIpn(JSON.stringify(pendingPayload), signPayload(pendingPayload, "test-ipn-secret"));
+    await flushAsyncWork();
+
+    expect(onDepositCredited).not.toHaveBeenCalled();
+    expect((state.deposit.rawPayload as Record<string, unknown>).requestedProductId).toBe("product-after-pending");
+    expect((state.deposit.rawPayload as Record<string, unknown>).payment_status).toBe("waiting");
+
+    const finishedPayload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "finished",
+      price_amount: 10,
+      pay_amount: 10,
+      outcome_amount: 10
+    };
+    await service.processNowPaymentsIpn(JSON.stringify(finishedPayload), signPayload(finishedPayload, "test-ipn-secret"));
+    await flushAsyncWork();
+
+    expect(onDepositCredited).toHaveBeenCalledTimes(1);
+    expect(onDepositCredited).toHaveBeenCalledWith(
+      expect.objectContaining({
+        productId: "product-after-pending",
+        creditedAmount: 10
+      })
+    );
+    expect((state.deposit.rawPayload as Record<string, unknown>).requestedProductId).toBe("product-after-pending");
+  });
+
   it("credits actual amount when underpaid (exchange fee deducted)", async () => {
     const { service, state } = createBalanceHarness();
     Object.assign(state.deposit, { requestedAmountUsd: 10 });

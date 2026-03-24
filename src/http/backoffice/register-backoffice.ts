@@ -20,6 +20,7 @@ import { BotRoleAssignmentService } from "../../modules/bot-roles/bot-role-assig
 import { UserDirectoryService } from "../../modules/users/user-directory.service";
 import { SubscriptionChannelService } from "../../modules/subscription-channel/subscription-channel.service";
 import { logger } from "../../common/logger";
+import { readStructuredLinkedChatsFromBody } from "../../common/backoffice-linked-chat-form";
 import { parseLinkedChatsFromForm } from "../../common/linked-chat-parser";
 import { canPerform, canViewGlobalUserDirectory, type BackofficeAction } from "./backoffice-permissions";
 import {
@@ -327,38 +328,6 @@ function validatePrivateLinkedChatsOnly(linkedChats: Array<{ link?: string; iden
     }
   }
   return null;
-}
-
-function readStructuredLinkedChatsFromBody(body: any): Array<{ link?: string; identifier?: string; label?: string }> {
-  const normalizePrivateIdentifier = (value: string): string => {
-    const raw = String(value ?? "").trim();
-    if (!raw) return "";
-    const linkMatch = raw.match(/t\.me\/(?:c|o)\/(\d+)/i);
-    if (linkMatch) return `-100${linkMatch[1]}`;
-    if (/^-100\d{6,}$/.test(raw)) return raw;
-    if (/^100\d{6,}$/.test(raw)) return `-${raw}`;
-    if (/^\d{6,}$/.test(raw)) return `-100${raw}`;
-    return raw;
-  };
-
-  const rows: Array<{ link?: string; identifier?: string; label?: string }> = [];
-  for (const i of [1, 2]) {
-    const label = String(body?.[`linkedChatLabel${i}`] ?? "").trim();
-    const link = String(body?.[`linkedChatLink${i}`] ?? "").trim();
-    const postLink = String(body?.[`linkedChatPostLink${i}`] ?? "").trim();
-    const rawIdentifier = String(body?.[`linkedChatIdentifier${i}`] ?? "").trim();
-    const postLinkMatch = postLink.match(/t\.me\/(?:c|o)\/(\d+)/i)
-      || link.match(/t\.me\/(?:c|o)\/(\d+)/i);
-    const identifier = normalizePrivateIdentifier(rawIdentifier || (postLinkMatch ? `-100${postLinkMatch[1]}` : ""));
-    const normalizedLink = postLinkMatch ? "" : link;
-    if (!label && !link && !postLink && !identifier) continue;
-    rows.push({
-      label: label || undefined,
-      link: normalizedLink || undefined,
-      identifier: identifier || undefined
-    });
-  }
-  return rows;
 }
 
 function formatMoney(value: unknown): string {

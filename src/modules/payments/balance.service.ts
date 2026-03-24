@@ -74,6 +74,15 @@ function readRequestedProductId(rawPayload: unknown): string | undefined {
   return trimmed || undefined;
 }
 
+/** Merge NOWPayments payload into deposit.rawPayload — never drop requestedProductId / createPaymentResponse from createDepositIntent. */
+function mergeDepositRawPayload(existing: unknown, providerUpdate: Record<string, unknown>): object {
+  const base: Record<string, unknown> =
+    existing && typeof existing === "object" && !Array.isArray(existing)
+      ? { ...(existing as Record<string, unknown>) }
+      : {};
+  return { ...base, ...providerUpdate };
+}
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export interface DepositIntent {
@@ -486,7 +495,7 @@ export class BalanceService {
       },
       "NOWPayments deposit diagnostics snapshot"
     );
-    const payloadObject = payload as object;
+    const payloadRecord = payload as Record<string, unknown>;
     const processedAt = new Date();
     let credited = false;
     let duplicate = false;
@@ -526,7 +535,7 @@ export class BalanceService {
           data: {
             status: "FAILED",
             providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
-            rawPayload: payloadObject
+            rawPayload: mergeDepositRawPayload(lockedDeposit.rawPayload, payloadRecord)
           }
         });
 
@@ -563,7 +572,7 @@ export class BalanceService {
           data: {
             status: "PENDING",
             providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
-            rawPayload: payloadObject
+            rawPayload: mergeDepositRawPayload(lockedDeposit.rawPayload, payloadRecord)
           }
         });
 
@@ -628,7 +637,7 @@ export class BalanceService {
           providerPaymentId: lockedDeposit.providerPaymentId ?? paymentId,
           creditedAt: processedAt,
           ledgerEntryId: entry.id,
-          rawPayload: payloadObject,
+          rawPayload: mergeDepositRawPayload(lockedDeposit.rawPayload, payloadRecord),
           creditedBalanceAmount: creditAmount,
           actualOutcomeAmount: actualOutcome > 0 ? actualOutcome : undefined,
           confirmedAt: processedAt,
