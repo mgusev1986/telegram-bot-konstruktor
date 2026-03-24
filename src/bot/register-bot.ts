@@ -997,7 +997,19 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const payButtonText = getProductPayButtonText(product, user.selectedLanguage)?.trim() || services.i18n.t(user.selectedLanguage, "pay_from_balance");
 
     if (!services.balance.isNowPaymentsEnabled()) {
-      logger.warn({ userId: user.id, productId }, "Pay button: NOWPayments not configured");
+      const diag = services.balance.getNowPaymentsDiagnostics();
+      logger.warn(
+        {
+          userId: user.id,
+          botId: user.botInstanceId ?? "global",
+          productId,
+          hasApiKey: diag.hasApiKey,
+          hasIpnSecret: diag.hasIpnSecret,
+          hasIpnCallbackUrl: diag.hasIpnCallbackUrl,
+          reason: !diag.hasApiKey ? "NOWPAYMENTS_API_KEY missing" : !diag.hasIpnSecret ? "NOWPAYMENTS_IPN_SECRET missing" : "unknown"
+        },
+        "Pay button: NOWPayments not configured"
+      );
       await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "payment_temporarily_unavailable"), {
         show_alert: true
       });

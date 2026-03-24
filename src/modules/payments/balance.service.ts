@@ -89,6 +89,24 @@ export class BalanceService {
     return this.nowPayments != null && Boolean(env.NOWPAYMENTS_IPN_SECRET?.trim());
   }
 
+  /** Diagnostic: why NOWPayments might be disabled (no secrets logged). */
+  getNowPaymentsDiagnostics(): {
+    hasApiKey: boolean;
+    hasIpnSecret: boolean;
+    hasIpnCallbackUrl: boolean;
+    enabled: boolean;
+  } {
+    const hasApiKey = Boolean(env.NOWPAYMENTS_API_KEY?.trim());
+    const hasIpnSecret = Boolean(env.NOWPAYMENTS_IPN_SECRET?.trim());
+    const hasIpnCallbackUrl = Boolean(env.NOWPAYMENTS_IPN_CALLBACK_URL?.trim());
+    return {
+      hasApiKey,
+      hasIpnSecret,
+      hasIpnCallbackUrl,
+      enabled: this.nowPayments != null && hasIpnSecret
+    };
+  }
+
   async getOrCreateAccount(userId: string): Promise<{ id: string; balance: number }> {
     let account = await this.prisma.userBalanceAccount.findUnique({
       where: { userId }
@@ -117,10 +135,27 @@ export class BalanceService {
     currency: string,
     network: PaymentNetwork
   ): Promise<DepositIntent | null> {
-    if (!this.nowPayments) return null;
+    const botId = user.botInstanceId ?? "global";
+    const diag = this.getNowPaymentsDiagnostics();
+
+    if (!this.nowPayments) {
+      logger.warn(
+        {
+          userId: user.id,
+          botId,
+          productAmount: amount,
+          currency,
+          network,
+          hasApiKey: diag.hasApiKey,
+          hasIpnSecret: diag.hasIpnSecret,
+          hasIpnCallbackUrl: diag.hasIpnCallbackUrl
+        },
+        "createDepositIntent: NOWPayments adapter is null (missing NOWPAYMENTS_API_KEY)"
+      );
+      return null;
+    }
 
     const { id: accountId } = await this.getOrCreateAccount(user.id);
-    const botId = user.botInstanceId ?? "global";
     const orderId = `bot:${botId}:user:${user.id}:topup:${randomUUID().slice(0, 12)}`;
 
     const deposit = await this.prisma.depositTransaction.create({
@@ -178,18 +213,34 @@ export class BalanceService {
         currency
       };
     } catch (error) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      const statusCode = typeof (error as any)?.response?.status === "number" ? (error as any).response.status : undefined;
+      const statusMatch = errMsg.match(/(\d{3})\s/);
+      const extractedStatus = statusMatch ? Number(statusMatch[1]) : statusCode;
       logger.warn(
         {
           userId: user.id,
+          botId,
           provider: PROVIDER,
           orderId,
           depositId: deposit.id,
           amount,
           currency,
           network,
-          error: error instanceof Error ? error.message : String(error)
+          error: errMsg,
+          statusCode: extractedStatus,
+          hint:
+            extractedStatus === 401
+              ? "Invalid API key (NOWPAYMENTS_API_KEY)"
+              : extractedStatus === 403
+                ? "API key forbidden or IP not whitelisted"
+                : extractedStatus === 400
+                  ? "Bad request: check pay_currency, amount, or IPN URL"
+                  : extractedStatus === 404
+                    ? "API endpoint or resource not found"
+                    : undefined
         },
-        "NOWPayments createDepositIntent failed; deposit remains PENDING"
+        "createDepositIntent: NOWPayments createPayment failed; deposit remains PENDING"
       );
       return null;
     }
