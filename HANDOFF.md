@@ -5,8 +5,8 @@
 ### Last checkpoint
 Дата: 2026-03-24
 Снапшот: `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz`
-SHA256: `67c58eb07fa1faf30befd10c33c4aa0d1072aa57e116a05e7c71ec5ebcf09b9a`
-HEAD: `397765ea0c195ded84a327ec65d580b316b1fd8e`
+SHA256: `ae7252b41a11ceb779b64068bfac7cd084ad623801a7a314194dba070e4be587`
+HEAD: `84c21dbf49ddb05ce8918a778fadf163584a651a`
 Ветка: `main`
 Сборка: `npm run lint:types` (tsc --noEmit) — OK
 Деплой: Hetzner VPS (77.42.79.54), Docker Compose
@@ -15,7 +15,7 @@ HEAD: `397765ea0c195ded84a327ec65d580b316b1fd8e`
 ### Checkpoint notes (2026-03-24) — full snapshot + handoff refresh
 
 - **Новый full-project snapshot:** `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz` (~122 MB без `node_modules`/`dist`).
-- **SHA256:** `67c58eb07fa1faf30befd10c33c4aa0d1072aa57e116a05e7c71ec5ebcf09b9a` (файл: `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz.sha256`). Архив пересобран после коммита handoff, чтобы внутри был актуальный `HANDOFF.md`.
+- **SHA256:** `91dcbf3d9ee93722b7745c78bb80a9bb91f374b48c2c130170c58602690332b5` (файл: `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz.sha256`). Полный tar рабочего дерева (без `node_modules`/`dist`/`.snapshots`/coverage); локальный `.env` попадёт в архив, если есть на диске.
 - **Checkpoint:** `.snapshots/checkpoint-2026-03-24_22-07-55.md`.
 - **Контекст кода:** сплит выплат NOWPayments по кошелькам OWNER/пул; атрибуция начислений; `OwnerPayoutBatchRecipient`; бэкофис отчётность, фильтр периода `orFrom`/`orTo`, CSV `GET /backoffice/bots/:botId/paid/owner-report.csv`; миграции `bot_owner_payout_wallets`, `owner_settlement_attribution_split_payouts`.
 - **Известно:** часть тестов требует живой Postgres (`postgres:5432`); harness balance-тесты дополнены моками `user`/`botRoleAssignment`/`depositTransaction.count` где нужно.

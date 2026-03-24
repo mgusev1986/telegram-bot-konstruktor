@@ -2275,7 +2275,17 @@ export async function registerBackofficeRoutes(
             depositTransaction: {
               select: {
                 orderId: true,
-                user: { select: { invitedByUserId: true, mentorUserId: true } }
+                user: {
+                  select: {
+                    invitedByUserId: true,
+                    mentorUserId: true,
+                    username: true,
+                    firstName: true,
+                    lastName: true,
+                    fullName: true,
+                    telegramUserId: true
+                  }
+                }
               }
             }
           },
@@ -2568,6 +2578,33 @@ export async function registerBackofficeRoutes(
 
     const renderUserLabel = (user: { username: string | null; fullName: string; telegramUserId: bigint }) =>
       user.username ? `@${escapeHtml(user.username)}` : escapeHtml(user.fullName || String(user.telegramUserId));
+
+    /** Депозитор по записи начисления: логин Telegram, имя/фамилия из профиля TG, внутренний id. */
+    const formatSettlementDepositorCell = (
+      user:
+        | {
+            username: string | null;
+            firstName: string;
+            lastName: string;
+            fullName: string;
+            telegramUserId: bigint;
+          }
+        | null
+        | undefined
+    ) => {
+      if (!user) return `<span class="small">—</span>`;
+      const fn = user.firstName?.trim() || "";
+      const ln = user.lastName?.trim() || "";
+      const nameFromTelegram = [fn, ln].filter(Boolean).join(" ").trim();
+      const nameShown = nameFromTelegram || user.fullName?.trim() || "";
+      const loginLine = user.username
+        ? escapeHtml(`@${user.username}`)
+        : `<span class="small">нет @username</span>`;
+      const nameLine = nameShown
+        ? escapeHtml(nameShown)
+        : `<span class="small">имя в Telegram не передано</span>`;
+      return `<div>${loginLine}</div><div class="small">${nameLine} · id ${escapeHtml(String(user.telegramUserId))}</div>`;
+    };
 
     const renderPaymentStatus = (status: string) => {
       const ru: Record<string, { label: string; tone: Parameters<typeof renderStatusBadge>[1] }> = {
@@ -3165,7 +3202,7 @@ export async function registerBackofficeRoutes(
              </div>
            </div>
            <div class="section-title" style="margin-top:16px">Записи начислений (последние)</div>
-           ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Заказ</th><th>Валовая</th><th>Нетто</th><th>Справочно: владелец</th><th>Статус</th></tr></thead><tbody>${settlementEntries
+           ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Пользователь (пополнил)</th><th>Заказ</th><th>Валовая</th><th>Нетто</th><th>Справочно: владелец</th><th>Статус</th></tr></thead><tbody>${settlementEntries
              .map((e) => {
                const attributed =
                  e.attributedOwnerUserId && ownerUserIdSet.has(e.attributedOwnerUserId)
@@ -3178,7 +3215,8 @@ export async function registerBackofficeRoutes(
                    : attributed
                      ? `<code>${escapeHtml(attributed)}</code>`
                      : `<span class="small">общий пул</span>`;
-               return `<tr><td>${formatIsoDate(e.createdAt)}</td><td><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${attCell}</td><td>${renderPaymentStatus(e.status)}</td></tr>`;
+               const payerCell = formatSettlementDepositorCell(e.depositTransaction?.user ?? undefined);
+               return `<tr><td>${formatIsoDate(e.createdAt)}</td><td>${payerCell}</td><td class="mono-wrap"><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${attCell}</td><td>${renderPaymentStatus(e.status)}</td></tr>`;
              })
              .join("")}</tbody></table>` : `<div class="small">Нет записей</div>`}
 <details style="margin-top:16px">
