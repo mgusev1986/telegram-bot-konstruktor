@@ -121,8 +121,8 @@ function renderPage(title: string, body: string): string {
     <style>
       body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background: #0b1220; color: #e5e7eb; }
       a { color: #60a5fa; }
-      .wrap { max-width: 980px; margin: 0 auto; padding: 28px 18px; }
-      .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 18px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); }
+      .wrap { width: 100%; max-width: none; margin: 0; padding: 14px 16px; box-sizing: border-box; }
+      .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); overflow-x: auto; }
       .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
       .row > * { flex: 1 1 auto; }
       label { display: block; margin-bottom: 6px; font-size: 13px; color: #cbd5e1; }
@@ -154,13 +154,14 @@ function renderPage(title: string, body: string): string {
       .mi-card:first-of-type { margin-top: 0; }
       .section-title { font-size: 14px; font-weight: 600; color: #cbd5e1; margin: 16px 0 8px 0; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); }
       .section-title:first-child { margin-top: 0; }
-      .paid-table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
-      .paid-table th, .paid-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08); }
-      .paid-table th { color: #94a3b8; font-weight: 500; }
+      .paid-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; table-layout: auto; }
+      .paid-table th, .paid-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08); vertical-align: top; white-space: nowrap; }
+      .paid-table th { color: #94a3b8; font-weight: 600; }
+      .paid-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
       .paid-table tr:last-child td { border-bottom: none; }
-      .paid-table td code { white-space: normal; word-break: break-all; overflow-wrap: anywhere; }
-      .mono-wrap { min-width: 180px; max-width: 340px; }
-      .wallet-col { min-width: 200px; max-width: 380px; }
+      .paid-table td code { white-space: normal; word-break: break-word; overflow-wrap: anywhere; line-height: 1.2; display: inline-block; }
+      .mono-wrap { min-width: 220px; max-width: 440px; }
+      .wallet-col { min-width: 240px; max-width: 460px; }
       .events-scroll { max-height: 430px; overflow-y: auto; overflow-x: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; }
       .product-card { margin-top: 20px; padding: 18px; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; background: rgba(0,0,0,0.12); }
       .product-card:first-of-type { margin-top: 12px; }
@@ -189,6 +190,11 @@ function renderPage(title: string, body: string): string {
       .mono-list { margin:0; padding-left:18px; }
       .mono-list li code { color:#e2e8f0; }
       @media (max-width: 880px) { .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .subgrid { grid-template-columns: 1fr; } }
+      @media (max-width: 900px) {
+        .wrap { padding: 10px; }
+        .card { padding: 12px; }
+        .paid-table { font-size: 12px; }
+      }
       @media (max-width: 560px) { .overview-grid { grid-template-columns: 1fr; } }
     </style>
   </head>
