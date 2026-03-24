@@ -182,9 +182,13 @@ export class BalanceService {
     }
 
     try {
+      // NOWPayments fails with "Can not get estimate from USDT to USDTBSC" when price_currency=usdt.
+      // Use "usd" as price_currency — it's the API base, and USDT ≈ USD 1:1.
+      const priceCurrencyForApi = (currency?.toUpperCase() === "USDT" || currency?.toUpperCase() === "USD") ? "usd" : currency?.toLowerCase() ?? "usd";
+
       const resp = await this.nowPayments.createPayment({
         priceAmount: amount,
-        priceCurrency: currency,
+        priceCurrency: priceCurrencyForApi,
         payCurrency,
         orderId,
         orderDescription: `Deposit ${amount} ${currency}`,
