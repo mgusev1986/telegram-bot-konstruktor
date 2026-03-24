@@ -4,19 +4,18 @@
 
 ### Last checkpoint
 Дата: 2026-03-24
-Снапшот: `.snapshots/snapshot-2026-03-24_22-13-07_full-project.tar.gz`
-SHA256: `67de61ba09253b92897771147f35159ae63d79881ebfc8fb48f596340fa1eb0b`
-HEAD: `fee63b37454c68b31e4c7c0b969ef1e9b96d6e1b`
-Ветка: `main`
+Снапшот: `.snapshots/snapshot-2026-03-24_22-19-15_full-project.tar.gz`
+SHA256: см. файл `.snapshots/snapshot-2026-03-24_22-19-15_full-project.tar.gz.sha256` (архив включает `HANDOFF.md`, поэтому контрольная сумма не дублируется внутри него)
+Ветка в архиве: `main` (точный коммит — `git rev-parse HEAD` в распакованном дереве)
 Сборка: `npm run lint:types` (tsc --noEmit) — OK
 Деплой: Hetzner VPS (77.42.79.54), Docker Compose
 Тесты: полный `npm test` не гонялся в рамках этого snapshot; см. примечания в checkpoint
 
 ### Checkpoint notes (2026-03-24) — full snapshot + handoff + «кто пополнил» в начислениях
 
-- **Новый full-project snapshot:** `.snapshots/snapshot-2026-03-24_22-13-07_full-project.tar.gz` (~121 MB без `node_modules`/`dist`/локального `backups/`).
-- **SHA256:** `67de61ba09253b92897771147f35159ae63d79881ebfc8fb48f596340fa1eb0b` (файл: `.snapshots/snapshot-2026-03-24_22-13-07_full-project.tar.gz.sha256`). Tar рабочего дерева: исключены `node_modules`, `dist`, `.snapshots`, `coverage`, **`backups/`** (дампы и `full-BACKUP-*` — отдельно, см. `docs/BACKUP.md`); в архив входят `.git` и локальный `.env`, если есть.
-- **Checkpoint:** `.snapshots/checkpoint-2026-03-24_22-13-07.md`.
+- **Новый full-project snapshot:** `.snapshots/snapshot-2026-03-24_22-19-15_full-project.tar.gz` (~121 MB без `node_modules`/`dist`/локального `backups/`).
+- **SHA256:** записана рядом в `.snapshots/snapshot-2026-03-24_22-19-15_full-project.tar.gz.sha256`. Tar рабочего дерева: исключены `node_modules`, `dist`, `.snapshots`, `coverage`, **`backups/`** (дампы и `full-BACKUP-*` — отдельно, см. `docs/BACKUP.md`); в архив входят `.git` и локальный `.env`, если есть.
+- **Checkpoint:** `.snapshots/checkpoint-2026-03-24_22-19-15.md`.
 - **Бэкофис NOWPayments — записи начислений:** в таблице последних начислений добавлена колонка **«Пользователь (пополнил)»**: `@username`, имя из профиля Telegram, `telegramUserId`; хелпер `formatSettlementDepositorCell` в `src/http/backoffice/register-backoffice.ts`.
 - **Контекст кода (суммарно):** сплит выплат NOWPayments по кошелькам OWNER/пул; атрибуция начислений; `OwnerPayoutBatchRecipient`; отчётность владельца, `orFrom`/`orTo`, CSV `GET /backoffice/bots/:botId/paid/owner-report.csv`; миграции `bot_owner_payout_wallets`, `owner_settlement_attribution_split_payouts`.
 - **Известно:** часть тестов требует живой Postgres (`postgres:5432`); harness balance-тесты дополнены моками `user`/`botRoleAssignment`/`depositTransaction.count` где нужно.
