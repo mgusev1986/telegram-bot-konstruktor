@@ -6,7 +6,7 @@ import { Telegraf as TelegrafCtor } from "telegraf";
 import { env } from "../config/env";
 import { logger } from "../common/logger";
 import type { AppServices } from "../app/services";
-import { buildServices } from "../app/services";
+import { buildServices, type OnDepositCreditedFn } from "../app/services";
 import { decryptTelegramBotToken } from "../common/telegram-token-encryption";
 import { registerBot } from "./register-bot";
 import type { BotContext } from "./context";
@@ -38,10 +38,14 @@ export class BotRuntimeManager {
 
     const botToken = decryptTelegramBotToken(botInstance.telegramBotTokenEncrypted, env.BOT_TOKEN_ENCRYPTION_KEY);
 
+    const onDepositCredited: OnDepositCreditedFn = (params) =>
+      this.sendDepositConfirmedNotification(params);
+
     const services = buildServices(this.prisma, this.redis, this.bullConnection, {
       botInstanceId: botInstance.id,
       botUsername: botInstance.telegramBotUsername ?? env.BOT_USERNAME,
-      paidAccessEnabled: botInstance.paidAccessEnabled
+      paidAccessEnabled: botInstance.paidAccessEnabled,
+      onDepositCredited
     });
 
     const bot = registerBot(services, { botToken });
@@ -87,6 +91,59 @@ export class BotRuntimeManager {
   /** Returns runtime by bot instance id, or undefined if not running. */
   public getRuntime(botInstanceId: string): BotRuntime | undefined {
     return this.bots.get(botInstanceId);
+  }
+
+  /**
+   * Send deposit confirmed notification via the bot that created the deposit (deposit.botInstanceId).
+   * Critical for multi-bot: same Telegram user can be in multiple bots; notification must go to the
+   * bot where the invoice was created, not to primary/last-active bot.
+   */
+  public async sendDepositConfirmedNotification(params: {
+    depositId: string;
+    userId: string;
+    botInstanceId: string | null;
+    telegramUserId: string;
+    selectedLanguage: string;
+    creditedAmount: number;
+    currency: string;
+  }): Promise<void> {
+    const { depositId, botInstanceId, telegramUserId, selectedLanguage, creditedAmount, currency } = params;
+
+    const runtime = botInstanceId
+      ? this.bots.get(botInstanceId)
+      : this.getFirstRuntime();
+
+    if (!runtime) {
+      logger.warn(
+        { depositId, botInstanceId, resolvedBotInstanceId: null },
+        "Deposit notification skipped: no runtime for deposit.botInstanceId"
+      );
+      return;
+    }
+
+    const text =
+      selectedLanguage === "en"
+        ? `Deposit confirmed. ${creditedAmount} ${currency} credited to your balance.`
+        : `Пополнение подтверждено. ${creditedAmount} ${currency} зачислено на баланс.`;
+
+    try {
+      await runtime.bot.telegram.sendMessage(telegramUserId, text);
+      logger.info(
+        {
+          depositId,
+          userId: params.userId,
+          depositBotInstanceId: botInstanceId,
+          resolvedBotInstanceId: runtime.botInstanceId
+        },
+        "Deposit notification sent to correct bot"
+      );
+    } catch (err) {
+      logger.warn(
+        { depositId, botInstanceId, resolvedBotInstanceId: runtime.botInstanceId, err },
+        "Deposit notification send failed"
+      );
+      throw err;
+    }
   }
 
   /** Returns all currently running bot runtimes. */

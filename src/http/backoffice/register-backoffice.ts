@@ -2217,7 +2217,7 @@ export async function registerBackofficeRoutes(
             <div class="field-wrap"><label class="small">Тип</label>
               <select name="billingType">
                 <option value="ONE_TIME" ${product.billingType === "ONE_TIME" ? "selected" : ""}>Разовая</option>
-                <option value="TEMPORARY" ${product.billingType === "TEMPORARY" ? "selected" : ""}>Временный доступ</option>
+                <option value="TEMPORARY" ${product.billingType === "TEMPORARY" ? "selected" : ""}>Временный доступ (подписка)</option>
               </select>
             </div>
             <div class="field-wrap"><label class="small">Дней доступа (LIVE)</label><input name="durationDays" type="number" min="1" value="${product.durationDays ?? ""}" placeholder="30" /></div>
@@ -2417,12 +2417,12 @@ export async function registerBackofficeRoutes(
                  <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить обучение" /></div>
                  <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="10" /></div>
                  <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="USDT" /></div>
-                 <div class="field-wrap"><label class="small">Тип</label>
-                   <select name="billingType">
-                     <option value="ONE_TIME">Разовая продажа</option>
-                     <option value="TEMPORARY">Временный доступ</option>
-                   </select>
-                 </div>
+                <div class="field-wrap"><label class="small">Тип</label>
+                  <select name="billingType">
+                    <option value="ONE_TIME">Разовая продажа</option>
+                    <option value="TEMPORARY" selected>Временный доступ (подписка)</option>
+                  </select>
+                </div>
                  <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" placeholder="30" /></div>
                </div>
               <details style="margin-top:12px">

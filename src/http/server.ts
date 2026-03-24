@@ -36,6 +36,7 @@ export async function startHttpServer(server: FastifyInstance): Promise<void> {
  * Registers payment webhook routes on an existing server.
  * Accepts a getter so the route can be registered before services are ready.
  * Returns 503 until services are available.
+ * Deposit notification is sent via BalanceService.onDepositCredited (uses deposit.botInstanceId).
  */
 export function addPaymentWebhookRoute(
   server: FastifyInstance,

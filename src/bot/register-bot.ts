@@ -906,7 +906,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       "",
       `💵 ${escapeHtml(services.i18n.t(languageCode, "currency_label"))}: <b>${escapeHtml(opts.currency)}</b>`,
       `⛓️ ${escapeHtml(services.i18n.t(languageCode, "network_label"))}: <b>${escapeHtml(formatNetworkLabel(opts.network))}</b>`,
-      `⚠️ ${escapeHtml(services.i18n.t(languageCode, "network_warning"))}`
+      `⚠️ ${escapeHtml(services.i18n.t(languageCode, "network_warning"))}`,
+      `ℹ️ ${escapeHtml(services.i18n.t(languageCode, "exchange_fee_warning"))}`
     );
     if (opts.reference?.trim()) {
       details.push("", `${escapeHtml(services.i18n.t(languageCode, "reference_label"))}: ${escapeHtml(opts.reference.trim())}`);

@@ -31,7 +31,7 @@ function flushAsyncWork(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function createBalanceHarness() {
+function createBalanceHarness(opts?: { onDepositCredited?: (p: any) => Promise<void> }) {
   const state = {
     user: {
       id: "user-1",
@@ -185,7 +185,13 @@ function createBalanceHarness() {
     providerEventLog,
     depositTransaction,
     userBalanceAccount,
-    balanceLedgerEntry
+    balanceLedgerEntry,
+    botPaymentProviderConfig: {
+      findUnique: vi.fn(async () => null)
+    },
+    ownerSettlementEntry: {
+      create: vi.fn(async () => ({}))
+    }
   };
 
   const prisma: any = {
@@ -204,7 +210,10 @@ function createBalanceHarness() {
     prisma,
     notifications as any,
     audit as any,
-    { assignTag: vi.fn().mockResolvedValue(undefined) } as any
+    { assignTag: vi.fn().mockResolvedValue(undefined) } as any,
+    undefined,
+    undefined,
+    opts?.onDepositCredited
   );
 
   return {
@@ -247,7 +256,6 @@ describe("BalanceService NOWPayments flow", () => {
     expect(state.deposit.ledgerEntryId).toBe("ledger-1");
     expect(state.account.balance).toBe(10);
     expect(state.ledgerEntries).toHaveLength(1);
-    expect(notifications.sendText).toHaveBeenCalledTimes(1);
     expect(audit.log).toHaveBeenCalledTimes(1);
   });
 
@@ -298,7 +306,118 @@ describe("BalanceService NOWPayments flow", () => {
     );
     expect(state.deposit.status).toBe("FAILED");
     expect(state.account.balance).toBe(0);
-    expect(notifications.sendText).not.toHaveBeenCalled();
+  });
+
+  it("credits full 10 USDT when 9.80 received (98% tolerance)", async () => {
+    const { service, state } = createBalanceHarness();
+    Object.assign(state.deposit, { requestedAmountUsd: 10 });
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "finished",
+      price_amount: 10,
+      pay_amount: 9.8,
+      outcome_amount: 9.8
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const result = await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, credited: true }));
+    expect(state.account.balance).toBe(10);
+  });
+
+  it("does not credit when 9.79 received (below 98% of 10 USDT)", async () => {
+    const { service, state } = createBalanceHarness();
+    Object.assign(state.deposit, { requestedAmountUsd: 10 });
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "finished",
+      price_amount: 10,
+      pay_amount: 9.79,
+      outcome_amount: 9.79
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const result = await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(result.credited).toBeFalsy();
+    expect(state.account.balance).toBe(0);
+  });
+
+  it("credits full 30 USDT when 29.40 received (98% tolerance)", async () => {
+    const { service, state } = createBalanceHarness();
+    Object.assign(state.deposit, { requestedAmountUsd: 30, amount: 30 });
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "finished",
+      price_amount: 30,
+      pay_amount: 29.4,
+      outcome_amount: 29.4
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const result = await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(result).toEqual(expect.objectContaining({ ok: true, credited: true }));
+    expect(state.account.balance).toBe(30);
+  });
+
+  it("calls onDepositCredited with deposit.botInstanceId for multi-bot routing", async () => {
+    const onDepositCredited = vi.fn().mockResolvedValue(undefined);
+    const { service, state } = createBalanceHarness({ onDepositCredited });
+    Object.assign(state.deposit, { requestedAmountUsd: 10, botInstanceId: "bot-A" });
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "finished",
+      price_amount: 10,
+      pay_amount: 10,
+      outcome_amount: 10
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(onDepositCredited).toHaveBeenCalledTimes(1);
+    expect(onDepositCredited).toHaveBeenCalledWith(
+      expect.objectContaining({
+        depositId: state.deposit.id,
+        botInstanceId: "bot-A",
+        creditedAmount: 10
+      })
+    );
+  });
+
+  it("does not credit as full when underpaid (exchange fee deducted)", async () => {
+    const { service, state } = createBalanceHarness();
+    Object.assign(state.deposit, { requestedAmountUsd: 10 });
+    const payload = {
+      order_id: state.deposit.orderId,
+      payment_id: state.deposit.providerPaymentId,
+      payment_status: "finished",
+      price_amount: 10,
+      pay_amount: 9.5,
+      outcome_amount: 9.5
+    };
+    const rawBody = JSON.stringify(payload);
+    const signature = signPayload(payload, "test-ipn-secret");
+
+    const result = await service.processNowPaymentsIpn(rawBody, signature);
+    await flushAsyncWork();
+
+    expect(result.credited).toBeFalsy();
+    expect(state.account.balance).toBe(0);
   });
 
   it("confirms a pending deposit through trusted status polling without IPN signature", async () => {
@@ -323,7 +442,7 @@ describe("BalanceService NOWPayments flow", () => {
 
     expect(result).toEqual({ status: "confirmed", credited: true });
     expect(state.deposit.status).toBe("CONFIRMED");
-    expect(state.account.balance).toBe(9.8);
+    expect(state.account.balance).toBe(10);
     expect(state.ledgerEntries).toHaveLength(1);
   });
 

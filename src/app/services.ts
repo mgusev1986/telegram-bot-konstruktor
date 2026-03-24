@@ -59,10 +59,21 @@ export interface AppServices {
   languageGenerationTasks: LanguageGenerationTaskService;
 }
 
+export type OnDepositCreditedFn = (params: {
+  depositId: string;
+  userId: string;
+  botInstanceId: string | null;
+  telegramUserId: string;
+  selectedLanguage: string;
+  creditedAmount: number;
+  currency: string;
+}) => Promise<void>;
+
 export interface BuildServicesOptions {
   botInstanceId?: string;
   botUsername?: string;
   paidAccessEnabled?: boolean;
+  onDepositCredited?: OnDepositCreditedFn;
 }
 
 export const buildServices = (
@@ -87,7 +98,15 @@ export const buildServices = (
   const scheduler = new SchedulerService(prisma, bullConnection, botInstanceId);
   const subscriptionChannel = new SubscriptionChannelService(prisma, notifications, botInstanceId);
   const payments = new PaymentService(prisma, notifications, audit, crm, scheduler, subscriptionChannel);
-  const balance = new BalanceService(prisma, notifications, audit, crm, scheduler, subscriptionChannel);
+  const balance = new BalanceService(
+    prisma,
+    notifications,
+    audit,
+    crm,
+    scheduler,
+    subscriptionChannel,
+    options?.onDepositCredited
+  );
   const menu = new MenuService(prisma, i18n, accessRules, analytics, abTests, audit, botInstanceId, paidAccessEnabled);
   const navigation = new NavigationService(prisma);
   const cabinet = new CabinetService(prisma, referrals, payments, balance, i18n, botUsername, botInstanceId, paidAccessEnabled);

@@ -24,14 +24,20 @@ import { grantOrExtendAccess } from "./access-grant";
 const PROVIDER = "nowpayments";
 const NOWPAYMENTS_FINAL_SUCCESS_STATUSES = new Set(["finished"]);
 const NOWPAYMENTS_FAILURE_STATUSES = new Set(["failed", "refunded", "expired"]);
+/** Fixed-price top-up: credit full expectedAmount if received >= this fraction (98%). */
+const CREDIT_TOLERANCE_PERCENT = 98;
 
 type NowPaymentsProcessSource = "ipn" | "status_sync";
-type NowPaymentsProcessResult = {
+export type NowPaymentsProcessResult = {
   ok: boolean;
   credited?: boolean;
   duplicate?: boolean;
   status?: string;
   error?: string;
+  /** When credited: deposit with user for notification routing by deposit.botInstanceId */
+  deposit?: { id: string; userId: string; botInstanceId: string | null; user: { telegramUserId: string; selectedLanguage: string }; currency: string };
+  creditedAmount?: number;
+  currency?: string;
 };
 
 function normalizeNowPaymentsStatus(status: unknown): string {
@@ -82,7 +88,16 @@ export class BalanceService {
     private readonly audit: AuditService,
     private readonly crm: CrmService,
     private readonly scheduler?: SchedulerService,
-    private readonly subscriptionChannel?: SubscriptionChannelService
+    private readonly subscriptionChannel?: SubscriptionChannelService,
+    private readonly onDepositCredited?: (params: {
+      depositId: string;
+      userId: string;
+      botInstanceId: string | null;
+      telegramUserId: string;
+      selectedLanguage: string;
+      creditedAmount: number;
+      currency: string;
+    }) => Promise<void>
   ) {}
 
   isNowPaymentsEnabled(): boolean {
@@ -367,6 +382,7 @@ export class BalanceService {
     let credited = false;
     let duplicate = false;
     let ignored = false;
+    let creditedAmountForResult = 0;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw(
@@ -436,10 +452,38 @@ export class BalanceService {
       }
 
       const actualOutcome = readNowPaymentsAmount(payload.outcome_amount, 0);
-      const creditAmount =
-        actualOutcome > 0
-          ? actualOutcome
-          : readNowPaymentsAmount(payload.price_amount, Number(lockedDeposit.amount));
+      const payAmount = readNowPaymentsAmount(payload.pay_amount, 0);
+      const expectedAmount = Number(lockedDeposit.requestedAmountUsd ?? lockedDeposit.amount);
+      const receivedAmount = actualOutcome > 0 ? actualOutcome : payAmount;
+      const minAccepted = (expectedAmount * CREDIT_TOLERANCE_PERCENT) / 100;
+
+      let creditAmount: number;
+      if (receivedAmount >= minAccepted) {
+        creditAmount = expectedAmount;
+      } else if (receivedAmount > 0) {
+        logger.warn(
+          {
+            provider: PROVIDER,
+            depositId: lockedDeposit.id,
+            expectedAmount,
+            receivedAmount,
+            minAccepted,
+            tolerancePercent: CREDIT_TOLERANCE_PERCENT
+          },
+          "NOWPayments underpaid: received amount below tolerance threshold; not crediting as full"
+        );
+        creditAmount = 0;
+        await tx.providerEventLog.update({
+          where: { id: eventLog.id },
+          data: {
+            status: "received",
+            errorMessage: `Underpaid: received ${receivedAmount}, expected ${expectedAmount} (min ${minAccepted} at ${CREDIT_TOLERANCE_PERCENT}%)`
+          }
+        });
+        return;
+      } else {
+        creditAmount = readNowPaymentsAmount(payload.price_amount, expectedAmount);
+      }
 
       const account = await tx.userBalanceAccount.update({
         where: { id: lockedDeposit.accountId },
@@ -468,7 +512,7 @@ export class BalanceService {
           ledgerEntryId: entry.id,
           rawPayload: payloadObject,
           creditedBalanceAmount: creditAmount,
-          actualOutcomeAmount: actualOutcome > 0 ? creditAmount : undefined,
+          actualOutcomeAmount: actualOutcome > 0 ? actualOutcome : undefined,
           confirmedAt: processedAt,
           webhookLastProcessedAt: processedAt
         }
@@ -484,7 +528,6 @@ export class BalanceService {
           0,
           (creditAmount * platformFeePercent) / 100 + platformFeeFixedUsd
         );
-        const payAmount = readNowPaymentsAmount(payload.pay_amount, 0);
         const processorFeeAmount =
           payAmount > 0 && actualOutcome > 0 && payAmount >= actualOutcome
             ? payAmount - actualOutcome
@@ -513,6 +556,7 @@ export class BalanceService {
       });
 
       credited = true;
+      creditedAmountForResult = creditAmount;
     });
 
     if (ignored) {
@@ -542,11 +586,7 @@ export class BalanceService {
       return { ok: true, status: paymentStatus };
     }
 
-    const actualOutcomeForLog = readNowPaymentsAmount(payload.outcome_amount, 0);
-    const creditedAmount =
-      actualOutcomeForLog > 0
-        ? actualOutcomeForLog
-        : readNowPaymentsAmount(payload.price_amount, Number(deposit.amount));
+    const creditedAmount = creditedAmountForResult;
 
     logger.info(
       {
@@ -556,23 +596,32 @@ export class BalanceService {
         orderId,
         paymentStatus,
         depositId: deposit.id,
+        userId: deposit.userId,
+        depositBotInstanceId: deposit.botInstanceId,
         amount: creditedAmount,
-        currency: deposit.currency,
-        userId: deposit.userId
+        currency: deposit.currency
       },
-      "NOWPayments deposit credited"
+      "NOWPayments deposit credited (notification sent via deposit.botInstanceId)"
     );
 
-    void (async () => {
-      await this.notifications.sendText(
-        deposit.user,
-        "PAYMENT_CONFIRMED",
-        deposit.user.selectedLanguage === "en"
-          ? `Deposit confirmed. ${creditedAmount} ${deposit.currency} credited to your balance.`
-          : `Пополнение подтверждено. ${creditedAmount} ${deposit.currency} зачислено на баланс.`,
-        { depositId: deposit.id }
-      );
+    if (this.onDepositCredited) {
+      void this.onDepositCredited({
+        depositId: deposit.id,
+        userId: deposit.userId,
+        botInstanceId: deposit.botInstanceId,
+        telegramUserId: deposit.user.telegramUserId,
+        selectedLanguage: deposit.user.selectedLanguage,
+        creditedAmount,
+        currency: deposit.currency
+      }).catch((err: unknown) => {
+        logger.warn(
+          { provider: PROVIDER, source, paymentId, orderId, depositId: deposit.id, err },
+          "Deposit notification (onDepositCredited) failed"
+        );
+      });
+    }
 
+    void (async () => {
       const owner = await this.prisma.user.findFirst({
         where: { role: "ALPHA_OWNER" }
       });
@@ -586,11 +635,27 @@ export class BalanceService {
     })().catch((err: unknown) => {
       logger.warn(
         { provider: PROVIDER, source, paymentId, orderId, depositId: deposit.id, err },
-        "NOWPayments follow-up notification/audit failed"
+        "NOWPayments follow-up audit failed"
       );
     });
 
-    return { ok: true, credited: true, status: paymentStatus };
+    return {
+      ok: true,
+      credited: true,
+      status: paymentStatus,
+      deposit: {
+        id: deposit.id,
+        userId: deposit.userId,
+        botInstanceId: deposit.botInstanceId,
+        user: {
+          telegramUserId: deposit.user.telegramUserId,
+          selectedLanguage: deposit.user.selectedLanguage
+        },
+        currency: deposit.currency
+      },
+      creditedAmount,
+      currency: deposit.currency
+    };
   }
 
   /**
