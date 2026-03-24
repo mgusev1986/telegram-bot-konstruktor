@@ -126,7 +126,7 @@ function renderPage(title: string, body: string): string {
       .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
       .row > * { flex: 1 1 auto; }
       label { display: block; margin-bottom: 6px; font-size: 13px; color: #cbd5e1; }
-      input, textarea, select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.15); color: #e5e7eb; }
+      input, textarea, select { width: 100%; max-width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.15); color: #e5e7eb; }
       button { padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.16); background: #2563eb; color: white; cursor: pointer; }
       button.secondary { background: rgba(255,255,255,0.08); }
       button.error { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.5); color: #fca5a5; }
@@ -147,6 +147,16 @@ function renderPage(title: string, body: string): string {
       .product-form-grid .field-wrap { min-width: 0; }
       .product-form-grid .field-wrap input,
       .product-form-grid .field-wrap select { width: 100%; box-sizing: border-box; }
+      .linked-chat-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 8px; }
+      .linked-chat-card { min-width: 0; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); }
+      .linked-chat-card .title { font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .02em; }
+      .linked-chat-card .field-wrap { margin-bottom: 8px; }
+      .linked-chat-card .field-wrap:last-child { margin-bottom: 0; }
+      .linked-chat-card textarea { min-height: 74px; resize: vertical; }
+      .nowpayments-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; margin-bottom: 16px; }
+      .toggle-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); }
+      .toggle-field label { margin: 0; font-size: 12px; color: #cbd5e1; }
+      .toggle-field input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 auto; padding: 0; margin: 0; accent-color: #2563eb; }
       @media (max-width: 560px) { .product-form-grid { grid-template-columns: 1fr; } }
       .test-block { margin-top: 12px; padding: 12px; border-radius: 10px; border: 1px dashed rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.06); }
       .form-row .btn { flex-shrink: 0; }
@@ -194,6 +204,8 @@ function renderPage(title: string, body: string): string {
         .wrap { padding: 10px; }
         .card { padding: 12px; }
         .paid-table { font-size: 12px; }
+        .linked-chat-grid { grid-template-columns: 1fr; }
+        .nowpayments-grid { grid-template-columns: 1fr; }
       }
       @media (max-width: 560px) { .overview-grid { grid-template-columns: 1fr; } }
     </style>
@@ -2318,13 +2330,19 @@ export async function registerBackofficeRoutes(
           </div>
           <div style="margin-top:12px">
             <label class="small">Ссылки доступа в чат / канал</label>
-            <div class="product-form-grid" style="margin-top:8px">
-              <div class="field-wrap"><label class="small">Кнопка 1 — Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" value="${escapeHtml(String(chat1.label ?? ""))}" /></div>
-              <div class="field-wrap"><label class="small">Кнопка 1 — Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" value="${escapeHtml(String(chat1.link ?? ""))}" /></div>
-              <div class="field-wrap"><label class="small">Кнопка 1 — Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /></div>
-              <div class="field-wrap"><label class="small">Кнопка 2 — Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" value="${escapeHtml(String(chat2.label ?? ""))}" /></div>
-              <div class="field-wrap"><label class="small">Кнопка 2 — Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" value="${escapeHtml(String(chat2.link ?? ""))}" /></div>
-              <div class="field-wrap"><label class="small">Кнопка 2 — Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /></div>
+            <div class="linked-chat-grid">
+              <div class="linked-chat-card">
+                <div class="title">Кнопка 1</div>
+                <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" value="${escapeHtml(String(chat1.label ?? ""))}" /></div>
+                <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" value="${escapeHtml(String(chat1.link ?? ""))}" /></div>
+                <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /></div>
+              </div>
+              <div class="linked-chat-card">
+                <div class="title">Кнопка 2</div>
+                <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" value="${escapeHtml(String(chat2.label ?? ""))}" /></div>
+                <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" value="${escapeHtml(String(chat2.link ?? ""))}" /></div>
+                <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /></div>
+              </div>
             </div>
             <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
             <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
@@ -2573,13 +2591,19 @@ export async function registerBackofficeRoutes(
                  <summary class="small" style="cursor:pointer">Платежи и доступ</summary>
                  <div style="margin-top:12px">
                   <label class="small">Ссылки доступа в чат / канал</label>
-                  <div class="product-form-grid" style="margin-top:8px">
-                    <div class="field-wrap"><label class="small">Кнопка 1 — Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
-                    <div class="field-wrap"><label class="small">Кнопка 1 — Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">Кнопка 1 — Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /></div>
-                    <div class="field-wrap"><label class="small">Кнопка 2 — Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
-                    <div class="field-wrap"><label class="small">Кнопка 2 — Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">Кнопка 2 — Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /></div>
+                  <div class="linked-chat-grid">
+                    <div class="linked-chat-card">
+                      <div class="title">Кнопка 1</div>
+                      <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
+                      <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" /></div>
+                      <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /></div>
+                    </div>
+                    <div class="linked-chat-card">
+                      <div class="title">Кнопка 2</div>
+                      <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
+                      <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" /></div>
+                      <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /></div>
+                    </div>
                   </div>
                    <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
                    <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
@@ -2616,13 +2640,19 @@ export async function registerBackofficeRoutes(
                </div>
                <div style="margin-top:12px">
                  <label class="small">Ссылки доступа в чат / канал</label>
-                <div class="product-form-grid" style="margin-top:8px">
-                  <div class="field-wrap"><label class="small">Кнопка 1 — Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
-                  <div class="field-wrap"><label class="small">Кнопка 1 — Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" /></div>
-                  <div class="field-wrap"><label class="small">Кнопка 1 — Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /></div>
-                  <div class="field-wrap"><label class="small">Кнопка 2 — Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
-                  <div class="field-wrap"><label class="small">Кнопка 2 — Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" /></div>
-                  <div class="field-wrap"><label class="small">Кнопка 2 — Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /></div>
+                <div class="linked-chat-grid">
+                  <div class="linked-chat-card">
+                    <div class="title">Кнопка 1</div>
+                    <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
+                    <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" /></div>
+                    <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /></div>
+                  </div>
+                  <div class="linked-chat-card">
+                    <div class="title">Кнопка 2</div>
+                    <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
+                    <div class="field-wrap"><label class="small">Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" /></div>
+                    <div class="field-wrap"><label class="small">Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /></div>
+                  </div>
                 </div>
                  <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
                  <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
@@ -2690,10 +2720,10 @@ export async function registerBackofficeRoutes(
            <h3 style="margin-top:0">NOWPayments / Owner Payouts</h3>
            <div class="small" style="margin-bottom:12px">Конфигурация для пополнения баланса и ежедневных выплат owner'у бота.</div>
            <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/nowpayments-config">
-             <div class="product-form-grid" style="margin-bottom:16px">
-               <div class="field-wrap"><label class="small">Включить NOWPayments</label><input type="checkbox" name="enabled" value="1" ${nowPaymentsConfig?.enabled ? "checked" : ""} /></div>
-               <div class="field-wrap"><label class="small">Owner payout включён</label><input type="checkbox" name="ownerPayoutEnabled" value="1" ${nowPaymentsConfig?.ownerPayoutEnabled ? "checked" : ""} /></div>
-               <div class="field-wrap"><label class="small">Ежедневные выплаты</label><input type="checkbox" name="dailyPayoutEnabled" value="1" ${nowPaymentsConfig?.dailyPayoutEnabled !== false ? "checked" : ""} /></div>
+            <div class="nowpayments-grid">
+              <div class="toggle-field"><label class="small" for="np-enabled">Включить NOWPayments</label><input id="np-enabled" type="checkbox" name="enabled" value="1" ${nowPaymentsConfig?.enabled ? "checked" : ""} /></div>
+              <div class="toggle-field"><label class="small" for="np-owner-payout">Owner payout включён</label><input id="np-owner-payout" type="checkbox" name="ownerPayoutEnabled" value="1" ${nowPaymentsConfig?.ownerPayoutEnabled ? "checked" : ""} /></div>
+              <div class="toggle-field"><label class="small" for="np-daily-payout">Ежедневные выплаты</label><input id="np-daily-payout" type="checkbox" name="dailyPayoutEnabled" value="1" ${nowPaymentsConfig?.dailyPayoutEnabled !== false ? "checked" : ""} /></div>
                <div class="field-wrap"><label class="small">Кошелёк owner (USDT BEP20)</label><input name="ownerWalletAddress" type="text" placeholder="0x..." value="${escapeHtml(nowPaymentsConfig?.ownerWalletAddress ?? "")}" style="width:100%" /></div>
                <input type="hidden" name="settlementCurrency" value="usdtbep20" />
                <div class="field-wrap"><label class="small">Минимум для выплаты (USDT)</label><input name="dailyPayoutMinAmount" type="text" value="${escapeHtml(String(nowPaymentsConfig?.dailyPayoutMinAmount ?? 0))}" /></div>
