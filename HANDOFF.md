@@ -4,21 +4,26 @@
 
 ### Last checkpoint
 Дата: 2026-03-24
-Снапшот: `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz`
-SHA256: `ae7252b41a11ceb779b64068bfac7cd084ad623801a7a314194dba070e4be587`
-HEAD: `84c21dbf49ddb05ce8918a778fadf163584a651a`
+Снапшот: `.snapshots/snapshot-2026-03-24_22-13-07_full-project.tar.gz`
+SHA256: `67de61ba09253b92897771147f35159ae63d79881ebfc8fb48f596340fa1eb0b`
+HEAD: `fee63b37454c68b31e4c7c0b969ef1e9b96d6e1b`
 Ветка: `main`
 Сборка: `npm run lint:types` (tsc --noEmit) — OK
 Деплой: Hetzner VPS (77.42.79.54), Docker Compose
 Тесты: полный `npm test` не гонялся в рамках этого snapshot; см. примечания в checkpoint
 
-### Checkpoint notes (2026-03-24) — full snapshot + handoff refresh
+### Checkpoint notes (2026-03-24) — full snapshot + handoff + «кто пополнил» в начислениях
 
-- **Новый full-project snapshot:** `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz` (~122 MB без `node_modules`/`dist`).
-- **SHA256:** `91dcbf3d9ee93722b7745c78bb80a9bb91f374b48c2c130170c58602690332b5` (файл: `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz.sha256`). Полный tar рабочего дерева (без `node_modules`/`dist`/`.snapshots`/coverage); локальный `.env` попадёт в архив, если есть на диске.
-- **Checkpoint:** `.snapshots/checkpoint-2026-03-24_22-07-55.md`.
-- **Контекст кода:** сплит выплат NOWPayments по кошелькам OWNER/пул; атрибуция начислений; `OwnerPayoutBatchRecipient`; бэкофис отчётность, фильтр периода `orFrom`/`orTo`, CSV `GET /backoffice/bots/:botId/paid/owner-report.csv`; миграции `bot_owner_payout_wallets`, `owner_settlement_attribution_split_payouts`.
+- **Новый full-project snapshot:** `.snapshots/snapshot-2026-03-24_22-13-07_full-project.tar.gz` (~121 MB без `node_modules`/`dist`/локального `backups/`).
+- **SHA256:** `67de61ba09253b92897771147f35159ae63d79881ebfc8fb48f596340fa1eb0b` (файл: `.snapshots/snapshot-2026-03-24_22-13-07_full-project.tar.gz.sha256`). Tar рабочего дерева: исключены `node_modules`, `dist`, `.snapshots`, `coverage`, **`backups/`** (дампы и `full-BACKUP-*` — отдельно, см. `docs/BACKUP.md`); в архив входят `.git` и локальный `.env`, если есть.
+- **Checkpoint:** `.snapshots/checkpoint-2026-03-24_22-13-07.md`.
+- **Бэкофис NOWPayments — записи начислений:** в таблице последних начислений добавлена колонка **«Пользователь (пополнил)»**: `@username`, имя из профиля Telegram, `telegramUserId`; хелпер `formatSettlementDepositorCell` в `src/http/backoffice/register-backoffice.ts`.
+- **Контекст кода (суммарно):** сплит выплат NOWPayments по кошелькам OWNER/пул; атрибуция начислений; `OwnerPayoutBatchRecipient`; отчётность владельца, `orFrom`/`orTo`, CSV `GET /backoffice/bots/:botId/paid/owner-report.csv`; миграции `bot_owner_payout_wallets`, `owner_settlement_attribution_split_payouts`.
 - **Известно:** часть тестов требует живой Postgres (`postgres:5432`); harness balance-тесты дополнены моками `user`/`botRoleAssignment`/`depositTransaction.count` где нужно.
+
+### Checkpoint notes (2026-03-24 22:07) — предыдущий snapshot того же дня
+
+- **Snapshot (архивный):** `.snapshots/snapshot-2026-03-24_22-07-55_full-project.tar.gz` — см. `.snapshots/checkpoint-2026-03-24_22-07-55.md` при необходимости отката к более раннему tar того дня.
 
 ### Checkpoint notes (2026-03-23) — backup snapshot refresh
 
@@ -422,6 +427,7 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate
 - [ ] Для expiring-продукта с корректными linked chats тестовая симуляция должна пройти цикл `grant → invite links → reminders → expiry → removal`.
 - [ ] В `Аудит доступа` по accessRight видны текущий статус, reminder jobs и expiry/removal job; при проблеме удаления должен быть `REMOVAL FAILED` с причиной.
 - [ ] В `Платежи / баланс` видны invoice/deposit/balance purchase events и последние notification events (`PAYMENT_CONFIRMED`, `ACCESS_GRANTED`, `ACCESS_EXPIRING`, `SYSTEM_ALERT`).
+- [ ] В блоке «Записи начислений (последние)» у владельца заполнена колонка «Пользователь (пополнил)» (@username / имя / telegram id) для депозитов с привязанным пользователем.
 - [ ] `/start` — открывается главная с приветствием и кнопками разделов.
 - [ ] «🗂 В главное меню» с любой страницы — тот же экран, что по /start.
 - [ ] Кнопка раздела → открывается контент этого раздела; «↩️ Назад» → родитель с контентом.
@@ -437,6 +443,7 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate
 ### Paid access handoff
 
 - **Backoffice entrypoint:** `/backoffice/bots/:botId/paid` теперь является workspace для alpha-owner по оплатам и доступам. Там собраны overview/KPI, bindings, live products, test lab, payment events и access audit.
+- **Owner settlement entries:** в таблице последних начислений (NOWPayments) колонка «Пользователь (пополнил)» показывает Telegram `@username`, отображаемое имя и внутренний `telegramUserId`, чтобы не опираться только на `orderId`.
 - **Live vs Test:** отдельного поля `isTest` не добавляли. Безопасный `source of truth` для test mode — `Product.durationMinutes > 0`. Live остаётся на `durationDays` / стандартном flow.
 - **Reminder policy:** live использует `3/2/1` дня, test использует `3/2/1` минуты. Логика вынесена в `src/modules/subscription-channel/subscription-access-policy.ts`.
 - **Grant / expiry:** и direct/manual payment flow, и balance purchase flow теперь передают product policy в `SubscriptionChannelService.scheduleRemindersAndExpiry(...)`, поэтому reminders и expiry одинаково работают для live и test.
