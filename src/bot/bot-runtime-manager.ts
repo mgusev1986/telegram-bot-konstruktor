@@ -128,15 +128,21 @@ export class BotRuntimeManager {
         ? `Deposit confirmed. ${Number(creditedAmount).toFixed(2)} ${currency} credited to your balance.`
         : `Пополнение подтверждено. ${Number(creditedAmount).toFixed(2)} ${currency} зачислено на баланс.`;
 
+    let resolvedProductId = productId?.trim() || "";
     try {
       const deposit = await this.prisma.depositTransaction.findUnique({
         where: { id: depositId },
-        select: { requestedAmountUsd: true, amount: true, creditedBalanceAmount: true, currency: true }
+        select: { requestedAmountUsd: true, amount: true, creditedBalanceAmount: true, currency: true, rawPayload: true }
       });
       if (deposit) {
         const expected = Number(deposit.requestedAmountUsd ?? deposit.amount ?? 0);
         const credited = Number(deposit.creditedBalanceAmount ?? creditedAmount ?? 0);
         const missing = Math.max(0, expected - credited);
+        if (!resolvedProductId) {
+          const raw = deposit.rawPayload as Record<string, unknown> | null;
+          const candidate = typeof raw?.requestedProductId === "string" ? raw.requestedProductId.trim() : "";
+          if (candidate) resolvedProductId = candidate;
+        }
         if (missing > 0.00000001) {
           text =
             selectedLanguage === "en"
@@ -150,10 +156,10 @@ export class BotRuntimeManager {
 
     const payButtonText = selectedLanguage === "en" ? "Pay" : "Оплатить";
     const replyMarkup =
-      productId && productId.trim()
+      resolvedProductId
         ? {
             inline_keyboard: [
-              [{ text: payButtonText, callback_data: makeCallbackData("pay", "balance", productId.trim()) }]
+              [{ text: payButtonText, callback_data: makeCallbackData("pay", "balance", resolvedProductId) }]
             ]
           }
         : undefined;
@@ -166,7 +172,7 @@ export class BotRuntimeManager {
           userId: params.userId,
           depositBotInstanceId: botInstanceId,
           resolvedBotInstanceId: runtime.botInstanceId,
-          productId: productId ?? null
+          productId: resolvedProductId || null
         },
         "Deposit notification sent to correct bot"
       );

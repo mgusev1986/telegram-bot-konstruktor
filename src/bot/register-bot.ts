@@ -846,13 +846,15 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     opts: {
       backTarget: string;
       payButtonText?: string;
+      payAction?: "checkout" | "balance";
     }
   ) => {
     const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
     if (productId) {
       const ctaLabel = opts.payButtonText?.trim() || services.i18n.t(languageCode, "pay_now");
+      const action = opts.payAction ?? "checkout";
       rows.push([
-        Markup.button.callback(ctaLabel, makeCallbackData("pay", "checkout", productId))
+        Markup.button.callback(ctaLabel, makeCallbackData("pay", action, productId))
       ]);
     }
     rows.push(buildNavigationRow(services.i18n, languageCode, {
@@ -966,6 +968,14 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         || content.localization.mediaType === "DOCUMENT")
       && Boolean(content.localization.mediaFileId);
     const productId = content.item.productId;
+    let payAction: "checkout" | "balance" = "checkout";
+    if (productId && product) {
+      const productPrice = Number(product.price ?? 0);
+      const currentBalance = await services.balance.getBalance(user.id);
+      if (currentBalance >= productPrice && productPrice > 0) {
+        payAction = "balance";
+      }
+    }
     await services.navigation.replaceScreen(
       user,
       ctx.telegram,
@@ -979,7 +989,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         : { text: teaserText },
       buildLockedSectionKeyboard(user.selectedLanguage, productId, {
         backTarget: opts.backTarget,
-        payButtonText: getProductPayButtonText(product as any, user.selectedLanguage)
+        payButtonText: getProductPayButtonText(product as any, user.selectedLanguage),
+        payAction
       })
     );
   };
