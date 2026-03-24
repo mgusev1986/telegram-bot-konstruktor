@@ -536,6 +536,6 @@ export class SubscriptionChannelService {
         /* skip */
       }
     }
-    return out;
+    return out.filter((row) => row.link.trim() && /^https?:\/\//i.test(row.link.trim()));
   }
 }

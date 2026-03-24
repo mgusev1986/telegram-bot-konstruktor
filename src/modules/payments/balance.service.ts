@@ -973,12 +973,19 @@ export class BalanceService {
 
       const owner = await this.prisma.user.findFirst({ where: { role: "ALPHA_OWNER" } });
       if (owner) {
-        await this.crm.assignTag(user.id, "paid", owner.id);
-        await this.audit.log(owner.id, "product_purchase_balance", "product_purchase", result.purchaseAuditRef, {
-          userId: user.id,
-          productId,
-          amount: price
-        });
+        try {
+          await this.crm.assignTag(user.id, "paid", owner.id);
+          await this.audit.log(owner.id, "product_purchase_balance", "product_purchase", result.purchaseAuditRef, {
+            userId: user.id,
+            productId,
+            amount: price
+          });
+        } catch (err) {
+          logger.warn(
+            { userId: user.id, productId, err },
+            "post-purchase CRM/audit failed (purchase already committed)"
+          );
+        }
       }
     }
 

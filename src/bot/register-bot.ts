@@ -135,7 +135,18 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       "Bot error"
     );
     const locale = (ctx as BotContext).currentUser?.selectedLanguage ?? "ru";
-    await ctx.reply(services.i18n.t(locale, "error_generic"));
+    try {
+      if ("callbackQuery" in ctx && ctx.callbackQuery && "id" in ctx.callbackQuery) {
+        await ctx.answerCbQuery(services.i18n.t(locale, "error_generic").slice(0, 200), { show_alert: true });
+      }
+    } catch {
+      /* already answered or expired */
+    }
+    try {
+      await ctx.reply(services.i18n.t(locale, "error_generic"));
+    } catch {
+      /* e.g. flood / chat blocked */
+    }
   });
 
   bot.use((ctx, next) => {
@@ -1672,7 +1683,18 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       return;
     }
 
-    const parts = splitCallbackData(ctx.callbackQuery.data);
+    let parts: string[];
+    try {
+      parts = splitCallbackData(ctx.callbackQuery.data);
+    } catch (err) {
+      logger.warn({ data: ctx.callbackQuery.data, err }, "Malformed callback_data");
+      try {
+        await ctx.answerCbQuery(services.i18n.t("ru", "error_generic"), { show_alert: true });
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     const [scope, action, value, extra] = parts;
     const user = ctx.currentUser;
     if (!user) {
@@ -3384,42 +3406,54 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
     if (scope === "pay" && action === "balance" && value) {
       const productId = value;
-      const result = await services.balance.purchaseFromBalance(user, productId);
-      if (!result.success) {
-        await ctx.answerCbQuery(
-          result.error === "Insufficient balance"
-            ? services.i18n.t(user.selectedLanguage, "insufficient_balance")
-            : services.i18n.t(user.selectedLanguage, "error_generic"),
-          {
-          show_alert: true
-          }
+      try {
+        const result = await services.balance.purchaseFromBalance(user, productId);
+        if (!result.success) {
+          await ctx.answerCbQuery(
+            result.error === "Insufficient balance"
+              ? services.i18n.t(user.selectedLanguage, "insufficient_balance")
+              : services.i18n.t(user.selectedLanguage, "error_generic"),
+            {
+              show_alert: true
+            }
+          );
+          return;
+        }
+        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "balance_purchase_success"));
+        const returnPageId = getCheckoutReturnPage(ctx);
+        clearCheckoutReturnPage(ctx);
+        const builtRows: Array<Array<ReturnType<typeof Markup.button.callback> | ReturnType<typeof Markup.button.url>>> = [];
+        const linkButtons = await services.subscriptionChannel.resolveProductLinksForDisplay(
+          result.linkedChats ?? null,
+          ctx.telegram
         );
-        return;
+        for (const linkBtn of linkButtons.slice(0, 8)) {
+          const url = String(linkBtn.link ?? "").trim();
+          if (!/^https?:\/\//i.test(url)) continue;
+          const label = String(linkBtn.label ?? "").trim() || "Перейти";
+          builtRows.push([Markup.button.url(label, url)]);
+        }
+        if (!builtRows.length && returnPageId) {
+          builtRows.push([
+            Markup.button.callback(
+              services.i18n.t(user.selectedLanguage, "chat_and_channel_retry_button"),
+              makeCallbackData("menu", "open", returnPageId)
+            )
+          ]);
+        }
+        builtRows.push([Markup.button.callback(services.i18n.t(user.selectedLanguage, "to_main_menu"), NAV_ROOT_DATA)]);
+        await ctx.reply(
+          services.i18n.t(user.selectedLanguage, "balance_purchase_success_linked_chats_hint"),
+          Markup.inlineKeyboard(builtRows)
+        );
+      } catch (err) {
+        logger.error({ err, userId: user.id, productId }, "pay:balance handler failed");
+        try {
+          await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), { show_alert: true });
+        } catch {
+          /* ignore */
+        }
       }
-      await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "balance_purchase_success"));
-      const returnPageId = getCheckoutReturnPage(ctx);
-      clearCheckoutReturnPage(ctx);
-      const rows = [];
-      const linkButtons = await services.subscriptionChannel.resolveProductLinksForDisplay(
-        result.linkedChats ?? null,
-        ctx.telegram
-      );
-      for (const linkBtn of linkButtons.slice(0, 8)) {
-        rows.push([Markup.button.url(linkBtn.label, linkBtn.link)]);
-      }
-      if (!rows.length && returnPageId) {
-        rows.push([
-          Markup.button.callback(
-            services.i18n.t(user.selectedLanguage, "chat_and_channel_retry_button"),
-            makeCallbackData("menu", "open", returnPageId)
-          )
-        ]);
-      }
-      rows.push([Markup.button.callback(services.i18n.t(user.selectedLanguage, "to_main_menu"), NAV_ROOT_DATA)]);
-      await ctx.reply(
-        services.i18n.t(user.selectedLanguage, "balance_purchase_success_linked_chats_hint"),
-        Markup.inlineKeyboard(rows)
-      );
       return;
     }
 

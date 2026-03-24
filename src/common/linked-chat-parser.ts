@@ -149,8 +149,10 @@ export function getDisplayLinks(linkedChats: unknown): Array<{ link: string; lab
   const out: Array<{ link: string; label: string }> = [];
   for (const item of linkedChats) {
     if (item && typeof item === "object" && "link" in item && typeof (item as any).link === "string") {
+      const href = String((item as any).link).trim();
+      if (!href || !/^https?:\/\//i.test(href)) continue;
       const rawLabel = typeof (item as any).label === "string" ? (item as any).label.trim() : "";
-      out.push({ link: (item as any).link, label: rawLabel || "Перейти" });
+      out.push({ link: href, label: rawLabel || "Перейти" });
     }
   }
   return out;
