@@ -2230,7 +2230,16 @@ export async function registerBackofficeRoutes(
         prisma.depositTransaction.findMany({
           where: { user: { botInstanceId: bot.id } },
           include: {
-            user: { select: { id: true, username: true, fullName: true, telegramUserId: true } }
+            user: {
+              select: {
+                id: true,
+                username: true,
+                firstName: true,
+                lastName: true,
+                fullName: true,
+                telegramUserId: true
+              }
+            }
           },
           orderBy: { createdAt: "desc" },
           take: 12
@@ -2606,6 +2615,39 @@ export async function registerBackofficeRoutes(
       return `<div>${loginLine}</div><div class="small">${nameLine} · id ${escapeHtml(String(user.telegramUserId))}</div>`;
     };
 
+    /** Имя / фамилия для строки диагностики депозита (как в Telegram-профиле или из fullName). */
+    const depositDiagnosticsNameParts = (
+      user:
+        | { firstName: string; lastName: string; fullName: string }
+        | null
+        | undefined
+    ): { first: string; last: string } => {
+      if (!user) return { first: "—", last: "—" };
+      const fn = user.firstName?.trim() || "";
+      const ln = user.lastName?.trim() || "";
+      if (fn || ln) return { first: fn || "—", last: ln || "—" };
+      const full = user.fullName?.trim() || "";
+      if (!full) return { first: "—", last: "—" };
+      const parts = full.split(/\s+/).filter(Boolean);
+      const [firstPart, ...restParts] = parts;
+      if (!firstPart) return { first: "—", last: "—" };
+      if (restParts.length === 0) return { first: firstPart, last: "—" };
+      return { first: firstPart, last: restParts.join(" ") };
+    };
+
+    const depositDiagnosticsTelegramLoginCell = (
+      user: { username: string | null; telegramUserId: bigint } | null | undefined
+    ): string => {
+      if (!user) return `<span class="small">—</span>`;
+      if (user.username) {
+        const path = encodeURIComponent(user.username);
+        const label = escapeHtml(`@${user.username}`);
+        return `<a href="https://t.me/${path}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      }
+      const id = String(user.telegramUserId);
+      return `<a href="tg://user?id=${escapeHtml(id)}" rel="noopener">${escapeHtml(`id ${id}`)}</a> <span class="small">(нет @username)</span>`;
+    };
+
     const renderPaymentStatus = (status: string) => {
       const ru: Record<string, { label: string; tone: Parameters<typeof renderStatusBadge>[1] }> = {
         PAID: { label: "Оплачено", tone: "active" },
@@ -2828,9 +2870,14 @@ export async function registerBackofficeRoutes(
             : "fail";
       const toleranceLabel =
         tolerance === "pass" ? "OK (≥98%)" : tolerance === "fail" ? "Ниже порога" : "—";
+      const nameParts = depositDiagnosticsNameParts(deposit.user);
+      const telegramLoginCell = depositDiagnosticsTelegramLoginCell(deposit.user);
 
       return {
         createdAt: deposit.createdAt,
+        depositorFirstName: nameParts.first,
+        depositorLastName: nameParts.last,
+        telegramLoginCell,
         orderId: deposit.orderId,
         providerPaymentId: deposit.providerPaymentId,
         providerStatus: deposit.providerStatus,
@@ -3226,7 +3273,7 @@ export async function registerBackofficeRoutes(
           <details style="margin-top:12px">
             <summary class="small" style="cursor:pointer">Диагностика депозитов (только этот бот)</summary>
             ${depositDiagnosticsRows.length
-              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Заказ</th><th>ID платежа</th><th>Статус провайдера</th><th>Кошелёк</th><th>Сумма</th><th>Мин. 98%</th><th>Поступило</th><th>Порог</th><th>Зачислено</th><th>Статус депозита</th><th>Продукт</th><th>Причина</th><th>Поддержка</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(d.toleranceLabel)}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td><td>${d.status === "CONFIRMED" ? `<span class="small">—</span>` : `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/deposits/${escapeHtml(d.orderId)}/emergency-confirm" style="margin:0"><input name="reason" type="text" placeholder="Комментарий" style="min-width:180px" /><button type="submit" class="secondary" style="margin-top:6px;background:rgba(34,197,94,0.18);border-color:rgba(34,197,94,0.45);">Подтвердить вручную</button></form>`}</td></tr>`).join("")}</tbody></table>`
+              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Имя</th><th>Фамилия</th><th>Логин Telegram</th><th>Заказ</th><th>ID платежа</th><th>Статус провайдера</th><th>Кошелёк</th><th>Сумма</th><th>Мин. 98%</th><th>Поступило</th><th>Порог</th><th>Зачислено</th><th>Статус депозита</th><th>Продукт</th><th>Причина</th><th>Поддержка</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td>${escapeHtml(d.depositorFirstName)}</td><td>${escapeHtml(d.depositorLastName)}</td><td>${d.telegramLoginCell}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(d.toleranceLabel)}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td><td>${d.status === "CONFIRMED" ? `<span class="small">—</span>` : `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/deposits/${escapeHtml(d.orderId)}/emergency-confirm" style="margin:0"><input name="reason" type="text" placeholder="Комментарий" style="min-width:180px" /><button type="submit" class="secondary" style="margin-top:6px;background:rgba(34,197,94,0.18);border-color:rgba(34,197,94,0.45);">Подтвердить вручную</button></form>`}</td></tr>`).join("")}</tbody></table>`
               : `<div class="small" style="margin-top:8px">Нет строк депозитов</div>`}
           </details>
          </div>

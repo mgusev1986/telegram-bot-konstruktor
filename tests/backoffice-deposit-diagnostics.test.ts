@@ -6,14 +6,18 @@ const FILE = "/Users/maksimgusev/Desktop/Automatization/Telegram Bot - Konstrukt
 describe("Backoffice deposit diagnostics visibility", () => {
   it("shows wallet address column for payment events", () => {
     const src = readFileSync(FILE, "utf8");
-    expect(src).toContain("<th>Wallet</th>");
+    expect(src).toContain("<th>Кошелёк</th>");
     expect(src).toContain("deposit.providerPayAddress");
   });
 
-  it("renders deposit diagnostics section with reason", () => {
+  it("renders deposit diagnostics section with depositor columns and reason", () => {
     const src = readFileSync(FILE, "utf8");
-    expect(src).toContain("Deposit diagnostics (this bot only)");
+    expect(src).toContain("Диагностика депозитов (только этот бот)");
     expect(src).toContain("diagnoseDepositReason");
+    expect(src).toContain("<th>Имя</th>");
+    expect(src).toContain("<th>Фамилия</th>");
+    expect(src).toContain("<th>Логин Telegram</th>");
+    expect(src).toContain("depositDiagnosticsTelegramLoginCell");
   });
 });
 
