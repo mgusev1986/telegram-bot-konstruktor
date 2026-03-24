@@ -232,22 +232,9 @@ function renderPage(title: string, body: string): string {
       function __extractIdFromPostLink(value) {
         if (!value) return "";
         var text = String(value).trim();
-        try {
-          var url = new URL(text);
-          var host = (url.hostname || "").toLowerCase();
-          if (host !== "t.me" && host !== "www.t.me") return "";
-          var parts = (url.pathname || "")
-            .split("/")
-            .map(function (p) { return p.trim(); })
-            .filter(Boolean);
-          // Expected: /c/<digits>/<msgId> or /o/<digits>/<msgId>
-          if (parts.length < 2) return "";
-          if (parts[0] !== "c" && parts[0] !== "o") return "";
-          if (!/^\d+$/.test(parts[1])) return "";
-          return "-100" + parts[1];
-        } catch (_) {
-          return "";
-        }
+        var match = text.match(/t\.me\/(?:c|o)\/(\d+)/i);
+        if (match && match[1]) return "-100" + match[1];
+        return "";
       }
 
       function __setIdHint(form, idx, mode, text) {
@@ -300,7 +287,7 @@ function validatePrivateLinkedChatsOnly(linkedChats: Array<{ link?: string; iden
   const normalizePrivateIdentifier = (value: string): string => {
     const raw = String(value ?? "").trim();
     if (!raw) return "";
-    const linkMatch = raw.match(/^https?:\/\/t\.me\/(?:c|o)\/(\d+)(?:\/\d+)?\/?(?:\?.*)?$/i);
+    const linkMatch = raw.match(/t\.me\/(?:c|o)\/(\d+)/i);
     if (linkMatch) return `-100${linkMatch[1]}`;
     if (/^-100\d{6,}$/.test(raw)) return raw;
     if (/^100\d{6,}$/.test(raw)) return `-${raw}`;
@@ -331,7 +318,7 @@ function readStructuredLinkedChatsFromBody(body: any): Array<{ link?: string; id
   const normalizePrivateIdentifier = (value: string): string => {
     const raw = String(value ?? "").trim();
     if (!raw) return "";
-    const linkMatch = raw.match(/^https?:\/\/t\.me\/(?:c|o)\/(\d+)(?:\/\d+)?\/?(?:\?.*)?$/i);
+    const linkMatch = raw.match(/t\.me\/(?:c|o)\/(\d+)/i);
     if (linkMatch) return `-100${linkMatch[1]}`;
     if (/^-100\d{6,}$/.test(raw)) return raw;
     if (/^100\d{6,}$/.test(raw)) return `-${raw}`;
@@ -345,8 +332,8 @@ function readStructuredLinkedChatsFromBody(body: any): Array<{ link?: string; id
     const link = String(body?.[`linkedChatLink${i}`] ?? "").trim();
     const postLink = String(body?.[`linkedChatPostLink${i}`] ?? "").trim();
     const rawIdentifier = String(body?.[`linkedChatIdentifier${i}`] ?? "").trim();
-    const postLinkMatch = postLink.match(/^https?:\/\/t\.me\/(?:c|o)\/(\d+)(?:\/\d+)?\/?(?:\?.*)?$/i)
-      || link.match(/^https?:\/\/t\.me\/(?:c|o)\/(\d+)(?:\/\d+)?\/?(?:\?.*)?$/i);
+    const postLinkMatch = postLink.match(/t\.me\/(?:c|o)\/(\d+)/i)
+      || link.match(/t\.me\/(?:c|o)\/(\d+)/i);
     const identifier = normalizePrivateIdentifier(rawIdentifier || (postLinkMatch ? `-100${postLinkMatch[1]}` : ""));
     const normalizedLink = postLinkMatch ? "" : link;
     if (!label && !link && !postLink && !identifier) continue;
