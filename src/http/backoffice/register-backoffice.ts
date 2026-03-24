@@ -154,10 +154,14 @@ function renderPage(title: string, body: string): string {
       .mi-card:first-of-type { margin-top: 0; }
       .section-title { font-size: 14px; font-weight: 600; color: #cbd5e1; margin: 16px 0 8px 0; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); }
       .section-title:first-child { margin-top: 0; }
-      .paid-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+      .paid-table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
       .paid-table th, .paid-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08); }
       .paid-table th { color: #94a3b8; font-weight: 500; }
       .paid-table tr:last-child td { border-bottom: none; }
+      .paid-table td code { white-space: normal; word-break: break-all; overflow-wrap: anywhere; }
+      .mono-wrap { min-width: 180px; max-width: 340px; }
+      .wallet-col { min-width: 200px; max-width: 380px; }
+      .events-scroll { max-height: 430px; overflow-y: auto; overflow-x: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; }
       .product-card { margin-top: 20px; padding: 18px; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; background: rgba(0,0,0,0.12); }
       .product-card:first-of-type { margin-top: 12px; }
       .products-existing-block { margin-top: 40px; padding-top: 32px; border-top: 1px solid rgba(255,255,255,0.15); }
@@ -2307,7 +2311,7 @@ export async function registerBackofficeRoutes(
       }))
     ]
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
-      .slice(0, 14);
+      .slice(0, 10);
 
     const readRequestedProductId = (rawPayload: unknown): string | null => {
       if (!rawPayload || typeof rawPayload !== "object") return null;
@@ -2561,7 +2565,7 @@ export async function registerBackofficeRoutes(
            <div class="section-title">События платежей</div>
            ${
              paymentEvents.length
-               ? `<table class="paid-table">
+              ? `<div class="events-scroll"><table class="paid-table">
                   <thead><tr><th>Когда</th><th>Событие</th><th>Пользователь</th><th>Продукт</th><th>Сумма</th><th>Статус</th><th>Ref / Order</th><th>Wallet</th></tr></thead>
                    <tbody>
                      ${paymentEvents.map((event) => `<tr>
@@ -2571,11 +2575,11 @@ export async function registerBackofficeRoutes(
                        <td>${escapeHtml(event.productLabel)}</td>
                        <td>${escapeHtml(event.amount)}</td>
                        <td>${renderPaymentStatus(event.status)}</td>
-                      <td><code>${escapeHtml(event.note)}</code></td>
-                      <td><code>${escapeHtml(event.walletAddress ?? "-")}</code></td>
+                      <td class="mono-wrap"><code>${escapeHtml(event.note)}</code></td>
+                      <td class="wallet-col"><code>${escapeHtml(event.walletAddress ?? "-")}</code></td>
                      </tr>`).join("")}
-                   </tbody>
-                 </table>`
+                  </tbody>
+                </table></div>`
                : `<div class="small">Пока нет событий платежей.</div>`
            }
          </div>
@@ -2616,7 +2620,7 @@ export async function registerBackofficeRoutes(
           <details style="margin-top:12px">
             <summary class="small" style="cursor:pointer">Deposit diagnostics (this bot only)</summary>
             ${depositDiagnosticsRows.length
-              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Order</th><th>PaymentId</th><th>Provider status</th><th>Wallet</th><th>Req</th><th>Min 98%</th><th>Outcome</th><th>Tolerance</th><th>Credited</th><th>Deposit status</th><th>Product</th><th>Reason</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td><code>${escapeHtml(d.orderId)}</code></td><td><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(String(d.tolerance))}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td></tr>`).join("")}</tbody></table>`
+              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Order</th><th>PaymentId</th><th>Provider status</th><th>Wallet</th><th>Req</th><th>Min 98%</th><th>Outcome</th><th>Tolerance</th><th>Credited</th><th>Deposit status</th><th>Product</th><th>Reason</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(String(d.tolerance))}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td></tr>`).join("")}</tbody></table>`
               : `<div class="small" style="margin-top:8px">Нет deposit rows</div>`}
           </details>
          </div>
