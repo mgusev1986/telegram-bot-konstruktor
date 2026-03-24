@@ -913,7 +913,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       "",
       `${escapeHtml(services.i18n.t(languageCode, "invoice_exact_amount_prefix"))}: <b>${escapeHtml(opts.amount)}</b>`,
       "",
-      `👇 ${escapeHtml(services.i18n.t(languageCode, "invoice_cta_copy_and_transfer"))}`
+      `<b>👇 ${escapeHtml(services.i18n.t(languageCode, "invoice_cta_copy_and_transfer"))}</b>`
     );
 
     // Keep reference/orderId in backend only (webhooks/logs/backoffice), hide it from user-facing invoice.
@@ -926,8 +926,6 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
   const buildCheckoutScreenKeyboard = (
     languageCode: string,
-    productId: string,
-    productCta: string,
     payAddress: string,
     depositId: string,
     returnPageId: string | null
@@ -935,7 +933,6 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     reply_markup: {
       inline_keyboard: [
         [{ text: services.i18n.t(languageCode, "copy_wallet_address"), copy_text: { text: payAddress } }],
-        [{ text: productCta, callback_data: makeCallbackData("pay", "balance", productId) }],
         [{ text: services.i18n.t(languageCode, "request_payment_review"), callback_data: makeCallbackData("pay", "check", depositId) }],
         [
           { text: services.i18n.t(languageCode, "back"), callback_data: returnPageId ? makeCallbackData("menu", "open", returnPageId) : NAV_BACK_DATA },
@@ -1027,7 +1024,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const amount = Number(product.price);
     const currency = product.currency ?? "USDT";
     const network = "USDT_BEP20" as PaymentNetwork;
-    const intent = await services.balance.createDepositIntent(user, amount, currency, network);
+    const intent = await services.balance.createDepositIntent(user, amount, currency, network, productId);
     if (!intent) {
       logger.warn({ userId: user.id, productId, amount, currency }, "Pay button: createDepositIntent returned null");
       await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "payment_temporarily_unavailable"), {
@@ -1062,7 +1059,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       ctx.telegram,
       ctx.chat?.id ?? user.telegramUserId,
       { text: checkoutText },
-      buildCheckoutScreenKeyboard(user.selectedLanguage, productId, payButtonText, intent.payAddress, intent.depositId, returnPageId)
+      buildCheckoutScreenKeyboard(user.selectedLanguage, intent.payAddress, intent.depositId, returnPageId)
     );
   };
 
@@ -3401,8 +3398,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     }
 
     if (scope === "pay" && action === "check" && value) {
-      const orderId = value;
-      const status = await services.balance.checkDepositStatus(orderId);
+      const depositId = value;
+      logger.info({ userId: user.id, depositId }, "Pay button pressed: pay:check");
+      const status = await services.balance.checkDepositStatus(depositId);
       if (status.credited) {
         await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "deposit_confirmed"));
         const returnPageId = getCheckoutReturnPage(ctx);
@@ -3410,7 +3408,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         await sendMenuPage(ctx, returnPageId);
       } else {
         await ctx.answerCbQuery(
-          services.i18n.t(user.selectedLanguage, "check_deposit_status") + ": " + status.status
+          services.i18n.t(user.selectedLanguage, "check_deposit_status") + ": " + status.status,
+          { show_alert: true }
         );
       }
       return;

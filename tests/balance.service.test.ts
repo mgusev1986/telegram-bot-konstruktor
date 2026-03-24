@@ -374,7 +374,11 @@ describe("BalanceService NOWPayments flow", () => {
   it("calls onDepositCredited with deposit.botInstanceId for multi-bot routing", async () => {
     const onDepositCredited = vi.fn().mockResolvedValue(undefined);
     const { service, state } = createBalanceHarness({ onDepositCredited });
-    Object.assign(state.deposit, { requestedAmountUsd: 10, botInstanceId: "bot-A" });
+    Object.assign(state.deposit, {
+      requestedAmountUsd: 10,
+      botInstanceId: "bot-A",
+      rawPayload: { requestedProductId: "product-1" }
+    });
     const payload = {
       order_id: state.deposit.orderId,
       payment_id: state.deposit.providerPaymentId,
@@ -394,7 +398,8 @@ describe("BalanceService NOWPayments flow", () => {
       expect.objectContaining({
         depositId: state.deposit.id,
         botInstanceId: "bot-A",
-        creditedAmount: 10
+        creditedAmount: 10,
+        productId: "product-1"
       })
     );
   });

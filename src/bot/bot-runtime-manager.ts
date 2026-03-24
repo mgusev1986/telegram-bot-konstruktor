@@ -8,6 +8,7 @@ import { logger } from "../common/logger";
 import type { AppServices } from "../app/services";
 import { buildServices, type OnDepositCreditedFn } from "../app/services";
 import { decryptTelegramBotToken } from "../common/telegram-token-encryption";
+import { makeCallbackData } from "../common/callback-data";
 import { registerBot } from "./register-bot";
 import type { BotContext } from "./context";
 
@@ -106,8 +107,9 @@ export class BotRuntimeManager {
     selectedLanguage: string;
     creditedAmount: number;
     currency: string;
+    productId?: string;
   }): Promise<void> {
-    const { depositId, botInstanceId, telegramUserId, selectedLanguage, creditedAmount, currency } = params;
+    const { depositId, botInstanceId, telegramUserId, selectedLanguage, creditedAmount, currency, productId } = params;
 
     const runtime = botInstanceId
       ? this.bots.get(botInstanceId)
@@ -125,15 +127,25 @@ export class BotRuntimeManager {
       selectedLanguage === "en"
         ? `Deposit confirmed. ${creditedAmount} ${currency} credited to your balance.`
         : `Пополнение подтверждено. ${creditedAmount} ${currency} зачислено на баланс.`;
+    const payButtonText = selectedLanguage === "en" ? "Pay" : "Оплатить";
+    const replyMarkup =
+      productId && productId.trim()
+        ? {
+            inline_keyboard: [
+              [{ text: payButtonText, callback_data: makeCallbackData("pay", "balance", productId.trim()) }]
+            ]
+          }
+        : undefined;
 
     try {
-      await runtime.bot.telegram.sendMessage(telegramUserId, text);
+      await runtime.bot.telegram.sendMessage(telegramUserId, text, replyMarkup ? { reply_markup: replyMarkup } : undefined);
       logger.info(
         {
           depositId,
           userId: params.userId,
           depositBotInstanceId: botInstanceId,
-          resolvedBotInstanceId: runtime.botInstanceId
+          resolvedBotInstanceId: runtime.botInstanceId,
+          productId: productId ?? null
         },
         "Deposit notification sent to correct bot"
       );

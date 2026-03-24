@@ -35,7 +35,14 @@ export type NowPaymentsProcessResult = {
   status?: string;
   error?: string;
   /** When credited: deposit with user for notification routing by deposit.botInstanceId */
-  deposit?: { id: string; userId: string; botInstanceId: string | null; user: { telegramUserId: string; selectedLanguage: string }; currency: string };
+  deposit?: {
+    id: string;
+    userId: string;
+    botInstanceId: string | null;
+    user: { telegramUserId: string; selectedLanguage: string };
+    currency: string;
+    productId?: string;
+  };
   creditedAmount?: number;
   currency?: string;
 };
@@ -57,6 +64,14 @@ function mapNowPaymentsStatusToDepositStatus(status: string): DepositTransaction
 function readNowPaymentsAmount(value: unknown, fallback: number): number {
   const numeric = typeof value === "number" ? value : Number(value);
   return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
+}
+
+function readRequestedProductId(rawPayload: unknown): string | undefined {
+  if (!rawPayload || typeof rawPayload !== "object") return undefined;
+  const value = (rawPayload as Record<string, unknown>).requestedProductId;
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed || undefined;
 }
 
 export interface DepositIntent {
@@ -97,6 +112,7 @@ export class BalanceService {
       selectedLanguage: string;
       creditedAmount: number;
       currency: string;
+      productId?: string;
     }) => Promise<void>
   ) {}
 
@@ -148,7 +164,8 @@ export class BalanceService {
     user: User,
     amount: number,
     currency: string,
-    network: PaymentNetwork
+    network: PaymentNetwork,
+    productId?: string
   ): Promise<DepositIntent | null> {
     const botId = user.botInstanceId ?? "global";
     const diag = this.getNowPaymentsDiagnostics();
@@ -183,7 +200,8 @@ export class BalanceService {
         amount,
         currency,
         status: "PENDING",
-        requestedAmountUsd: currency.toUpperCase() === "USD" || currency.toUpperCase() === "USDT" ? amount : undefined
+        requestedAmountUsd: currency.toUpperCase() === "USD" || currency.toUpperCase() === "USDT" ? amount : undefined,
+        rawPayload: productId ? ({ requestedProductId: productId } as object) : undefined
       }
     });
 
@@ -217,7 +235,10 @@ export class BalanceService {
           providerPaymentId: String(resp.payment_id),
           providerStatus: resp.payment_status ?? undefined,
           providerPayAddress: resp.pay_address ?? undefined,
-          rawPayload: resp as unknown as object
+          rawPayload: {
+            requestedProductId: productId ?? null,
+            createPaymentResponse: resp
+          } as object
         }
       });
 
@@ -377,6 +398,25 @@ export class BalanceService {
     }
 
     const mappedStatus = mapNowPaymentsStatusToDepositStatus(paymentStatus);
+    const requestedProductId = readRequestedProductId(deposit.rawPayload);
+    logger.info(
+      {
+        provider: PROVIDER,
+        source,
+        depositId: deposit.id,
+        userId: deposit.userId,
+        orderId,
+        providerPaymentId: paymentId,
+        providerStatus: paymentStatus,
+        providerPayAddress: deposit.providerPayAddress,
+        requestedAmountUsd: deposit.requestedAmountUsd,
+        actualOutcomeAmount: payload.outcome_amount ?? null,
+        creditedBalanceAmount: deposit.creditedBalanceAmount,
+        botInstanceId: deposit.botInstanceId,
+        productId: requestedProductId ?? null
+      },
+      "NOWPayments deposit diagnostics snapshot"
+    );
     const payloadObject = payload as object;
     const processedAt = new Date();
     let credited = false;
@@ -432,6 +472,23 @@ export class BalanceService {
       }
 
       if (mappedStatus === "PENDING") {
+        logger.info(
+          {
+            provider: PROVIDER,
+            source,
+            depositId: lockedDeposit.id,
+            orderId,
+            providerPaymentId: paymentId,
+            providerStatus: paymentStatus,
+            providerPayAddress: lockedDeposit.providerPayAddress,
+            requestedAmountUsd: lockedDeposit.requestedAmountUsd,
+            actualOutcomeAmount: payload.outcome_amount ?? null,
+            creditedBalanceAmount: lockedDeposit.creditedBalanceAmount,
+            botInstanceId: lockedDeposit.botInstanceId,
+            productId: readRequestedProductId(lockedDeposit.rawPayload) ?? null
+          },
+          "NOWPayments status still pending; credit skipped"
+        );
         await tx.depositTransaction.update({
           where: { id: lockedDeposit.id },
           data: {
@@ -578,7 +635,23 @@ export class BalanceService {
     if (!credited) {
       const logLevel = mappedStatus === "FAILED" ? "warn" : "info";
       logger[logLevel](
-        { provider: PROVIDER, source, paymentId, orderId, paymentStatus, depositId: deposit.id },
+        {
+          provider: PROVIDER,
+          source,
+          paymentId,
+          orderId,
+          paymentStatus,
+          depositId: deposit.id,
+          providerPaymentId: deposit.providerPaymentId,
+          providerStatus: deposit.providerStatus,
+          providerPayAddress: deposit.providerPayAddress,
+          requestedAmountUsd: deposit.requestedAmountUsd,
+          actualOutcomeAmount: deposit.actualOutcomeAmount,
+          creditedBalanceAmount: deposit.creditedBalanceAmount,
+          botInstanceId: deposit.botInstanceId,
+          productId: requestedProductId ?? null,
+          reason: mappedStatus === "FAILED" ? "provider_failed_status" : "pending_or_not_final"
+        },
         mappedStatus === "FAILED"
           ? "NOWPayments event marked deposit as failed"
           : "NOWPayments event stored without credit"
@@ -612,7 +685,8 @@ export class BalanceService {
         telegramUserId: String(deposit.user.telegramUserId),
         selectedLanguage: deposit.user.selectedLanguage,
         creditedAmount,
-        currency: deposit.currency
+        currency: deposit.currency,
+        productId: requestedProductId
       }).catch((err: unknown) => {
         logger.warn(
           { provider: PROVIDER, source, paymentId, orderId, depositId: deposit.id, err },
@@ -651,7 +725,8 @@ export class BalanceService {
           telegramUserId: String(deposit.user.telegramUserId),
           selectedLanguage: deposit.user.selectedLanguage
         },
-        currency: deposit.currency
+        currency: deposit.currency,
+        productId: requestedProductId
       },
       creditedAmount,
       currency: deposit.currency
@@ -846,13 +921,50 @@ export class BalanceService {
         OR: [{ id: depositIdOrOrderId }, { orderId: depositIdOrOrderId }]
       }
     });
-    if (!deposit) return { status: "not_found" };
+    if (!deposit) {
+      logger.warn({ provider: PROVIDER, depositIdOrOrderId }, "checkDepositStatus: deposit not found");
+      return { status: "not_found" };
+    }
+
+    logger.info(
+      {
+        provider: PROVIDER,
+        depositId: deposit.id,
+        orderId: deposit.orderId,
+        providerPaymentId: deposit.providerPaymentId,
+        providerStatus: deposit.providerStatus,
+        providerPayAddress: deposit.providerPayAddress,
+        requestedAmountUsd: deposit.requestedAmountUsd,
+        actualOutcomeAmount: deposit.actualOutcomeAmount,
+        creditedBalanceAmount: deposit.creditedBalanceAmount,
+        botInstanceId: deposit.botInstanceId,
+        productId: readRequestedProductId(deposit.rawPayload) ?? null
+      },
+      "checkDepositStatus called"
+    );
+
     if (deposit.status === "CONFIRMED") return { status: "confirmed", credited: true };
     if (deposit.status === "PENDING" && this.nowPayments) {
       const paymentId = deposit.providerPaymentId;
       if (paymentId) {
         try {
           const st = await this.nowPayments.getPaymentStatus(paymentId);
+          logger.info(
+            {
+              provider: PROVIDER,
+              depositId: deposit.id,
+              orderId: deposit.orderId,
+              providerPaymentId: paymentId,
+              providerStatus: st.payment_status,
+              providerPayAddress: st.pay_address ?? deposit.providerPayAddress,
+              requestedAmountUsd: deposit.requestedAmountUsd,
+              actualOutcomeAmount: st.outcome_amount ?? null,
+              creditedBalanceAmount: deposit.creditedBalanceAmount,
+              botInstanceId: deposit.botInstanceId,
+              productId: readRequestedProductId(deposit.rawPayload) ?? null
+            },
+            "checkDepositStatus fetched provider status"
+          );
           const result = await this.processTrustedNowPaymentsPayload(
             {
               payment_id: st.payment_id,
@@ -868,14 +980,34 @@ export class BalanceService {
             "status_sync"
           );
 
-          if (result.credited || result.duplicate || st.payment_status === "finished") {
+          if (result.credited || result.duplicate) {
             return { status: "confirmed", credited: true };
           }
           return { status: result.status ?? normalizeNowPaymentsStatus(st.payment_status) };
-        } catch {
+        } catch (err) {
+          logger.warn(
+            {
+              provider: PROVIDER,
+              depositId: deposit.id,
+              orderId: deposit.orderId,
+              providerPaymentId: paymentId,
+              err
+            },
+            "checkDepositStatus provider refresh failed"
+          );
           return { status: deposit.status };
         }
       }
+
+      logger.info(
+        {
+          provider: PROVIDER,
+          depositId: deposit.id,
+          orderId: deposit.orderId,
+          reason: "missing_provider_payment_id"
+        },
+        "checkDepositStatus skipped provider refresh"
+      );
     }
     return { status: deposit.status };
   }

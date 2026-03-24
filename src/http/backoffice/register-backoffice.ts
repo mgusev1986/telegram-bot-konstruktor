@@ -2279,7 +2279,8 @@ export async function registerBackofficeRoutes(
           payment.product.localizations.find((item) => item.languageCode === "ru")?.title ??
           payment.product.code,
         amount: `${formatMoney(payment.amount)} ${payment.currency}`,
-        note: payment.referenceCode
+        note: payment.referenceCode,
+        walletAddress: null as string | null
       })),
       ...recentDeposits.map((deposit) => ({
         createdAt: deposit.createdAt,
@@ -2288,7 +2289,8 @@ export async function registerBackofficeRoutes(
         user: deposit.user,
         productLabel: "Balance top-up",
         amount: `${formatMoney(deposit.amount)} ${deposit.currency}`,
-        note: deposit.orderId
+        note: deposit.orderId,
+        walletAddress: deposit.providerPayAddress ?? null
       })),
       ...recentPurchases.map((purchase) => ({
         createdAt: purchase.createdAt,
@@ -2300,11 +2302,41 @@ export async function registerBackofficeRoutes(
           purchase.product.localizations.find((item) => item.languageCode === "ru")?.title ??
           purchase.product.code,
         amount: `${formatMoney(purchase.amount)} USDT`,
-        note: purchase.idempotencyKey
+        note: purchase.idempotencyKey,
+        walletAddress: null as string | null
       }))
     ]
       .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
       .slice(0, 14);
+
+    const readRequestedProductId = (rawPayload: unknown): string | null => {
+      if (!rawPayload || typeof rawPayload !== "object") return null;
+      const value = (rawPayload as Record<string, unknown>).requestedProductId;
+      if (typeof value !== "string") return null;
+      const trimmed = value.trim();
+      return trimmed || null;
+    };
+    const diagnoseDepositReason = (deposit: (typeof recentDeposits)[number]): string => {
+      if (deposit.status === "CONFIRMED") return "credited";
+      if (deposit.status === "FAILED") return "failed_by_provider";
+      if (!deposit.providerPaymentId) return "create_payment_failed_or_not_created";
+      if (!deposit.providerPayAddress) return "provider_pay_address_missing";
+      return "waiting_provider_or_ipn";
+    };
+    const depositDiagnosticsRows = recentDeposits.slice(0, 12).map((deposit) => ({
+      createdAt: deposit.createdAt,
+      orderId: deposit.orderId,
+      providerPaymentId: deposit.providerPaymentId,
+      providerStatus: deposit.providerStatus,
+      providerPayAddress: deposit.providerPayAddress,
+      requestedAmountUsd: deposit.requestedAmountUsd,
+      actualOutcomeAmount: deposit.actualOutcomeAmount,
+      creditedBalanceAmount: deposit.creditedBalanceAmount,
+      status: deposit.status,
+      botInstanceId: deposit.botInstanceId,
+      productId: readRequestedProductId(deposit.rawPayload),
+      reason: diagnoseDepositReason(deposit)
+    }));
 
     return reply.type("text/html").send(
       renderPage(
@@ -2516,7 +2548,7 @@ export async function registerBackofficeRoutes(
            ${
              paymentEvents.length
                ? `<table class="paid-table">
-                   <thead><tr><th>Когда</th><th>Событие</th><th>Пользователь</th><th>Продукт</th><th>Сумма</th><th>Статус</th><th>Ref / Order</th></tr></thead>
+                  <thead><tr><th>Когда</th><th>Событие</th><th>Пользователь</th><th>Продукт</th><th>Сумма</th><th>Статус</th><th>Ref / Order</th><th>Wallet</th></tr></thead>
                    <tbody>
                      ${paymentEvents.map((event) => `<tr>
                        <td>${formatIsoDate(event.createdAt)}</td>
@@ -2525,7 +2557,8 @@ export async function registerBackofficeRoutes(
                        <td>${escapeHtml(event.productLabel)}</td>
                        <td>${escapeHtml(event.amount)}</td>
                        <td>${renderPaymentStatus(event.status)}</td>
-                       <td><code>${escapeHtml(event.note)}</code></td>
+                      <td><code>${escapeHtml(event.note)}</code></td>
+                      <td><code>${escapeHtml(event.walletAddress ?? "-")}</code></td>
                      </tr>`).join("")}
                    </tbody>
                  </table>`
@@ -2566,6 +2599,12 @@ export async function registerBackofficeRoutes(
             <summary class="small" style="cursor:pointer">Webhook logs (NOWPayments, this bot only)</summary>
              ${webhookLogs.length ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Event</th><th>Sig</th><th>Result</th></tr></thead><tbody>${webhookLogs.map((w) => `<tr><td>${formatIsoDate(w.createdAt)}</td><td><code>${escapeHtml(String((w.bodyJson as any)?.payment_id ?? "-"))}</code></td><td>${w.signatureValid ? "✓" : "✗"}</td><td>${escapeHtml(w.processingResult ?? "-")}</td></tr>`).join("")}</tbody></table>` : `<div class="small" style="margin-top:8px">Нет логов</div>`}
            </details>
+          <details style="margin-top:12px">
+            <summary class="small" style="cursor:pointer">Deposit diagnostics (this bot only)</summary>
+            ${depositDiagnosticsRows.length
+              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Order</th><th>PaymentId</th><th>Provider status</th><th>Wallet</th><th>Req</th><th>Outcome</th><th>Credited</th><th>Deposit status</th><th>Product</th><th>Reason</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td><code>${escapeHtml(d.orderId)}</code></td><td><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.actualOutcomeAmount ?? 0).toFixed(8))}</td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td></tr>`).join("")}</tbody></table>`
+              : `<div class="small" style="margin-top:8px">Нет deposit rows</div>`}
+          </details>
          </div>
 
          <div id="access-audit" class="card" style="margin-top:16px">

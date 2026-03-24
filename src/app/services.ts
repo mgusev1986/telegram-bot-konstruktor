@@ -67,6 +67,7 @@ export type OnDepositCreditedFn = (params: {
   selectedLanguage: string;
   creditedAmount: number;
   currency: string;
+  productId?: string;
 }) => Promise<void>;
 
 export interface BuildServicesOptions {
