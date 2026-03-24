@@ -4,19 +4,24 @@
 
 > **Сохранность данных при деплое:** цепочки писем, рассылки и прочие данные уже хранятся в PostgreSQL и сохраняются при обновлении бота. Подробнее см. [DATA_PERSISTENCE.md](./DATA_PERSISTENCE.md).
 
-## Полный бэкап на Mac (код + БД + настройки)
+## Полный бэкап на Mac (код + снапшот + HANDOFF + БД)
 
-Создаёт папку на рабочем столе со всем необходимым для восстановления:
+Одна команда — одна папка со **всем** (без отдельного `.snapshots/`):
 
 ```bash
 bash scripts/full-backup-to-local.sh
+# или
+npm run backup:full
 ```
 
 Результат: `backups/full-BACKUP-YYYY-MM-DD_HH-MM-SS/` (внутри проекта)
 
 Содержимое:
-- `project/` — код + .env
-- `database.sql.gz` — дамп БД (если SSH настроен)
+- `HANDOFF.md` — копия инженерного handoff на момент бэкапа
+- `CHECKPOINT.md` — время, git-коммит, SHA256 tar (генерируется скриптом)
+- `snapshot_full-project.tar.gz` (+ `.sha256`) — полный архив репозитория с `.git` (без `node_modules`, `dist`, `backups/`, …)
+- `project/` — код без `.git` + `.env`
+- `database.sql.gz` — дамп БД (если SSH на сервер настроен)
 - `RESTORE.md` — инструкция по восстановлению
 
 Если БД не скачалась автоматически (нет SSH), выполните:

@@ -21,6 +21,7 @@
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:seed-demo": "tsx prisma/seed-demo-structure.ts",
     "deploy": "bash scripts/deploy-hetzner.sh",
+    "backup:full": "bash scripts/full-backup-to-local.sh",
     "lint:types": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

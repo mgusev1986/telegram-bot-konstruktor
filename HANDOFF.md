@@ -3,22 +3,26 @@
 Один snapshot проекта для переноса контекста в новый чат или онбординга разработчика. Обновляйте этот файл после крупных изменений.
 
 ### Last checkpoint
-Дата: 2026-03-24
-Снапшот: `.snapshots/snapshot-2026-03-24_22-19-15_full-project.tar.gz`
-SHA256: см. файл `.snapshots/snapshot-2026-03-24_22-19-15_full-project.tar.gz.sha256` (архив включает `HANDOFF.md`, поэтому контрольная сумма не дублируется внутри него)
-Ветка в архиве: `main` (точный коммит — `git rev-parse HEAD` в распакованном дереве)
-Сборка: `npm run lint:types` (tsc --noEmit) — OK
-Деплой: Hetzner VPS (77.42.79.54), Docker Compose
-Тесты: полный `npm test` не гонялся в рамках этого snapshot; см. примечания в checkpoint
+**Единая папка бэкапа в проекте:** `backups/full-BACKUP-YYYY-MM-DD_HH-MM-SS/` (создаётся командой `bash scripts/full-backup-to-local.sh` или `npm run backup:full`).
 
-### Checkpoint notes (2026-03-24) — full snapshot + handoff + «кто пополнил» в начислениях
+Внутри каждой такой папки:
+- **`HANDOFF.md`** — копия этого файла на момент бэкапа
+- **`CHECKPOINT.md`** — автоматически: время, git SHA, SHA256 tar
+- **`snapshot_full-project.tar.gz`** (+ **`.sha256`**) — полный tar репозитория с `.git` (без `node_modules`, `dist`, `backups/`, `coverage`, `.snapshots`)
+- **`project/`**, **`database.sql.gz`** (если скачалась), **`RESTORE.md`**
 
-- **Новый full-project snapshot:** `.snapshots/snapshot-2026-03-24_22-19-15_full-project.tar.gz` (~121 MB без `node_modules`/`dist`/локального `backups/`).
-- **SHA256:** записана рядом в `.snapshots/snapshot-2026-03-24_22-19-15_full-project.tar.gz.sha256`. Tar рабочего дерева: исключены `node_modules`, `dist`, `.snapshots`, `coverage`, **`backups/`** (дампы и `full-BACKUP-*` — отдельно, см. `docs/BACKUP.md`); в архив входят `.git` и локальный `.env`, если есть.
-- **Checkpoint:** `.snapshots/checkpoint-2026-03-24_22-19-15.md`.
-- **Бэкофис NOWPayments — записи начислений:** в таблице последних начислений добавлена колонка **«Пользователь (пополнил)»**: `@username`, имя из профиля Telegram, `telegramUserId`; хелпер `formatSettlementDepositorCell` в `src/http/backoffice/register-backoffice.ts`.
-- **Контекст кода (суммарно):** сплит выплат NOWPayments по кошелькам OWNER/пул; атрибуция начислений; `OwnerPayoutBatchRecipient`; отчётность владельца, `orFrom`/`orTo`, CSV `GET /backoffice/bots/:botId/paid/owner-report.csv`; миграции `bot_owner_payout_wallets`, `owner_settlement_attribution_split_payouts`.
-- **Известно:** часть тестов требует живой Postgres (`postgres:5432`); harness balance-тесты дополнены моками `user`/`botRoleAssignment`/`depositTransaction.count` где нужно.
+Самая свежая точка восстановления — **последняя по времени** папка в `backups/`. Старые снапшоты в `.snapshots/` больше не используются (каталог можно удалить).
+
+Сборка: `npm run lint:types` — OK на момент последних правок handoff  
+Деплой: Hetzner VPS (77.42.79.54), Docker Compose  
+Тесты: полный `npm test` при бэкапе не обязателен; см. примечания ниже
+
+### Checkpoint notes (2026-03-24) — один каталог `backups/`, handoff в каждом бэкапе
+
+- **Структура:** полный бэкап = одна папка `backups/full-BACKUP-*/` с **HANDOFF**, **CHECKPOINT**, **tar-снапшотом**, **project/** и опц. БД — см. `scripts/full-backup-to-local.sh`, `docs/BACKUP.md`.
+- **Бэкофис NOWPayments — записи начислений:** колонка **«Пользователь (пополнил)»** (`formatSettlementDepositorCell`, `register-backoffice.ts`).
+- **Контекст кода (суммарно):** сплит выплат NOWPayments по кошелькам OWNER/пул; атрибуция; `OwnerPayoutBatchRecipient`; отчёты владельца, `orFrom`/`orTo`, CSV owner-report; миграции payout/attribution.
+- **Известно:** часть тестов требует живой Postgres (`postgres:5432`); harness balance-тесты с моками где нужно.
 
 ### Checkpoint notes (2026-03-24 22:07) — предыдущий snapshot того же дня
 
@@ -379,6 +383,9 @@ npm run test:watch           # vitest watch
 
 # типы
 npm run lint:types           # tsc --noEmit
+
+# полный локальный бэкап (HANDOFF + tar-снапшот + project/ + опц. БД) → backups/full-BACKUP-*/
+npm run backup:full
 ```
 
 Требуется `.env`: DATABASE_URL, REDIS_URL, BOT_TOKEN, SUPER_ADMIN_TELEGRAM_ID, BOT_USERNAME и др. (см. .env.example).

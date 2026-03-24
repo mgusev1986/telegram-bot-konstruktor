@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Полный бэкап Telegram Bot Konstruktor на Mac (код + БД + настройки)
-# Создаёт папку backups/ внутри проекта со всем необходимым для восстановления.
+# Полный бэкап Telegram Bot Konstruktor на Mac (код + снапшот tar + HANDOFF + БД)
+# Создаёт одну папку backups/full-BACKUP-*/ со всем необходимым — без отдельного .snapshots/.
 #
 # Использование:
 #   bash scripts/full-backup-to-local.sh
@@ -18,6 +18,10 @@ SERVER_USER="${SERVER_USER:-root}"
 SERVER_HOST="${SERVER_HOST:-77.42.79.54}"
 REMOTE_APP_DIR="${REMOTE_APP_DIR:-/opt/telegram-bot-konstruktor}"
 
+PARENT="$(dirname "$PROJECT_ROOT")"
+BASE="$(basename "$PROJECT_ROOT")"
+SNAPSHOT_NAME="snapshot_full-project.tar.gz"
+
 echo "=========================================="
 echo "  Полный бэкап Telegram Bot Konstruktor"
 echo "=========================================="
@@ -27,8 +31,65 @@ echo ""
 
 mkdir -p "$BACKUP_ROOT"
 
-# 1. Копирование проекта (без node_modules, dist, .git)
-echo "1. Копирование кода проекта..."
+# 1. Handoff + автоматический checkpoint (всегда в корне папки бэкапа)
+echo "1. Копирование HANDOFF.md и создание CHECKPOINT.md..."
+if [ -f "$PROJECT_ROOT/HANDOFF.md" ]; then
+  cp "$PROJECT_ROOT/HANDOFF.md" "$BACKUP_ROOT/HANDOFF.md"
+  echo "   ✓ HANDOFF.md скопирован"
+else
+  echo "   ⚠ HANDOFF.md не найден в корне проекта"
+fi
+
+GIT_HEAD="$(git -C "$PROJECT_ROOT" rev-parse HEAD 2>/dev/null || echo "n/a")"
+GIT_BRANCH="$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo "n/a")"
+
+# 2. Tar-снапшот всего проекта (с .git, без backups/node_modules/…)
+echo "2. Создание tar-снапшота ($SNAPSHOT_NAME)..."
+OUT_TMP="/tmp/${BACKUP_NAME}-${SNAPSHOT_NAME}.$$"
+tar -czf "$OUT_TMP" \
+  --exclude="${BASE}/node_modules" \
+  --exclude="${BASE}/dist" \
+  --exclude="${BASE}/backups" \
+  --exclude="${BASE}/coverage" \
+  --exclude="${BASE}/.snapshots" \
+  -C "$PARENT" "$BASE"
+mv "$OUT_TMP" "$BACKUP_ROOT/$SNAPSHOT_NAME"
+SNAPSHOT_SHA="$(shasum -a 256 "$BACKUP_ROOT/$SNAPSHOT_NAME" | awk '{print $1}')"
+# Формат для `shasum -a 256 -c snapshot_full-project.tar.gz.sha256` из этой папки
+printf '%s  %s\n' "$SNAPSHOT_SHA" "$SNAPSHOT_NAME" > "$BACKUP_ROOT/${SNAPSHOT_NAME}.sha256"
+echo "   ✓ Снапшот готов, SHA256: ${SNAPSHOT_SHA:0:16}…"
+
+cat > "$BACKUP_ROOT/CHECKPOINT.md" << EOF
+# Checkpoint (создано автоматически при бэкапе)
+
+- **Время:** $(date -u +"%Y-%m-%d %H:%M:%S UTC") / локально: $(date +"%Y-%m-%d %H:%M:%S %z")
+- **Папка бэкапа:** \`${BACKUP_NAME}/\`
+- **Git:** \`${GIT_HEAD}\` (\`${GIT_BRANCH}\`)
+- **Архив:** \`${SNAPSHOT_NAME}\`
+- **SHA256:** \`${SNAPSHOT_SHA}\` (файл \`${SNAPSHOT_NAME}.sha256\`)
+
+## Что лежит в этой папке
+
+| Путь | Назначение |
+|------|------------|
+| \`HANDOFF.md\` | Копия инженерного handoff из корня репозитория на момент бэкапа |
+| \`CHECKPOINT.md\` | Этот файл: время, коммит, контрольная сумма снапшота |
+| \`${SNAPSHOT_NAME}\` | Полный tar проекта с \`.git\`; без \`node_modules\`, \`dist\`, \`backups/\`, \`coverage\`, \`.snapshots\` |
+| \`${SNAPSHOT_NAME}.sha256\` | SHA256 архива |
+| \`project/\` | Распакованная копия кода для быстрого просмотра и деплоя (без \`.git\`) |
+| \`database.sql.gz\` | Дамп PostgreSQL, если удалось скачать с сервера |
+| \`RESTORE.md\` | Как восстановиться |
+
+Проверка SHA256:
+
+\`\`\`bash
+shasum -a 256 -c ${SNAPSHOT_NAME}.sha256
+\`\`\`
+EOF
+echo "   ✓ CHECKPOINT.md записан"
+
+# 3. Копирование проекта (без node_modules, dist, .git)
+echo "3. Копирование кода проекта в project/..."
 rsync -a --exclude='node_modules' \
   --exclude='dist' \
   --exclude='.git' \
@@ -40,20 +101,19 @@ rsync -a --exclude='node_modules' \
   "$PROJECT_ROOT/" "$BACKUP_ROOT/project/"
 echo "   ✓ Код скопирован"
 
-# 2. Копирование .env (настройки)
+# 4. Копирование .env (настройки)
 if [ -f "$PROJECT_ROOT/.env" ]; then
-  echo "2. Копирование .env..."
+  echo "4. Копирование .env..."
   cp "$PROJECT_ROOT/.env" "$BACKUP_ROOT/project/.env"
   echo "   ✓ .env скопирован"
 else
-  echo "2. .env не найден — скопируйте вручную в project/.env"
+  echo "4. .env не найден — скопируйте вручную в project/.env"
 fi
 
-# 3. Выгрузка БД с сервера
-echo "3. Выгрузка базы данных с сервера..."
+# 5. Выгрузка БД с сервера
+echo "5. Выгрузка базы данных с сервера..."
 DB_FETCHED=0
 if command -v ssh &>/dev/null && ssh -o ConnectTimeout=5 -o BatchMode=yes "${SERVER_USER}@${SERVER_HOST}" "exit" 2>/dev/null; then
-  # Создаём дамп на сервере и скачиваем
   REMOTE_BACKUP=$(ssh "${SERVER_USER}@${SERVER_HOST}" \
     "cd ${REMOTE_APP_DIR} && bash scripts/backup-db.sh 2>/dev/null && ls -t backups/telegram_bot_konstruktor_*.sql.gz 2>/dev/null | head -1" 2>/dev/null | tr -d '\r')
   if [ -n "$REMOTE_BACKUP" ]; then
@@ -80,16 +140,27 @@ else
 EOF
 fi
 
-# 4. Создание инструкции по восстановлению
-echo "4. Создание инструкции RESTORE.md..."
+# 6. Инструкция по восстановлению
+echo "6. Создание инструкции RESTORE.md..."
 cat > "$BACKUP_ROOT/RESTORE.md" << 'RESTOREEOF'
 # Восстановление Telegram Bot Konstruktor из бэкапа
 
 ## Что в бэкапе
 
-- `project/` — полный код проекта
+- `HANDOFF.md` — инженерный контекст проекта (копия на момент бэкапа)
+- `CHECKPOINT.md` — время бэкапа, git-коммит, SHA256 tar-снапшота
+- `snapshot_full-project.tar.gz` — полный архив репозитория **с `.git`** (удобно для истории коммитов)
+- `snapshot_full-project.tar.gz.sha256` — контрольная сумма архива
+- `project/` — та же кодовая база **без** `.git` (удобно сразу залить на сервер)
 - `project/.env` — настройки (токены, пароли)
-- `database.sql.gz` — дамп PostgreSQL (меню, пользователи, всё содержимое бота)
+- `database.sql.gz` — дамп PostgreSQL (меню, пользователи, всё содержимое бота), если был скачан
+
+### Распаковка только из tar
+
+```bash
+mkdir -p ~/restore-bot && tar -xzf snapshot_full-project.tar.gz -C ~/restore-bot --strip-components=1
+# или с сохранением имени папки проекта — без strip-components
+```
 
 ## Восстановление на новый сервер (Hetzner VPS)
 
