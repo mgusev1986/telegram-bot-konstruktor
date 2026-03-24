@@ -376,6 +376,10 @@ const bootstrap = async (): Promise<void> => {
   await servicesRef.scheduler.recoverPendingJobs();
   await servicesRef.scheduler.recoverDueJobs();
 
+  const firstPollAt = new Date(Date.now() + 60 * 1000);
+  const pollKey = `poll-pending-deposits-${Math.floor(firstPollAt.getTime() / (5 * 60 * 1000))}`;
+  await servicesRef.scheduler.schedule("POLL_PENDING_DEPOSITS", {}, firstPollAt, pollKey);
+
   const worker = startWorkers({
     prisma,
     connection: bullConnection,

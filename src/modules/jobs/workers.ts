@@ -53,6 +53,23 @@ export const startWorkers = ({
         return;
       }
 
+      if (jobType === "POLL_PENDING_DEPOSITS") {
+        const primaryRuntime = runtimeManager.getFirstRuntime();
+        const balance = primaryRuntime?.services.balance;
+        if (!balance) {
+          logger.warn({ scheduledJobId }, "POLL_PENDING_DEPOSITS skipped: no runtime");
+          await scheduler.markCompleted(scheduledJobId);
+          return;
+        }
+        const { polled, credited } = await balance.pollPendingDeposits({ limit: 20 });
+        const nextRunAt = new Date(Date.now() + 5 * 60 * 1000);
+        const nextKey = `poll-pending-deposits-${Math.floor(nextRunAt.getTime() / (5 * 60 * 1000))}`;
+        await scheduler.schedule("POLL_PENDING_DEPOSITS", {}, nextRunAt, nextKey);
+        logger.info({ scheduledJobId, polled, credited, nextRunAt: nextRunAt.toISOString() }, "POLL_PENDING_DEPOSITS completed");
+        await scheduler.markCompleted(scheduledJobId);
+        return;
+      }
+
       const botInstanceId = (payload.botInstanceId ? String(payload.botInstanceId) : runtimeManager.getFirstRuntime()?.botInstanceId) ?? null;
       if (!botInstanceId) {
         throw new Error(`Missing botInstanceId for scheduled job ${scheduledJobId} (${jobType})`);

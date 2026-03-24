@@ -880,6 +880,44 @@ export class BalanceService {
     return { status: deposit.status };
   }
 
+  /** Background poll: sync PENDING deposits with NOWPayments status. Returns count credited. */
+  async pollPendingDeposits(opts?: { limit?: number }): Promise<{ polled: number; credited: number }> {
+    if (!this.nowPayments) return { polled: 0, credited: 0 };
+
+    const limit = opts?.limit ?? 20;
+    const pending = await this.prisma.depositTransaction.findMany({
+      where: {
+        status: "PENDING",
+        provider: PROVIDER,
+        providerPaymentId: { not: null }
+      },
+      orderBy: { createdAt: "asc" },
+      take: limit,
+      select: { id: true, orderId: true }
+    });
+
+    let credited = 0;
+    for (const d of pending) {
+      try {
+        const result = await this.checkDepositStatus(d.orderId);
+        if (result.credited) credited++;
+      } catch (err) {
+        logger.warn(
+          { provider: PROVIDER, depositId: d.id, orderId: d.orderId, err },
+          "pollPendingDeposits: checkDepositStatus failed"
+        );
+      }
+    }
+
+    if (pending.length > 0) {
+      logger.info(
+        { provider: PROVIDER, polled: pending.length, credited },
+        "pollPendingDeposits completed"
+      );
+    }
+    return { polled: pending.length, credited };
+  }
+
   async getRecentLedgerEntries(userId: string, limit = 10) {
     const account = await this.prisma.userBalanceAccount.findUnique({
       where: { userId }

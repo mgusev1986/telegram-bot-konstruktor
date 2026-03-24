@@ -34,6 +34,7 @@ const RETRYABLE_TERMINAL_DUE_JOB_TYPES = new Set([
   "PROCESS_ACCESS_EXPIRY",
   "PROCESS_PAYMENT_EXPIRY",
   "PROCESS_OWNER_DAILY_PAYOUTS",
+  "POLL_PENDING_DEPOSITS",
   "SEND_INACTIVITY_REMINDER"
 ]);
 
@@ -63,7 +64,8 @@ export class SchedulerService {
       | "GENERATE_LANGUAGE_VERSION_AI"
       | "SEND_SUBSCRIPTION_REMINDER"
       | "PROCESS_ACCESS_EXPIRY"
-      | "PROCESS_OWNER_DAILY_PAYOUTS",
+      | "PROCESS_OWNER_DAILY_PAYOUTS"
+      | "POLL_PENDING_DEPOSITS",
     payloadJson: Record<string, unknown>,
     runAt: Date,
     idempotencyKey: string

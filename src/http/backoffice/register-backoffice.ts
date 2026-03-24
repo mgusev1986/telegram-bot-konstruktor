@@ -2082,11 +2082,21 @@ export async function registerBackofficeRoutes(
           orderBy: { createdAt: "desc" },
           take: 20
         }),
-        prisma.paymentWebhookLog.findMany({
-          where: { provider: "nowpayments" },
-          orderBy: { createdAt: "desc" },
-          take: 20
-        })
+        prisma.paymentWebhookLog
+          .findMany({
+            where: { provider: "nowpayments" },
+            orderBy: { createdAt: "desc" },
+            take: 50
+          })
+          .then((logs) =>
+            logs.filter((w) => {
+              const orderId = String((w.bodyJson as Record<string, unknown>)?.order_id ?? "");
+              if (!orderId.startsWith("bot:")) return false;
+              const match = orderId.match(/^bot:([^:]+):/);
+              return match ? match[1] === bot.id : false;
+            })
+          )
+          .then((filtered) => filtered.slice(0, 20))
       ]);
 
     const accessRightIdSet = new Set(recentAccessRights.map((item) => item.id));
@@ -2552,8 +2562,8 @@ export async function registerBackofficeRoutes(
            </div>
            <div class="section-title" style="margin-top:16px">Settlement entries (последние)</div>
            ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Order</th><th>Gross</th><th>Net</th><th>Статус</th></tr></thead><tbody>${settlementEntries.map((e) => `<tr><td>${formatIsoDate(e.createdAt)}</td><td><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${renderPaymentStatus(e.status)}</td></tr>`).join("")}</tbody></table>` : `<div class="small">Нет записей</div>`}
-           <details style="margin-top:16px">
-             <summary class="small" style="cursor:pointer">Webhook logs (NOWPayments)</summary>
+<details style="margin-top:16px">
+            <summary class="small" style="cursor:pointer">Webhook logs (NOWPayments, this bot only)</summary>
              ${webhookLogs.length ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Event</th><th>Sig</th><th>Result</th></tr></thead><tbody>${webhookLogs.map((w) => `<tr><td>${formatIsoDate(w.createdAt)}</td><td><code>${escapeHtml(String((w.bodyJson as any)?.payment_id ?? "-"))}</code></td><td>${w.signatureValid ? "✓" : "✗"}</td><td>${escapeHtml(w.processingResult ?? "-")}</td></tr>`).join("")}</tbody></table>` : `<div class="small" style="margin-top:8px">Нет логов</div>`}
            </details>
          </div>
