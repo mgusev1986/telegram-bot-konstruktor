@@ -74,6 +74,8 @@ function readRequestedProductId(rawPayload: unknown): string | undefined {
   return trimmed || undefined;
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export interface DepositIntent {
   depositId: string;
   orderId: string;
@@ -218,16 +220,54 @@ export class BalanceService {
       // NOWPayments fails with "Can not get estimate from USDT to USDTBSC" when price_currency=usdt.
       // Use "usd" as price_currency — it's the API base, and USDT ≈ USD 1:1.
       const priceCurrencyForApi = (currency?.toUpperCase() === "USDT" || currency?.toUpperCase() === "USD") ? "usd" : currency?.toLowerCase() ?? "usd";
+      const maxAttempts = 2;
+      let resp: Awaited<ReturnType<NowPaymentsAdapter["createPayment"]>> | null = null;
+      let lastError: unknown = null;
 
-      const resp = await this.nowPayments.createPayment({
-        priceAmount: amount,
-        priceCurrency: priceCurrencyForApi,
-        payCurrency,
-        orderId,
-        orderDescription: `Deposit ${amount} ${currency}`,
-        ipnCallbackUrl: ipnUrl,
-        fixedRate: true
-      });
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          resp = await this.nowPayments.createPayment({
+            priceAmount: amount,
+            priceCurrency: priceCurrencyForApi,
+            payCurrency,
+            orderId,
+            orderDescription: `Deposit ${amount} ${currency}`,
+            ipnCallbackUrl: ipnUrl,
+            fixedRate: true
+          });
+          break;
+        } catch (err) {
+          lastError = err;
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const isRetryable =
+            /(^|\s)500(\s|$)/.test(errMsg) ||
+            errMsg.toUpperCase().includes("INTERNAL_ERROR");
+          const willRetry = isRetryable && attempt < maxAttempts;
+
+          logger.warn(
+            {
+              userId: user.id,
+              botId,
+              provider: PROVIDER,
+              orderId,
+              depositId: deposit.id,
+              attempt,
+              maxAttempts,
+              isRetryable,
+              willRetry,
+              error: errMsg
+            },
+            "createDepositIntent: NOWPayments createPayment attempt failed"
+          );
+
+          if (!willRetry) break;
+          await sleep(600);
+        }
+      }
+
+      if (!resp) {
+        throw (lastError ?? new Error("NOWPayments createPayment failed without response"));
+      }
 
       await this.prisma.depositTransaction.update({
         where: { id: deposit.id },
@@ -257,6 +297,18 @@ export class BalanceService {
       const statusCode = typeof (error as any)?.response?.status === "number" ? (error as any).response.status : undefined;
       const statusMatch = errMsg.match(/(\d{3})\s/);
       const extractedStatus = statusMatch ? Number(statusMatch[1]) : statusCode;
+      await this.prisma.depositTransaction.update({
+        where: { id: deposit.id },
+        data: {
+          status: "FAILED",
+          providerStatus: "create_failed",
+          rawPayload: {
+            requestedProductId: productId ?? null,
+            createPaymentError: errMsg
+          } as object
+        }
+      });
+
       logger.warn(
         {
           userId: user.id,
@@ -280,7 +332,7 @@ export class BalanceService {
                     ? "API endpoint or resource not found"
                     : undefined
         },
-        "createDepositIntent: NOWPayments createPayment failed; deposit remains PENDING"
+        "createDepositIntent: NOWPayments createPayment failed; deposit marked FAILED"
       );
       return null;
     }
@@ -944,6 +996,9 @@ export class BalanceService {
     );
 
     if (deposit.status === "CONFIRMED") return { status: "confirmed", credited: true };
+    if (deposit.status === "FAILED" && !deposit.providerPaymentId) {
+      return { status: "create_failed" };
+    }
     if (deposit.status === "PENDING" && this.nowPayments) {
       const paymentId = deposit.providerPaymentId;
       if (paymentId) {

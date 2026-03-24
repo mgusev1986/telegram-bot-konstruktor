@@ -461,7 +461,48 @@ describe("BalanceService NOWPayments flow", () => {
 
     expect(result).toBeNull();
     expect(prisma.depositTransaction.create).toHaveBeenCalled();
-    expect(prisma.depositTransaction.update).not.toHaveBeenCalled();
+    expect(prisma.depositTransaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: "FAILED",
+          providerStatus: "create_failed"
+        })
+      })
+    );
+  });
+
+  it("retries NOWPayments createPayment once on provider 500 and succeeds", async () => {
+    const { service, prisma, state } = createBalanceHarness();
+    const createPayment = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new Error(
+          "NOWPayments createPayment failed: 500 {\"status\":false,\"statusCode\":500,\"code\":\"INTERNAL_ERROR\"}"
+        )
+      )
+      .mockResolvedValueOnce({
+        payment_id: 777,
+        payment_status: "waiting",
+        pay_address: "0xwallet",
+        price_amount: 10,
+        price_currency: "usd",
+        pay_amount: 10,
+        pay_currency: "usdtbsc"
+      });
+    (service as any).nowPayments = { createPayment };
+
+    const result = await service.createDepositIntent(state.user as any, 10, "USDT", "USDT_BEP20");
+
+    expect(result).toEqual(expect.objectContaining({ payAddress: "0xwallet" }));
+    expect(createPayment).toHaveBeenCalledTimes(2);
+    expect(prisma.depositTransaction.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          providerPaymentId: "777",
+          providerPayAddress: "0xwallet"
+        })
+      })
+    );
   });
 
   it("extends active temporary access on balance renewal and reschedules expiry from the previous end date", async () => {

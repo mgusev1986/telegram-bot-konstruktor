@@ -3407,10 +3407,23 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         clearCheckoutReturnPage(ctx);
         await sendMenuPage(ctx, returnPageId);
       } else {
+        const statusMap: Record<string, string> = {
+          confirmed: services.i18n.t(user.selectedLanguage, "deposit_status_confirmed_human"),
+          pending: services.i18n.t(user.selectedLanguage, "deposit_status_pending_human"),
+          waiting: services.i18n.t(user.selectedLanguage, "deposit_status_waiting_human"),
+          not_found: services.i18n.t(user.selectedLanguage, "deposit_status_not_found_human"),
+          create_failed: services.i18n.t(user.selectedLanguage, "deposit_status_create_failed_human"),
+          failed: services.i18n.t(user.selectedLanguage, "deposit_status_failed_human"),
+          expired: services.i18n.t(user.selectedLanguage, "deposit_status_failed_human")
+        };
+        const statusText =
+          statusMap[status.status]
+          ?? `${services.i18n.t(user.selectedLanguage, "check_deposit_status")}: ${status.status}`;
         await ctx.answerCbQuery(
-          services.i18n.t(user.selectedLanguage, "check_deposit_status") + ": " + status.status,
+          statusText,
           { show_alert: true }
         );
+        await ctx.reply(statusText);
       }
       return;
     }
