@@ -232,10 +232,22 @@ function renderPage(title: string, body: string): string {
       function __extractIdFromPostLink(value) {
         if (!value) return "";
         var text = String(value).trim();
-        var re = new RegExp("^https?:\\/\\/t\\.me\\/(?:c|o)\\/(\\d+)(?:\\/\\d+)?\\/?(?:\\?.*)?$", "i");
-        var m = text.match(re);
-        if (!m) return "";
-        return "-100" + m[1];
+        try {
+          var url = new URL(text);
+          var host = (url.hostname || "").toLowerCase();
+          if (host !== "t.me" && host !== "www.t.me") return "";
+          var parts = (url.pathname || "")
+            .split("/")
+            .map(function (p) { return p.trim(); })
+            .filter(Boolean);
+          // Expected: /c/<digits>/<msgId> or /o/<digits>/<msgId>
+          if (parts.length < 2) return "";
+          if (parts[0] !== "c" && parts[0] !== "o") return "";
+          if (!/^\d+$/.test(parts[1])) return "";
+          return "-100" + parts[1];
+        } catch (_) {
+          return "";
+        }
       }
 
       function __setIdHint(form, idx, mode, text) {
