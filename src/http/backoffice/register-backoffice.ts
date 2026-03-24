@@ -2323,20 +2323,34 @@ export async function registerBackofficeRoutes(
       if (!deposit.providerPayAddress) return "provider_pay_address_missing";
       return "waiting_provider_or_ipn";
     };
-    const depositDiagnosticsRows = recentDeposits.slice(0, 12).map((deposit) => ({
-      createdAt: deposit.createdAt,
-      orderId: deposit.orderId,
-      providerPaymentId: deposit.providerPaymentId,
-      providerStatus: deposit.providerStatus,
-      providerPayAddress: deposit.providerPayAddress,
-      requestedAmountUsd: deposit.requestedAmountUsd,
-      actualOutcomeAmount: deposit.actualOutcomeAmount,
-      creditedBalanceAmount: deposit.creditedBalanceAmount,
-      status: deposit.status,
-      botInstanceId: deposit.botInstanceId,
-      productId: readRequestedProductId(deposit.rawPayload),
-      reason: diagnoseDepositReason(deposit)
-    }));
+    const depositDiagnosticsRows = recentDeposits.slice(0, 12).map((deposit) => {
+      const requested = Number(deposit.requestedAmountUsd ?? deposit.amount ?? 0);
+      const minAccepted = requested * 0.98;
+      const outcome = deposit.actualOutcomeAmount != null ? Number(deposit.actualOutcomeAmount) : null;
+      const tolerance =
+        outcome == null
+          ? "n/a"
+          : outcome >= minAccepted
+            ? "pass"
+            : "fail";
+
+      return {
+        createdAt: deposit.createdAt,
+        orderId: deposit.orderId,
+        providerPaymentId: deposit.providerPaymentId,
+        providerStatus: deposit.providerStatus,
+        providerPayAddress: deposit.providerPayAddress,
+        requestedAmountUsd: deposit.requestedAmountUsd,
+        actualOutcomeAmount: deposit.actualOutcomeAmount,
+        creditedBalanceAmount: deposit.creditedBalanceAmount,
+        status: deposit.status,
+        botInstanceId: deposit.botInstanceId,
+        productId: readRequestedProductId(deposit.rawPayload),
+        reason: diagnoseDepositReason(deposit),
+        minAccepted,
+        tolerance
+      };
+    });
 
     return reply.type("text/html").send(
       renderPage(
@@ -2602,7 +2616,7 @@ export async function registerBackofficeRoutes(
           <details style="margin-top:12px">
             <summary class="small" style="cursor:pointer">Deposit diagnostics (this bot only)</summary>
             ${depositDiagnosticsRows.length
-              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Order</th><th>PaymentId</th><th>Provider status</th><th>Wallet</th><th>Req</th><th>Outcome</th><th>Credited</th><th>Deposit status</th><th>Product</th><th>Reason</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td><code>${escapeHtml(d.orderId)}</code></td><td><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.actualOutcomeAmount ?? 0).toFixed(8))}</td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td></tr>`).join("")}</tbody></table>`
+              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Order</th><th>PaymentId</th><th>Provider status</th><th>Wallet</th><th>Req</th><th>Min 98%</th><th>Outcome</th><th>Tolerance</th><th>Credited</th><th>Deposit status</th><th>Product</th><th>Reason</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td><code>${escapeHtml(d.orderId)}</code></td><td><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(String(d.tolerance))}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td></tr>`).join("")}</tbody></table>`
               : `<div class="small" style="margin-top:8px">Нет deposit rows</div>`}
           </details>
          </div>
