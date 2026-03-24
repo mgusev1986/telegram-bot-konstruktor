@@ -3388,7 +3388,27 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "balance_purchase_success"));
       const returnPageId = getCheckoutReturnPage(ctx);
       clearCheckoutReturnPage(ctx);
-      await sendMenuPage(ctx, returnPageId);
+      const rows = [];
+      const linkButtons = await services.subscriptionChannel.resolveProductLinksForDisplay(
+        result.linkedChats ?? null,
+        ctx.telegram
+      );
+      for (const linkBtn of linkButtons.slice(0, 8)) {
+        rows.push([Markup.button.url(linkBtn.label, linkBtn.link)]);
+      }
+      if (!rows.length && returnPageId) {
+        rows.push([
+          Markup.button.callback(
+            services.i18n.t(user.selectedLanguage, "chat_and_channel_retry_button"),
+            makeCallbackData("menu", "open", returnPageId)
+          )
+        ]);
+      }
+      rows.push([Markup.button.callback(services.i18n.t(user.selectedLanguage, "to_main_menu"), NAV_ROOT_DATA)]);
+      await ctx.reply(
+        services.i18n.t(user.selectedLanguage, "balance_purchase_success_linked_chats_hint"),
+        Markup.inlineKeyboard(rows)
+      );
       return;
     }
 
@@ -3402,10 +3422,23 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       logger.info({ userId: user.id, depositId }, "Pay button pressed: pay:check");
       const status = await services.balance.checkDepositStatus(depositId);
       if (status.credited) {
-        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "deposit_confirmed"));
-        const returnPageId = getCheckoutReturnPage(ctx);
-        clearCheckoutReturnPage(ctx);
-        await sendMenuPage(ctx, returnPageId);
+        const expectedAmount = Number(status.expectedAmount ?? 0);
+        const creditedAmount = Number(status.creditedAmount ?? 0);
+        const missingAmount = Math.max(0, Number(status.missingAmount ?? expectedAmount - creditedAmount));
+        const isPartialCredit = missingAmount > 0.00000001;
+        if (isPartialCredit) {
+          const text = services.i18n
+            .t(user.selectedLanguage, "deposit_status_partial_credited_human")
+            .replace("{{credited}}", creditedAmount.toFixed(2))
+            .replace("{{missing}}", missingAmount.toFixed(2));
+          await ctx.answerCbQuery(text, { show_alert: true });
+          await ctx.reply(text);
+        } else {
+          await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "deposit_confirmed"));
+          const returnPageId = getCheckoutReturnPage(ctx);
+          clearCheckoutReturnPage(ctx);
+          await sendMenuPage(ctx, returnPageId);
+        }
       } else {
         const statusMap: Record<string, string> = {
           confirmed: services.i18n.t(user.selectedLanguage, "deposit_status_confirmed_human"),

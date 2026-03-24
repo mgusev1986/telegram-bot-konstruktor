@@ -123,10 +123,31 @@ export class BotRuntimeManager {
       return;
     }
 
-    const text =
+    let text =
       selectedLanguage === "en"
-        ? `Deposit confirmed. ${creditedAmount} ${currency} credited to your balance.`
-        : `Пополнение подтверждено. ${creditedAmount} ${currency} зачислено на баланс.`;
+        ? `Deposit confirmed. ${Number(creditedAmount).toFixed(2)} ${currency} credited to your balance.`
+        : `Пополнение подтверждено. ${Number(creditedAmount).toFixed(2)} ${currency} зачислено на баланс.`;
+
+    try {
+      const deposit = await this.prisma.depositTransaction.findUnique({
+        where: { id: depositId },
+        select: { requestedAmountUsd: true, amount: true, creditedBalanceAmount: true, currency: true }
+      });
+      if (deposit) {
+        const expected = Number(deposit.requestedAmountUsd ?? deposit.amount ?? 0);
+        const credited = Number(deposit.creditedBalanceAmount ?? creditedAmount ?? 0);
+        const missing = Math.max(0, expected - credited);
+        if (missing > 0.00000001) {
+          text =
+            selectedLanguage === "en"
+              ? `Partial top-up credited: +${credited.toFixed(2)} ${currency}. To reach full amount, top up ${missing.toFixed(2)} ${currency} more.`
+              : `Частичное пополнение зачислено: +${credited.toFixed(2)} ${currency}. Для полной суммы доплатите еще ${missing.toFixed(2)} ${currency}.`;
+        }
+      }
+    } catch (err) {
+      logger.warn({ depositId, err }, "Failed to load deposit details for notification text");
+    }
+
     const payButtonText = selectedLanguage === "en" ? "Pay" : "Оплатить";
     const replyMarkup =
       productId && productId.trim()

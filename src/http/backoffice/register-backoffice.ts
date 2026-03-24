@@ -196,19 +196,83 @@ function renderPage(title: string, body: string): string {
     <div class="wrap">
       <div class="card">${body}</div>
     </div>
+    <script>
+      (function () {
+        function extractIdentifierFromPostLink(value) {
+          if (!value) return "";
+          var m = String(value).trim().match(/^https?:\/\/t\.me\/c\/(\d+)(?:\/\d+)?$/i);
+          if (!m) return "";
+          return "-100" + m[1];
+        }
+
+        document.addEventListener("input", function (event) {
+          var target = event && event.target;
+          if (!target || !target.name) return;
+          if (!/^linkedChatLink[12]$/.test(target.name)) return;
+
+          var idx = target.name.slice("linkedChatLink".length);
+          var idInput = document.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
+          if (!idInput) return;
+          if (String(idInput.value || "").trim()) return; // do not overwrite manual value
+
+          var extracted = extractIdentifierFromPostLink(target.value);
+          if (extracted) idInput.value = extracted;
+        });
+      })();
+    </script>
   </body>
 </html>`;
 }
 
 function formatLinkedChatsForEdit(linkedChats: unknown): string {
   if (!Array.isArray(linkedChats)) return "";
-  return (linkedChats as Array<{ link?: string; identifier?: string }>)
+  return (linkedChats as Array<{ link?: string; identifier?: string; label?: string }>)
     .map((e) => {
-      if (e.link && e.identifier) return `${e.link} | ${e.identifier}`;
-      return e.link ?? e.identifier ?? "";
+      const prefix = e.label?.trim() ? `${e.label.trim()} | ` : "";
+      if (e.link && e.identifier) return `${prefix}${e.link} | ${e.identifier}`;
+      return `${prefix}${e.link ?? e.identifier ?? ""}`;
     })
     .filter(Boolean)
     .join("\n");
+}
+
+function validatePrivateLinkedChatsOnly(linkedChats: Array<{ link?: string; identifier?: string; label?: string }>): string | null {
+  for (let i = 0; i < linkedChats.length; i++) {
+    const row = linkedChats[i] ?? {};
+    const idx = i + 1;
+    const identifier = String(row.identifier ?? "").trim();
+    const link = String(row.link ?? "").trim();
+
+    if (!identifier) {
+      return `linkedChats: строка ${idx} — для приватного доступа обязателен identifier (chat/channel id вида -100...).`;
+    }
+    if (!/^-100\d{6,}$/.test(identifier)) {
+      return `linkedChats: строка ${idx} — разрешен только приватный identifier вида -100... (публичные @username запрещены).`;
+    }
+    if (link && !/^https:\/\/t\.me\/(?:\+|joinchat\/)/i.test(link) && !/^https:\/\/t\.me\/c\/\d+(?:\/\d+)?$/i.test(link)) {
+      return `linkedChats: строка ${idx} — разрешены invite-ссылки https://t.me/+... / joinchat/... или ссылка на пост вида https://t.me/c/...`;
+    }
+  }
+  return null;
+}
+
+function readStructuredLinkedChatsFromBody(body: any): Array<{ link?: string; identifier?: string; label?: string }> {
+  const rows: Array<{ link?: string; identifier?: string; label?: string }> = [];
+  for (const i of [1, 2]) {
+    const label = String(body?.[`linkedChatLabel${i}`] ?? "").trim();
+    const link = String(body?.[`linkedChatLink${i}`] ?? "").trim();
+    const rawIdentifier = String(body?.[`linkedChatIdentifier${i}`] ?? "").trim();
+    const postLinkMatch = link.match(/^https?:\/\/t\.me\/c\/(\d+)(?:\/\d+)?$/i);
+    const identifier = rawIdentifier || (postLinkMatch ? `-100${postLinkMatch[1]}` : "");
+    const normalizedLink = postLinkMatch ? "" : link;
+    if (!label && !link && !identifier) continue;
+    rows.push({
+      label: label || undefined,
+      link: normalizedLink || undefined,
+      identifier: identifier || undefined
+    });
+  }
+  return rows;
 }
 
 function formatMoney(value: unknown): string {
@@ -2199,6 +2263,11 @@ export async function registerBackofficeRoutes(
     const renderProductCard = (product: (typeof products)[number], opts: { allowSimulate: boolean }) => {
       const loc = productLoc(product);
       const diagnostics = getLinkedChatDiagnostics(product.linkedChats);
+      const linkedEntries = Array.isArray(product.linkedChats)
+        ? (product.linkedChats as Array<{ label?: string; link?: string; identifier?: string }>)
+        : [];
+      const chat1 = linkedEntries[0] ?? {};
+      const chat2 = linkedEntries[1] ?? {};
       const sections = boundSectionsByProduct.get(product.id) ?? [];
       const removalWarning = isTemporaryAccessProduct(product) ? diagnostics.issue : null;
 
@@ -2243,7 +2312,16 @@ export async function registerBackofficeRoutes(
           </div>
           <div style="margin-top:12px">
             <label class="small">Ссылки доступа в чат / канал</label>
-            <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890&#10;https://t.me/channel">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
+            <div class="product-form-grid" style="margin-top:8px">
+              <div class="field-wrap"><label class="small">Кнопка 1 — Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" value="${escapeHtml(String(chat1.label ?? ""))}" /></div>
+              <div class="field-wrap"><label class="small">Кнопка 1 — Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" value="${escapeHtml(String(chat1.link ?? ""))}" /></div>
+              <div class="field-wrap"><label class="small">Кнопка 1 — Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" value="${escapeHtml(String(chat1.identifier ?? ""))}" /></div>
+              <div class="field-wrap"><label class="small">Кнопка 2 — Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" value="${escapeHtml(String(chat2.label ?? ""))}" /></div>
+              <div class="field-wrap"><label class="small">Кнопка 2 — Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" value="${escapeHtml(String(chat2.link ?? ""))}" /></div>
+              <div class="field-wrap"><label class="small">Кнопка 2 — Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" value="${escapeHtml(String(chat2.identifier ?? ""))}" /></div>
+            </div>
+            <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890">${formatLinkedChatsForEdit(product.linkedChats)}</textarea>
+            <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
             <div class="small" style="margin-top:4px">Для приватного чата можно хранить и ссылку для входа, и identifier для ban/unban в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда пользователь войдёт по invite-link, а бот сможет удалить его по expiry.</div>
           </div>
           <div style="margin-top:12px">
@@ -2489,7 +2567,16 @@ export async function registerBackofficeRoutes(
                  <summary class="small" style="cursor:pointer">Платежи и доступ</summary>
                  <div style="margin-top:12px">
                   <label class="small">Ссылки доступа в чат / канал</label>
-                   <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890&#10;https://t.me/channel"></textarea>
+                  <div class="product-form-grid" style="margin-top:8px">
+                    <div class="field-wrap"><label class="small">Кнопка 1 — Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
+                    <div class="field-wrap"><label class="small">Кнопка 1 — Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" /></div>
+                    <div class="field-wrap"><label class="small">Кнопка 1 — Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /></div>
+                    <div class="field-wrap"><label class="small">Кнопка 2 — Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
+                    <div class="field-wrap"><label class="small">Кнопка 2 — Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" /></div>
+                    <div class="field-wrap"><label class="small">Кнопка 2 — Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /></div>
+                  </div>
+                   <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
+                   <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
                    <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
                 </div>
                 <div style="margin-top:12px">
@@ -2523,7 +2610,16 @@ export async function registerBackofficeRoutes(
                </div>
                <div style="margin-top:12px">
                  <label class="small">Ссылки доступа в чат / канал</label>
-                 <textarea name="linkedChatsRaw" rows="3" placeholder="@channel_or_chat&#10;-1001234567890&#10;https://t.me/c/1234567890/1&#10;https://t.me/+inviteHash | -1001234567890"></textarea>
+                <div class="product-form-grid" style="margin-top:8px">
+                  <div class="field-wrap"><label class="small">Кнопка 1 — Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
+                  <div class="field-wrap"><label class="small">Кнопка 1 — Invite link или post link</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat или https://t.me/c/1234567890/1" /></div>
+                  <div class="field-wrap"><label class="small">Кнопка 1 — Identifier</label><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /></div>
+                  <div class="field-wrap"><label class="small">Кнопка 2 — Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
+                  <div class="field-wrap"><label class="small">Кнопка 2 — Invite link или post link</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel или https://t.me/c/2234567890/1" /></div>
+                  <div class="field-wrap"><label class="small">Кнопка 2 — Identifier</label><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /></div>
+                </div>
+                 <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
+                 <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
                </div>
                <div style="margin-top:12px">
                  <label class="small">Описание на экране оплаты / тарифы (ru)</label>
@@ -2620,7 +2716,7 @@ export async function registerBackofficeRoutes(
           <details style="margin-top:12px">
             <summary class="small" style="cursor:pointer">Deposit diagnostics (this bot only)</summary>
             ${depositDiagnosticsRows.length
-              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Order</th><th>PaymentId</th><th>Provider status</th><th>Wallet</th><th>Req</th><th>Min 98%</th><th>Outcome</th><th>Tolerance</th><th>Credited</th><th>Deposit status</th><th>Product</th><th>Reason</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(String(d.tolerance))}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td></tr>`).join("")}</tbody></table>`
+              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Order</th><th>PaymentId</th><th>Provider status</th><th>Wallet</th><th>Req</th><th>Min 98%</th><th>Outcome</th><th>Tolerance</th><th>Credited</th><th>Deposit status</th><th>Product</th><th>Reason</th><th>Support</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(String(d.tolerance))}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td><td>${d.status === "CONFIRMED" ? `<span class="small">—</span>` : `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/deposits/${escapeHtml(d.orderId)}/emergency-confirm" style="margin:0"><input name="reason" type="text" placeholder="Support reason" style="min-width:180px" /><button type="submit" class="secondary" style="margin-top:6px;background:rgba(34,197,94,0.18);border-color:rgba(34,197,94,0.45);">Emergency confirm</button></form>`}</td></tr>`).join("")}</tbody></table>`
               : `<div class="small" style="margin-top:8px">Нет deposit rows</div>`}
           </details>
          </div>
@@ -2794,8 +2890,14 @@ export async function registerBackofficeRoutes(
     const durationDays = durationDaysRaw != null && String(durationDaysRaw).trim() !== "" ? parseInt(String(durationDaysRaw), 10) : null;
     const durationMinutesRaw = body?.durationMinutes;
     const durationMinutes = durationMinutesRaw != null && String(durationMinutesRaw).trim() !== "" ? parseInt(String(durationMinutesRaw), 10) : null;
+    const structuredLinkedChats = readStructuredLinkedChatsFromBody(body);
     const linkedChatsRaw = String(body?.linkedChatsRaw ?? "").trim();
-    const linkedChats = linkedChatsRaw ? parseLinkedChatsFromForm(linkedChatsRaw) : [];
+    const linkedChats =
+      structuredLinkedChats.length > 0
+        ? structuredLinkedChats
+        : linkedChatsRaw
+          ? parseLinkedChatsFromForm(linkedChatsRaw)
+          : [];
     const walletBep20 = String(body?.walletBep20 ?? "").trim() || null;
     const effectiveBillingType = durationMinutes != null && durationMinutes > 0 ? "TEMPORARY" : billingType === "TEMPORARY" ? "TEMPORARY" : "ONE_TIME";
     const linkedChatsValidationError = validateLinkedChatsForExpiringAccess({
@@ -2804,10 +2906,14 @@ export async function registerBackofficeRoutes(
       durationMinutes,
       linkedChats
     });
+    const privateLinkedChatsError = validatePrivateLinkedChatsOnly(linkedChats);
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
     if (linkedChatsValidationError) {
       return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">${escapeHtml(linkedChatsValidationError)}</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
+    }
+    if (privateLinkedChatsError) {
+      return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">${escapeHtml(privateLinkedChatsError)}</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
     }
 
     const code = `bot_${bot.id.slice(0, 8)}_${randomBytes(4).toString("hex")}`;
@@ -2891,8 +2997,14 @@ export async function registerBackofficeRoutes(
     const durationDays = durationDaysRaw != null && String(durationDaysRaw).trim() !== "" ? parseInt(String(durationDaysRaw), 10) : null;
     const durationMinutesRaw = body?.durationMinutes;
     const durationMinutes = durationMinutesRaw != null && String(durationMinutesRaw).trim() !== "" ? parseInt(String(durationMinutesRaw), 10) : null;
+    const structuredLinkedChats = readStructuredLinkedChatsFromBody(body);
     const linkedChatsRaw = String(body?.linkedChatsRaw ?? "").trim();
-    const linkedChats = linkedChatsRaw ? parseLinkedChatsFromForm(linkedChatsRaw) : [];
+    const linkedChats =
+      structuredLinkedChats.length > 0
+        ? structuredLinkedChats
+        : linkedChatsRaw
+          ? parseLinkedChatsFromForm(linkedChatsRaw)
+          : [];
     const walletBep20 = String(body?.walletBep20 ?? "").trim() || null;
     const effectiveBillingType = durationMinutes != null && durationMinutes > 0 ? "TEMPORARY" : billingType;
     const linkedChatsValidationError = validateLinkedChatsForExpiringAccess({
@@ -2901,10 +3013,14 @@ export async function registerBackofficeRoutes(
       durationMinutes,
       linkedChats
     });
+    const privateLinkedChatsError = validatePrivateLinkedChatsOnly(linkedChats);
 
     if (!titleRu || !payButtonTextRu || !price || !currency) return reply.code(400).send("Bad request");
     if (linkedChatsValidationError) {
       return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">${escapeHtml(linkedChatsValidationError)}</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
+    }
+    if (privateLinkedChatsError) {
+      return reply.code(400).type("text/html").send(renderPage("Ошибка", `<div class="error">${escapeHtml(privateLinkedChatsError)}</div><a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">← Назад</a>`));
     }
 
     const productExists = await prisma.product.findUnique({
@@ -3629,5 +3745,50 @@ export async function registerBackofficeRoutes(
     const runtime = await runtimeManager.startBotInstance(bot.id, { launch: false });
     await runtime.services.payments.rejectPayment(paymentId, superAdmin.id, reason);
     return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/payments`);
+  });
+
+  server.post("/backoffice/api/bots/:botId/deposits/:depositId/emergency-confirm", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "payments:confirm_manual")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const depositId = String((req.params as any)?.depositId ?? "");
+    const body = req.body as any;
+    const reason = String(body?.reason ?? "").trim();
+    if (!reason) {
+      return reply.redirect(
+        `/backoffice/bots/${encodeURIComponent(botId)}/paid?error=${encodeURIComponent("Укажите причину emergency confirm")}`
+      );
+    }
+
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const superAdmin = await ensureSuperAdminTelegramUser(prisma);
+    const runtime = await runtimeManager.startBotInstance(bot.id, { launch: false });
+    const result = await runtime.services.balance.emergencyConfirmDeposit(depositId, superAdmin.id, reason);
+    if (!result.ok && result.error === "not_found") {
+      return reply.redirect(
+        `/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Deposit не найден")}`
+      );
+    }
+    if (!result.ok) {
+      return reply.redirect(
+        `/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Emergency confirm не выполнен")}`
+      );
+    }
+    const msg = result.alreadyConfirmed
+      ? "Deposit уже подтвержден ранее"
+      : `Deposit подтвержден вручную, credited=${Number(result.creditedAmount ?? 0).toFixed(2)}`;
+    return reply.redirect(`/backoffice/bots/${encodeURIComponent(bot.id)}/paid?ok=${encodeURIComponent(msg)}`);
   });
 }

@@ -47,6 +47,9 @@ export const dictionaries = {
     deposit_address_hint: "Отправьте только указанную сумму в указанной сети.",
     deposit_confirmed: "Пополнение подтверждено. Средства зачислены на баланс.",
     balance_purchase_success: "Оплата с баланса прошла успешно.",
+    balance_purchase_success_linked_chats_hint:
+      "Оплата подтверждена. Доступ к закрытым материалам открыт.\n\nЕсли Telegram покажет сообщение \"дождитесь подтверждения админа\", нажмите кнопку \"Чат и канал\" еще раз через 1-2 секунды. После этого вход станет доступен.",
+    chat_and_channel_retry_button: "Чат и канал",
     cabinet_balance: "Баланс",
     refund_request_btn: "Запросить возврат остатка",
     refund_request_sent: "Запрос на возврат отправлен.",
@@ -58,6 +61,8 @@ export const dictionaries = {
     deposit_status_not_found_human: "Депозит не найден. Откройте экран оплаты заново и попробуйте еще раз.",
     deposit_status_create_failed_human: "Инвойс не был создан у провайдера. Создайте новый инвойс и повторите оплату.",
     deposit_status_failed_human: "Платеж помечен как неуспешный у провайдера. Создайте новый инвойс.",
+    deposit_status_partial_credited_human:
+      "Платеж частично зачислен: +{{credited}} USDT. Для полной суммы нужно доплатить еще {{missing}} USDT.",
     payment_temporarily_unavailable: "Оплата временно недоступна. Попробуйте позже.",
     export_ready: "Экспорт готов.",
     export_type_structure_html: "Структура (HTML)",
@@ -732,6 +737,9 @@ export const dictionaries = {
     deposit_address_hint: "Send only the specified amount in the specified network.",
     deposit_confirmed: "Deposit confirmed. Funds were credited to your balance.",
     balance_purchase_success: "Balance payment completed successfully.",
+    balance_purchase_success_linked_chats_hint:
+      "Payment confirmed. Access to private materials is open.\n\nIf Telegram shows \"wait for admin approval\", tap \"Chat & Channel\" again in 1-2 seconds. After that, access should be available.",
+    chat_and_channel_retry_button: "Chat & Channel",
     cabinet_balance: "Balance",
     refund_request_btn: "Request refund",
     refund_request_sent: "Refund request sent.",
@@ -743,6 +751,8 @@ export const dictionaries = {
     deposit_status_not_found_human: "Deposit not found. Reopen checkout and try again.",
     deposit_status_create_failed_human: "Invoice was not created by provider. Create a new invoice and retry payment.",
     deposit_status_failed_human: "Payment is marked as failed by provider. Please create a new invoice.",
+    deposit_status_partial_credited_human:
+      "Partial credit received: +{{credited}} USDT. To reach the full amount, top up {{missing}} USDT more.",
     payment_temporarily_unavailable: "Payment is temporarily unavailable. Please try again later.",
     export_ready: "Export is ready.",
     export_type_structure_html: "Structure (HTML)",

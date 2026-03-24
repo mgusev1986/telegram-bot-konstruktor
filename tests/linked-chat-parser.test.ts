@@ -35,4 +35,20 @@ describe("linked chat parser", () => {
       }
     ]);
   });
+
+  it("supports explicit button label syntax: Label | link", () => {
+    expect(parseLinkedChatInput("Чат | https://t.me/my_private_chat")).toEqual({
+      link: "https://t.me/my_private_chat",
+      identifier: "@my_private_chat",
+      label: "Чат"
+    });
+  });
+
+  it("supports explicit button label syntax: Label | invite | identifier", () => {
+    expect(parseLinkedChatInput("Канал | https://t.me/+FurV2Jnm_eIxOTRk | -1003701464265")).toEqual({
+      link: "https://t.me/+FurV2Jnm_eIxOTRk",
+      identifier: "-1003701464265",
+      label: "Канал"
+    });
+  });
 });

@@ -96,6 +96,24 @@ export function parseLinkedChatInput(raw: string): LinkedChatEntry | null {
 
   if (parts.length <= 1) return parseSingleLinkedChatInput(raw);
 
+  // Custom label format:
+  //   Label | https://t.me/chat_or_channel
+  //   Label | https://t.me/+invite | -1001234567890
+  const firstParsed = parseSingleLinkedChatInput(parts[0] ?? "");
+  if (!firstParsed) {
+    const label = parts[0] ?? "";
+    const payloadParts = parts.slice(1);
+    const mergedWithLabel: LinkedChatEntry = { label };
+    for (const part of payloadParts) {
+      const parsed = parseSingleLinkedChatInput(part);
+      if (!parsed) continue;
+      mergedWithLabel.link = chooseDisplayLink(mergedWithLabel.link, parsed.link);
+      if (!mergedWithLabel.identifier && parsed.identifier) mergedWithLabel.identifier = parsed.identifier;
+    }
+    if (mergedWithLabel.link || mergedWithLabel.identifier) return mergedWithLabel;
+    return null;
+  }
+
   const merged: LinkedChatEntry = {};
   for (const part of parts) {
     const parsed = parseSingleLinkedChatInput(part);
@@ -131,7 +149,8 @@ export function getDisplayLinks(linkedChats: unknown): Array<{ link: string; lab
   const out: Array<{ link: string; label: string }> = [];
   for (const item of linkedChats) {
     if (item && typeof item === "object" && "link" in item && typeof (item as any).link === "string") {
-      out.push({ link: (item as any).link, label: (item as any).label ?? "Перейти" });
+      const rawLabel = typeof (item as any).label === "string" ? (item as any).label.trim() : "";
+      out.push({ link: (item as any).link, label: rawLabel || "Перейти" });
     }
   }
   return out;

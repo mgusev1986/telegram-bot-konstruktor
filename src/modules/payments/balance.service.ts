@@ -91,6 +91,23 @@ export interface PurchaseResult {
   success: boolean;
   accessGranted: boolean;
   error?: string;
+  linkedChats?: unknown;
+}
+
+export interface EmergencyConfirmResult {
+  ok: boolean;
+  alreadyConfirmed?: boolean;
+  error?: "not_found" | "invalid_amount";
+  depositId?: string;
+  creditedAmount?: number;
+}
+
+export interface DepositStatusResult {
+  status: string;
+  credited?: boolean;
+  creditedAmount?: number;
+  expectedAmount?: number;
+  missingAmount?: number;
 }
 
 export class BalanceService {
@@ -579,17 +596,9 @@ export class BalanceService {
             minAccepted,
             tolerancePercent: CREDIT_TOLERANCE_PERCENT
           },
-          "NOWPayments underpaid: received amount below tolerance threshold; not crediting as full"
+          "NOWPayments underpaid: crediting actual received amount (below tolerance threshold)"
         );
-        creditAmount = 0;
-        await tx.providerEventLog.update({
-          where: { id: eventLog.id },
-          data: {
-            status: "received",
-            errorMessage: `Underpaid: received ${receivedAmount}, expected ${expectedAmount} (min ${minAccepted} at ${CREDIT_TOLERANCE_PERCENT}%)`
-          }
-        });
-        return;
+        creditAmount = receivedAmount;
       } else {
         creditAmount = readNowPaymentsAmount(payload.price_amount, expectedAmount);
       }
@@ -926,7 +935,7 @@ export class BalanceService {
     }
 
     if ("alreadyCompleted" in result && result.alreadyCompleted) {
-      return { success: true, accessGranted: true };
+      return { success: true, accessGranted: true, linkedChats: product.linkedChats ?? null };
     }
 
     if ("accessGrant" in result && result.accessGrant) {
@@ -964,10 +973,10 @@ export class BalanceService {
       }
     }
 
-    return { success: true, accessGranted: true };
+    return { success: true, accessGranted: true, linkedChats: product.linkedChats ?? null };
   }
 
-  async checkDepositStatus(depositIdOrOrderId: string): Promise<{ status: string; credited?: boolean }> {
+  async checkDepositStatus(depositIdOrOrderId: string): Promise<DepositStatusResult> {
     const deposit = await this.prisma.depositTransaction.findFirst({
       where: {
         OR: [{ id: depositIdOrOrderId }, { orderId: depositIdOrOrderId }]
@@ -995,7 +1004,12 @@ export class BalanceService {
       "checkDepositStatus called"
     );
 
-    if (deposit.status === "CONFIRMED") return { status: "confirmed", credited: true };
+    if (deposit.status === "CONFIRMED") {
+      const expectedAmount = Number(deposit.requestedAmountUsd ?? deposit.amount ?? 0);
+      const creditedAmount = Number(deposit.creditedBalanceAmount ?? 0);
+      const missingAmount = Math.max(0, expectedAmount - creditedAmount);
+      return { status: "confirmed", credited: true, creditedAmount, expectedAmount, missingAmount };
+    }
     if (deposit.status === "FAILED" && !deposit.providerPaymentId) {
       return { status: "create_failed" };
     }
@@ -1036,7 +1050,13 @@ export class BalanceService {
           );
 
           if (result.credited || result.duplicate) {
-            return { status: "confirmed", credited: true };
+            const refreshed = await this.prisma.depositTransaction.findUnique({
+              where: { id: deposit.id }
+            });
+            const expectedAmount = Number(refreshed?.requestedAmountUsd ?? deposit.requestedAmountUsd ?? deposit.amount ?? 0);
+            const creditedAmount = Number(refreshed?.creditedBalanceAmount ?? deposit.creditedBalanceAmount ?? 0);
+            const missingAmount = Math.max(0, expectedAmount - creditedAmount);
+            return { status: "confirmed", credited: true, creditedAmount, expectedAmount, missingAmount };
           }
           return { status: result.status ?? normalizeNowPaymentsStatus(st.payment_status) };
         } catch (err) {
@@ -1103,6 +1123,155 @@ export class BalanceService {
       );
     }
     return { polled: pending.length, credited };
+  }
+
+  /**
+   * Emergency/manual confirm by support:
+   * force-credit deposit even when provider status/amount is not auto-confirmable.
+   * Idempotent: if already confirmed, no extra credit is created.
+   */
+  async emergencyConfirmDeposit(
+    depositIdOrOrderId: string,
+    actorUserId: string,
+    reason: string,
+    opts?: { creditAmount?: number }
+  ): Promise<EmergencyConfirmResult> {
+    const deposit = await this.prisma.depositTransaction.findFirst({
+      where: { OR: [{ id: depositIdOrOrderId }, { orderId: depositIdOrOrderId }] },
+      include: { user: true }
+    });
+    if (!deposit) return { ok: false, error: "not_found" };
+
+    const expectedAmount = Number(deposit.requestedAmountUsd ?? deposit.amount);
+    const creditAmount = opts?.creditAmount ?? expectedAmount;
+    if (!Number.isFinite(creditAmount) || creditAmount <= 0) {
+      return { ok: false, error: "invalid_amount" };
+    }
+
+    const now = new Date();
+    let alreadyConfirmed = false;
+    let finalCreditedAmount = creditAmount;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(
+        Prisma.sql`SELECT 1 FROM deposit_transactions WHERE id = ${deposit.id} FOR UPDATE`
+      );
+      const locked = await tx.depositTransaction.findUniqueOrThrow({ where: { id: deposit.id } });
+
+      if (locked.status === "CONFIRMED") {
+        alreadyConfirmed = true;
+        return;
+      }
+
+      const account = await tx.userBalanceAccount.update({
+        where: { id: locked.accountId },
+        data: { balance: { increment: creditAmount } }
+      });
+
+      const entry = await tx.balanceLedgerEntry.create({
+        data: {
+          accountId: locked.accountId,
+          type: "CREDIT",
+          amount: creditAmount,
+          balanceAfter: account.balance,
+          referenceType: "deposit",
+          referenceId: locked.id
+        }
+      });
+
+      const raw = locked.rawPayload && typeof locked.rawPayload === "object"
+        ? (locked.rawPayload as Record<string, unknown>)
+        : {};
+      const mergedRaw = {
+        ...raw,
+        manualConfirm: {
+          actorUserId,
+          reason: reason?.trim() || "support_emergency_confirm",
+          at: now.toISOString()
+        }
+      } as object;
+
+      await tx.depositTransaction.update({
+        where: { id: locked.id },
+        data: {
+          status: "CONFIRMED",
+          creditedAt: now,
+          confirmedAt: now,
+          webhookLastProcessedAt: now,
+          ledgerEntryId: entry.id,
+          creditedBalanceAmount: creditAmount,
+          providerStatus: "manual_confirmed",
+          rawPayload: mergedRaw
+        }
+      });
+
+      if (locked.botInstanceId) {
+        const existingSettlement = await tx.ownerSettlementEntry.findUnique({
+          where: { depositTransactionId: locked.id }
+        });
+        if (!existingSettlement) {
+          const config = await tx.botPaymentProviderConfig.findUnique({
+            where: { botInstanceId: locked.botInstanceId }
+          });
+          const platformFeePercent = config ? Number(config.platformFeePercent) : 0;
+          const platformFeeFixedUsd = config ? Number(config.platformFeeFixedUsd) : 0;
+          const platformFeeAmount = Math.max(
+            0,
+            (creditAmount * platformFeePercent) / 100 + platformFeeFixedUsd
+          );
+          const netAmountBeforePayoutFee = Math.max(0, creditAmount - platformFeeAmount);
+          await tx.ownerSettlementEntry.create({
+            data: {
+              botInstanceId: locked.botInstanceId,
+              depositTransactionId: locked.id,
+              currency: String(locked.currency ?? "USDT").toUpperCase(),
+              grossAmount: creditAmount,
+              processorFeeAmount: 0,
+              platformFeeAmount,
+              netAmountBeforePayoutFee,
+              status: "PENDING"
+            }
+          });
+        }
+      }
+    });
+
+    if (alreadyConfirmed) {
+      return { ok: true, alreadyConfirmed: true, depositId: deposit.id };
+    }
+
+    const productId = readRequestedProductId(deposit.rawPayload);
+    if (this.onDepositCredited) {
+      void this.onDepositCredited({
+        depositId: deposit.id,
+        userId: deposit.userId,
+        botInstanceId: deposit.botInstanceId,
+        telegramUserId: String(deposit.user.telegramUserId),
+        selectedLanguage: deposit.user.selectedLanguage,
+        creditedAmount: finalCreditedAmount,
+        currency: deposit.currency,
+        productId
+      }).catch((err: unknown) => {
+        logger.warn(
+          { provider: PROVIDER, depositId: deposit.id, err },
+          "Emergency confirm notification failed"
+        );
+      });
+    }
+
+    await this.audit.log(actorUserId, "deposit_force_confirmed", "deposit_transaction", deposit.id, {
+      reason: reason?.trim() || "support_emergency_confirm",
+      creditedAmount: finalCreditedAmount,
+      userId: deposit.userId,
+      botInstanceId: deposit.botInstanceId,
+      productId: productId ?? null
+    });
+
+    return {
+      ok: true,
+      depositId: deposit.id,
+      creditedAmount: finalCreditedAmount
+    };
   }
 
   async getRecentLedgerEntries(userId: string, limit = 10) {

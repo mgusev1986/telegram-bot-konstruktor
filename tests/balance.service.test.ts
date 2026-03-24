@@ -103,11 +103,12 @@ function createBalanceHarness(opts?: { onDepositCredited?: (p: any) => Promise<v
       }
       return null;
     }),
-    findFirst: vi.fn(async ({ where }: any) => {
+    findFirst: vi.fn(async ({ where, include }: any) => {
       const matches = where.OR?.some(
         (item: any) => item.id === state.deposit.id || item.orderId === state.deposit.orderId
       );
-      return matches ? { ...state.deposit } : null;
+      if (!matches) return null;
+      return include?.user ? { ...state.deposit, user: state.user } : { ...state.deposit };
     }),
     findUniqueOrThrow: vi.fn(async ({ where }: any) => {
       const match =
@@ -190,6 +191,7 @@ function createBalanceHarness(opts?: { onDepositCredited?: (p: any) => Promise<v
       findUnique: vi.fn(async () => null)
     },
     ownerSettlementEntry: {
+      findUnique: vi.fn(async () => null),
       create: vi.fn(async () => ({}))
     }
   };
@@ -329,7 +331,7 @@ describe("BalanceService NOWPayments flow", () => {
     expect(state.account.balance).toBe(10);
   });
 
-  it("does not credit when 9.79 received (below 98% of 10 USDT)", async () => {
+  it("credits actual 9.79 when below 98% of 10 USDT", async () => {
     const { service, state } = createBalanceHarness();
     Object.assign(state.deposit, { requestedAmountUsd: 10 });
     const payload = {
@@ -346,8 +348,18 @@ describe("BalanceService NOWPayments flow", () => {
     const result = await service.processNowPaymentsIpn(rawBody, signature);
     await flushAsyncWork();
 
-    expect(result.credited).toBeFalsy();
-    expect(state.account.balance).toBe(0);
+    expect(result).toEqual(expect.objectContaining({ ok: true, credited: true, creditedAmount: 9.79 }));
+    expect(state.account.balance).toBe(9.79);
+  });
+
+  it("returns missing amount details for partial credit", async () => {
+    const { service, state } = createBalanceHarness();
+    Object.assign(state.deposit, { requestedAmountUsd: 10, creditedBalanceAmount: 9.79, status: "CONFIRMED" });
+
+    const status = await service.checkDepositStatus(state.deposit.id);
+
+    expect(status).toEqual(expect.objectContaining({ status: "confirmed", credited: true, creditedAmount: 9.79, expectedAmount: 10 }));
+    expect(Number(status.missingAmount ?? 0)).toBeCloseTo(0.21, 8);
   });
 
   it("credits full 30 USDT when 29.40 received (98% tolerance)", async () => {
@@ -404,7 +416,7 @@ describe("BalanceService NOWPayments flow", () => {
     );
   });
 
-  it("does not credit as full when underpaid (exchange fee deducted)", async () => {
+  it("credits actual amount when underpaid (exchange fee deducted)", async () => {
     const { service, state } = createBalanceHarness();
     Object.assign(state.deposit, { requestedAmountUsd: 10 });
     const payload = {
@@ -421,8 +433,47 @@ describe("BalanceService NOWPayments flow", () => {
     const result = await service.processNowPaymentsIpn(rawBody, signature);
     await flushAsyncWork();
 
-    expect(result.credited).toBeFalsy();
-    expect(state.account.balance).toBe(0);
+    expect(result).toEqual(expect.objectContaining({ ok: true, credited: true, creditedAmount: 9.5 }));
+    expect(state.account.balance).toBe(9.5);
+  });
+
+  it("allows emergency confirm for underpaid deposit and credits expected amount", async () => {
+    const onDepositCredited = vi.fn().mockResolvedValue(undefined);
+    const { service, state, audit } = createBalanceHarness({ onDepositCredited });
+    Object.assign(state.deposit, {
+      requestedAmountUsd: 10,
+      status: "PENDING",
+      botInstanceId: "bot-A",
+      rawPayload: { requestedProductId: "product-1" }
+    });
+
+    const result = await service.emergencyConfirmDeposit(state.deposit.id, "owner-1", "support approved");
+    await flushAsyncWork();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        depositId: state.deposit.id,
+        creditedAmount: 10
+      })
+    );
+    expect(state.deposit.status).toBe("CONFIRMED");
+    expect(state.account.balance).toBe(10);
+    expect(audit.log).toHaveBeenCalledWith(
+      "owner-1",
+      "deposit_force_confirmed",
+      "deposit_transaction",
+      state.deposit.id,
+      expect.objectContaining({ reason: "support approved", creditedAmount: 10 })
+    );
+    expect(onDepositCredited).toHaveBeenCalledWith(
+      expect.objectContaining({
+        depositId: state.deposit.id,
+        botInstanceId: "bot-A",
+        creditedAmount: 10,
+        productId: "product-1"
+      })
+    );
   });
 
   it("confirms a pending deposit through trusted status polling without IPN signature", async () => {
@@ -445,7 +496,15 @@ describe("BalanceService NOWPayments flow", () => {
     const result = await service.checkDepositStatus(state.deposit.id);
     await flushAsyncWork();
 
-    expect(result).toEqual({ status: "confirmed", credited: true });
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "confirmed",
+        credited: true,
+        creditedAmount: 10,
+        expectedAmount: 10,
+        missingAmount: 0
+      })
+    );
     expect(state.deposit.status).toBe("CONFIRMED");
     expect(state.account.balance).toBe(10);
     expect(state.ledgerEntries).toHaveLength(1);
@@ -600,7 +659,7 @@ describe("BalanceService NOWPayments flow", () => {
 
     const result = await service.purchaseFromBalance(user as any, product.id);
 
-    expect(result).toEqual({ success: true, accessGranted: true });
+    expect(result).toEqual(expect.objectContaining({ success: true, accessGranted: true }));
     const expectedActiveUntil = new Date("2026-04-25T19:00:00.000Z");
     expect(prisma.productPurchase.findFirst).toHaveBeenCalledWith({
       where: {
