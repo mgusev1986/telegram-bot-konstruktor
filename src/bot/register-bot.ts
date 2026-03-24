@@ -898,20 +898,27 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
         `💰 ${escapeHtml(services.i18n.t(languageCode, "balance_label"))}: <b>${escapeHtml(opts.balance.toFixed(2))} USDT</b>`
       );
     }
+
     details.push(
       `💳 ${escapeHtml(services.i18n.t(languageCode, "amount_label"))}: <b>${escapeHtml(opts.amount)}</b>`,
       "",
       `${escapeHtml(services.i18n.t(languageCode, "wallet_label"))}:`,
       `<b>${escapeHtml(opts.wallet)}</b>`,
       "",
-      `💵 ${escapeHtml(services.i18n.t(languageCode, "currency_label"))}: <b>${escapeHtml(opts.currency)}</b>`,
+      `💵 ${escapeHtml(services.i18n.t(languageCode, "currency_label"))}: <b>USDT</b>`,
       `⛓️ ${escapeHtml(services.i18n.t(languageCode, "network_label"))}: <b>${escapeHtml(formatNetworkLabel(opts.network))}</b>`,
       `⚠️ ${escapeHtml(services.i18n.t(languageCode, "network_warning"))}`,
-      `ℹ️ ${escapeHtml(services.i18n.t(languageCode, "exchange_fee_warning"))}`
+      "",
+      `ℹ️ ${escapeHtml(services.i18n.t(languageCode, "exchange_fee_warning"))}`,
+      "",
+      `${escapeHtml(services.i18n.t(languageCode, "invoice_exact_amount_prefix"))}: <b>${escapeHtml(opts.amount)}</b>`,
+      "",
+      `👇 ${escapeHtml(services.i18n.t(languageCode, "invoice_cta_copy_and_transfer"))}`
     );
-    if (opts.reference?.trim()) {
-      details.push("", `${escapeHtml(services.i18n.t(languageCode, "reference_label"))}: ${escapeHtml(opts.reference.trim())}`);
-    }
+
+    // Keep reference/orderId in backend only (webhooks/logs/backoffice), hide it from user-facing invoice.
+    void opts.reference;
+
     blocks.push(details.join("\n"));
 
     return blocks.join("\n\n");
