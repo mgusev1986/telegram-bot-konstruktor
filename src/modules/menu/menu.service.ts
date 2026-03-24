@@ -668,9 +668,11 @@ export class MenuService {
     const baseLoc = template.localizations.find((l) => l.languageCode.toLowerCase() === base);
     const userLoc = template.localizations.find((l) => l.languageCode.toLowerCase() === userSelectedLanguage.toLowerCase());
     if (!userLoc) return base;
-    const baseHasContent = Boolean(baseLoc?.welcomeText?.trim() || baseLoc?.welcomeMediaFileId);
-    const userHasFullContent = Boolean(userLoc.welcomeText?.trim()) && (baseLoc?.welcomeMediaFileId ? Boolean(userLoc.welcomeMediaFileId) : true);
-    return baseHasContent && !userHasFullContent ? base : userSelectedLanguage;
+    const userHasAnyContent = Boolean(userLoc.welcomeText?.trim() || userLoc.welcomeMediaFileId);
+    if (!userHasAnyContent) return base;
+    const baseHasMedia = Boolean(baseLoc?.welcomeMediaFileId);
+    const userHasRequiredMedia = baseHasMedia ? Boolean(userLoc.welcomeMediaFileId) : true;
+    return userHasRequiredMedia ? userSelectedLanguage : base;
   }
 
   /**
@@ -717,7 +719,8 @@ export class MenuService {
     }
 
     const abVariant = await this.abTests.resolveVariant("welcome_text", user.id);
-    const welcomeText = String(abVariant?.text ?? localization?.welcomeText ?? this.i18n.t(contentLang, "welcome_default"));
+    const localizedWelcomeText = localization?.welcomeText?.trim();
+    const welcomeText = String(abVariant?.text ?? (localizedWelcomeText || this.i18n.t(contentLang, "welcome_default")));
 
     const profile =
       telegramFrom && (!user.firstName?.trim() || !user.fullName?.trim())
