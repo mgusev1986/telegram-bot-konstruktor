@@ -609,7 +609,7 @@ export class BalanceService {
         depositId: deposit.id,
         userId: deposit.userId,
         botInstanceId: deposit.botInstanceId,
-        telegramUserId: deposit.user.telegramUserId,
+        telegramUserId: String(deposit.user.telegramUserId),
         selectedLanguage: deposit.user.selectedLanguage,
         creditedAmount,
         currency: deposit.currency
@@ -648,7 +648,7 @@ export class BalanceService {
         userId: deposit.userId,
         botInstanceId: deposit.botInstanceId,
         user: {
-          telegramUserId: deposit.user.telegramUserId,
+          telegramUserId: String(deposit.user.telegramUserId),
           selectedLanguage: deposit.user.selectedLanguage
         },
         currency: deposit.currency
