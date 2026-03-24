@@ -237,7 +237,9 @@ function renderPage(title: string, body: string): string {
           if (!/^linkedChatLink[12]$/.test(target.name)) return;
 
           var idx = target.name.slice("linkedChatLink".length);
-          var idInput = document.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
+          var form = target.closest("form");
+          if (!form) return;
+          var idInput = form.querySelector('input[name="linkedChatIdentifier' + idx + '"]');
           if (!idInput) return;
           if (String(idInput.value || "").trim()) return; // do not overwrite manual value
 
