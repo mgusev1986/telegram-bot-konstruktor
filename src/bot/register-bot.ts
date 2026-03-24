@@ -78,6 +78,10 @@ import {
   INACTIVITY_REMINDER_ADMIN_SCENE,
   inactivityReminderAdminScene
 } from "./scenes/inactivity-reminder-admin.scene";
+import {
+  resolveEffectiveRoleForMenuCommands,
+  syncTelegramMenuCommandsForPrivateChat
+} from "./sync-telegram-menu-commands";
 
 const COMMAND_ARGUMENT_RE = /^\/\w+(?:@\w+)?(?:\s+(.+))?$/i;
 
@@ -109,6 +113,22 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     setExternalReferralLinkScene,
     inactivityReminderAdminScene
   ]);
+
+  // После обработки апдейта: список команд в синей кнопке «Меню» (scope chat) с учётом роли и числа языков шаблона.
+  bot.use(async (ctx, next) => {
+    await next();
+    if (ctx.chat?.type !== "private" || ctx.chat?.id == null) return;
+    const c = ctx as BotContext;
+    if (!c.currentUser) return;
+    const locale = services.i18n.resolveLanguage(c.currentUser.selectedLanguage);
+    const isAdmin = isAdminRole(resolveEffectiveRoleForMenuCommands(c));
+    void syncTelegramMenuCommandsForPrivateChat(
+      ctx.telegram,
+      ctx.chat.id,
+      { i18n: services.i18n, menu: services.menu },
+      { locale, isAdmin }
+    ).catch(() => {});
+  });
 
   // For user-facing screens, do not auto-prepend page title to body text.
   // If body exists, it is the source of truth. Keep a fallback to title only when body is empty.
@@ -553,6 +573,47 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const rootItems = await services.menu.getMenuItemsForParent(user, null);
     const rootSlotOrder = await services.menu.getEffectiveSlotOrder("root", rootItems.map((i) => i.id));
     return rootSlotOrder.includes(MenuService.SYS_SLOT_LANGUAGE);
+  };
+
+  const openCabinetScreenFromCtx = async (ctx: BotContext): Promise<void> => {
+    const user = ctx.currentUser!;
+    setNavBeforeShow(ctx, "cabinet:open");
+    const cabinet = await services.cabinet.buildCabinet(user);
+    const showPayButton = await services.cabinet.shouldShowPayButton(user);
+    const link = services.cabinet.getReferralLink(user);
+    const mentorUsername = user.mentorUserId
+      ? (await services.users.findById(user.mentorUserId))?.username ?? null
+      : null;
+    await services.navigation.replaceScreen(
+      user,
+      ctx.telegram,
+      ctx.chat?.id ?? user.telegramUserId,
+      { text: cabinet },
+      buildCabinetKeyboard(user.selectedLanguage, services.i18n, link, {
+        showPayButton,
+        showAdminLink: isAdminRole(resolveEffectiveRole(ctx)),
+        mentorUsername,
+        showLanguageButton: await shouldShowCabinetLanguageButton(user),
+        showRefundButton:
+          services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
+      })
+    );
+  };
+
+  const openLanguagePickerFromCtx = async (ctx: BotContext): Promise<void> => {
+    const user = ctx.currentUser!;
+    const activeLangCodes = await services.menu.getActiveTemplateLanguageCodes();
+    const codesSet = new Set(activeLangCodes.map((c) => String(c).toLowerCase()));
+    if (user.selectedLanguage) codesSet.add(String(user.selectedLanguage).toLowerCase());
+    const languageCodes = Array.from(codesSet);
+    setNavBeforeShow(ctx, "lang:picker");
+    await services.navigation.replaceScreen(
+      user,
+      ctx.telegram,
+      ctx.chat?.id ?? user.telegramUserId,
+      { text: services.i18n.t(user.selectedLanguage, "wizard_step_lang") },
+      buildLanguageKeyboard(services.i18n, user.selectedLanguage, languageCodes)
+    );
   };
 
   /** Render the true root home screen (welcome + main menu). For admin with empty menu and incomplete onboarding, show empty state. */
@@ -1496,6 +1557,32 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const adminText = services.i18n.t(locale, "admin_panel") + "\n\n" + services.i18n.t(locale, "changes_autosaved");
     const opts = await getAdminKeyboardOpts(currentUser!, resolveEffectiveRole(ctx));
     await ctx.reply(adminText, buildAdminKeyboard(locale, services.i18n, opts));
+  });
+
+  bot.command("account", async (ctx) => {
+    const user = ctx.currentUser;
+    if (!user) return;
+    await openCabinetScreenFromCtx(ctx as BotContext);
+  });
+
+  bot.command("invite", async (ctx) => {
+    const user = ctx.currentUser;
+    if (!user) return;
+    const locale = services.i18n.resolveLanguage(user.selectedLanguage);
+    const link = services.cabinet.getReferralLink(user);
+    await ctx.reply(applyPersonalization(services.i18n.t(locale, "invite_command_reply"), { link }));
+  });
+
+  bot.command("language", async (ctx) => {
+    const user = ctx.currentUser;
+    if (!user) return;
+    const locale = services.i18n.resolveLanguage(user.selectedLanguage);
+    const rawLangCodes = await services.menu.getActiveTemplateLanguageCodes();
+    if (new Set(rawLangCodes.map((c) => String(c).toLowerCase()).filter(Boolean)).size <= 1) {
+      await ctx.reply(services.i18n.t(locale, "language_command_unavailable"));
+      return;
+    }
+    await openLanguagePickerFromCtx(ctx as BotContext);
   });
 
   bot.command("owner", async (ctx) => {
