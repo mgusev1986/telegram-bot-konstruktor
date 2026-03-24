@@ -981,8 +981,11 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
   const showBalanceCheckoutScreen = async (ctx: BotContext, productId: string) => {
     const user = ctx.currentUser!;
+    logger.info({ userId: user.id, productId }, "Pay button: showBalanceCheckoutScreen invoked");
+
     const product = await services.payments.getProduct(productId);
     if (!product) {
+      logger.warn({ userId: user.id, productId }, "Pay button: product not found");
       await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "error_generic"), { show_alert: true });
       return;
     }
@@ -994,6 +997,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const payButtonText = getProductPayButtonText(product, user.selectedLanguage)?.trim() || services.i18n.t(user.selectedLanguage, "pay_from_balance");
 
     if (!services.balance.isNowPaymentsEnabled()) {
+      logger.warn({ userId: user.id, productId }, "Pay button: NOWPayments not configured");
       await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "payment_temporarily_unavailable"), {
         show_alert: true
       });
@@ -1005,10 +1009,19 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     const network = "USDT_BEP20" as PaymentNetwork;
     const intent = await services.balance.createDepositIntent(user, amount, currency, network);
     if (!intent) {
+      logger.warn({ userId: user.id, productId, amount, currency }, "Pay button: createDepositIntent returned null");
       await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "payment_temporarily_unavailable"), {
         show_alert: true
       });
       return;
+    }
+
+    logger.info({ userId: user.id, productId, depositId: intent.depositId }, "Pay button: checkout screen rendering");
+
+    try {
+      await ctx.answerCbQuery();
+    } catch {
+      // ignore: may have been answered already
     }
 
     const balance = await services.balance.getBalance(user.id);
@@ -1645,10 +1658,16 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       return;
     }
 
-    try {
-      await ctx.answerCbQuery();
-    } catch {
-      // ignore: Telegram may reject late/duplicate callback answers
+    // Defer answerCbQuery for pay actions that may show alerts on error.
+    const deferPayAnswer =
+      scope === "pay" &&
+      (action === "checkout" || action === "deposit" || action === "network" || action === "balance");
+    if (!deferPayAnswer) {
+      try {
+        await ctx.answerCbQuery();
+      } catch {
+        // ignore: Telegram may reject late/duplicate callback answers
+      }
     }
 
     if (scope === "nav") {
@@ -3330,6 +3349,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     }
 
     if (scope === "pay" && action === "checkout" && value) {
+      logger.info({ userId: user.id, productId: value }, "Pay button pressed: pay:checkout");
       await showBalanceCheckoutScreen(ctx, value);
       return;
     }
