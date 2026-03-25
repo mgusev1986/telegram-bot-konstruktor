@@ -325,6 +325,17 @@ function renderPage(title: string, body: string): string {
       .bo-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
       .bo-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
       .bo-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+      .bo-split-utility > *,
+      .bo-stage-grid-2 > *,
+      .bo-stage-grid-rail > *,
+      .grid > *,
+      .subgrid > *,
+      .bo-grid-2 > *,
+      .bo-grid-3 > *,
+      .bo-grid-4 > * {
+        min-width: 0;
+        max-width: 100%;
+      }
       .bo-stack { display: flex; flex-direction: column; gap: 16px; }
       .bo-stack--dense { gap: 12px; }
       .bo-stack--loose { gap: 24px; }
@@ -600,6 +611,8 @@ function renderPage(title: string, body: string): string {
       }
       .bo-section-text { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.65; }
       .bo-subsection {
+        min-width: 0;
+        max-width: 100%;
         padding: 16px 18px;
         border-radius: var(--radius-lg);
         border: 1px solid var(--border-soft);
@@ -760,6 +773,8 @@ function renderPage(title: string, body: string): string {
       }
       .form-row select.field { width: auto; min-width: 140px; max-width: 280px; }
       .bo-form-cluster {
+        min-width: 0;
+        max-width: 100%;
         padding: 16px;
         border-radius: var(--radius-lg);
         border: 1px solid var(--border-soft);
@@ -793,6 +808,12 @@ function renderPage(title: string, body: string): string {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 14px 18px;
         align-items: start;
+      }
+      .product-form-grid > *,
+      .nowpayments-grid > *,
+      .linked-chat-grid > * {
+        min-width: 0;
+        max-width: 100%;
       }
       .product-form-grid .field-wrap input,
       .product-form-grid .field-wrap select,
@@ -925,6 +946,8 @@ function renderPage(title: string, body: string): string {
       .bo-table-shell,
       .events-scroll,
       .table-wrap {
+        min-width: 0;
+        max-width: 100%;
         overflow: auto;
         border-radius: var(--radius-lg);
         border: 1px solid var(--border-soft);
@@ -3770,17 +3793,17 @@ export async function registerBackofficeRoutes(
        <div class="small" style="margin-bottom:8px">Ожидает — текущие PENDING. <b>Выплачено (накопл.)</b> — все успешные батчи. Колонки <b>за период</b> — дата выплаты (батч) и дата начисления в TZ <code>${escapeHtml(payoutTz)}</code>, интервал <code>${escapeHtml(orFromYmd)}</code> … <code>${escapeHtml(orToYmd)}</code> включительно.</div>
        ${
          ownerReportingRows.length
-           ? `<table class="paid-table" style="margin-bottom:12px">
+           ? `<div class="bo-table-shell" style="margin-bottom:12px"><table class="paid-table">
            <thead><tr><th>Владелец</th><th>Кошелёк (учёт)</th><th>Ожидает выплаты</th><th>Выплачено (накопл.)</th><th>Выплачено за период</th><th>Начислено за период</th></tr></thead>
            <tbody>${ownerReportingRows.join("")}</tbody>
-         </table>`
+         </table></div>`
            : `<div class="small" style="margin-bottom:12px">Нет строк отчёта (нет OWNER с привязкой User).</div>`
        }
        <div class="section-title" style="margin-top:12px">История выплат по получателям</div>
        <div class="small" style="margin-bottom:8px">Только выбранный период (дата батча в TZ выплат).</div>
        ${
          ownerPayoutHistoryRows
-           ? `<table class="paid-table" style="margin-bottom:12px"><thead><tr><th>Когда (батч)</th><th>Получатель</th><th>Кошелёк</th><th>Нетто</th><th>Начислений</th><th>Статус батча</th></tr></thead><tbody>${ownerPayoutHistoryRows}</tbody></table>`
+           ? `<div class="bo-table-shell" style="margin-bottom:12px"><table class="paid-table"><thead><tr><th>Когда (батч)</th><th>Получатель</th><th>Кошелёк</th><th>Нетто</th><th>Начислений</th><th>Статус батча</th></tr></thead><tbody>${ownerPayoutHistoryRows}</tbody></table></div>`
            : `<div class="small">Нет записей получателей за этот период (или выплат ещё не было).</div>`
        }`;
 
