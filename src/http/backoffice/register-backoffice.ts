@@ -117,113 +117,833 @@ function renderPage(title: string, body: string): string {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${title}</title>
     <style>
-      body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; background: #0b1220; color: #e5e7eb; }
-      a { color: #60a5fa; }
-      .wrap { width: 100%; max-width: none; margin: 0; padding: 14px 16px; box-sizing: border-box; }
-      .card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 16px; box-shadow: 0 12px 40px rgba(0,0,0,0.25); overflow-x: auto; }
-      .top-nav { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 10px; }
-      .top-nav a { text-decoration: none; }
-      .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+      :root {
+        color-scheme: dark;
+        --bg: #05070b;
+        --bg-deep: #080d15;
+        --panel: #0f151f;
+        --panel-strong: #131b28;
+        --panel-soft: #192233;
+        --panel-muted: rgba(255,255,255,0.035);
+        --border: rgba(226,232,240,0.09);
+        --border-strong: rgba(226,232,240,0.16);
+        --text: #f5f7fb;
+        --text-soft: #e2e8f0;
+        --muted: #94a3b8;
+        --muted-strong: #c5cedb;
+        --link: #c2d4ff;
+        --accent: #d8c3a2;
+        --accent-strong: #e9d7b8;
+        --accent-ink: #11161d;
+        --success: #9fcab0;
+        --warning: #ddc183;
+        --danger: #f0a5a5;
+        --danger-soft: rgba(240,165,165,0.1);
+        --info: #adc5ff;
+        --shadow-lg: 0 26px 70px rgba(0,0,0,0.36);
+        --shadow-md: 0 18px 44px rgba(0,0,0,0.24);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --radius-md: 18px;
+        --radius-sm: 14px;
+        --radius-xs: 10px;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(173,197,255,0.12), transparent 34%),
+          radial-gradient(circle at top right, rgba(216,195,162,0.1), transparent 28%),
+          linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 60%, #04060a 100%);
+        color: var(--text);
+        letter-spacing: 0.01em;
+      }
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.01) 1px, transparent 1px);
+        background-size: 120px 120px;
+        mask-image: radial-gradient(circle at center, black 4%, transparent 72%);
+        opacity: 0.2;
+      }
+      a { color: var(--link); text-decoration: none; }
+      a:hover { color: #ffffff; }
+      .wrap {
+        width: 100%;
+        max-width: 1540px;
+        margin: 0 auto;
+        padding: 24px 20px 56px;
+        position: relative;
+        z-index: 1;
+      }
+      .card, .bo-panel, .bo-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border);
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)),
+          linear-gradient(180deg, rgba(18,24,35,0.98), rgba(12,17,26,0.98));
+        box-shadow: var(--shadow-lg);
+        backdrop-filter: blur(18px);
+      }
+      .card { padding: 24px; }
+      .bo-panel { padding: 22px; }
+      .bo-panel--raised {
+        background:
+          radial-gradient(circle at top right, rgba(216,195,162,0.08), transparent 34%),
+          linear-gradient(180deg, rgba(24,32,46,0.98), rgba(13,19,29,0.98));
+      }
+      .bo-panel--utility {
+        background:
+          radial-gradient(circle at top right, rgba(173,197,255,0.08), transparent 34%),
+          linear-gradient(180deg, rgba(17,25,38,0.98), rgba(10,16,25,0.98));
+      }
+      .bo-panel--diagnostic {
+        background:
+          linear-gradient(180deg, rgba(13,18,28,0.98), rgba(8,12,20,0.98));
+        border-color: rgba(173,197,255,0.14);
+      }
+      .bo-page { display: flex; flex-direction: column; gap: 22px; }
+      .bo-stage {
+        padding: 22px;
+        border-radius: var(--radius-xl);
+        border: 1px solid rgba(255,255,255,0.07);
+        background:
+          radial-gradient(circle at top right, rgba(173,197,255,0.05), transparent 38%),
+          linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)),
+          rgba(8,12,18,0.72);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), var(--shadow-md);
+      }
+      .bo-stage-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .bo-stage-title {
+        margin: 0;
+        font-size: 24px;
+        line-height: 1.08;
+        letter-spacing: -0.04em;
+      }
+      .bo-stage-copy {
+        margin-top: 8px;
+        max-width: 78ch;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+      .bo-stage-body {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .bo-split-utility {
+        display: grid;
+        grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+        gap: 18px;
+      }
+      .top-nav {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        margin-bottom: 14px;
+        padding: 4px 2px;
+      }
+      .top-nav__meta {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        color: rgba(255,255,255,0.42);
+      }
+      .top-nav__actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .row, .bo-cluster {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
       .row > * { flex: 1 1 auto; }
-      label { display: block; margin-bottom: 6px; font-size: 13px; color: #cbd5e1; }
-      input, textarea, select { width: 100%; max-width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14); background: rgba(0,0,0,0.15); color: #e5e7eb; }
-      button { padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.16); background: #2563eb; color: white; cursor: pointer; }
-      button.secondary { background: rgba(255,255,255,0.08); }
-      button.error { background: rgba(239,68,68,0.2); border-color: rgba(239,68,68,0.5); color: #fca5a5; }
-      .small { font-size: 12px; color: #94a3b8; }
-      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-      @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
-      .bot-card { padding: 14px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); }
-      .bot-title { font-weight: 700; }
-      .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.15); font-size: 12px; color: #cbd5e1; }
-      .error { padding: 10px 12px; border-radius: 12px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.35); margin-top: 10px; }
-      .success { padding: 10px 12px; border-radius: 12px; background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.35); margin-bottom: 12px; }
-      .bot-card.created { border-color: rgba(34,197,94,0.5); box-shadow: 0 0 0 2px rgba(34,197,94,0.2); }
-      .form-row { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
-      .form-row label { margin-bottom: 0; }
-      .form-row .field { flex: 0 1 auto; min-width: 0; }
-      .form-row select.field { width: auto; min-width: 140px; max-width: 280px; }
-      .product-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; align-items: start; }
-      .product-form-grid .field-wrap { min-width: 0; }
-      .product-form-grid .field-wrap input,
-      .product-form-grid .field-wrap select { width: 100%; box-sizing: border-box; }
-      .linked-chat-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 8px; }
-      .linked-chat-card { min-width: 0; padding: 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); }
-      .linked-chat-card .title { font-size: 12px; font-weight: 700; color: #cbd5e1; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .02em; }
-      .linked-chat-card .field-wrap { margin-bottom: 8px; }
-      .linked-chat-card .field-wrap:last-child { margin-bottom: 0; }
-      .linked-chat-card textarea { min-height: 74px; resize: vertical; }
-      .nowpayments-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px 20px; margin-bottom: 16px; }
-      .toggle-field { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.03); }
-      .toggle-field label { margin: 0; font-size: 12px; color: #cbd5e1; }
-      .toggle-field input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 auto; padding: 0; margin: 0; accent-color: #2563eb; }
-      .mini-btn { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
-      .field-inline { display: flex; gap: 8px; align-items: center; }
-      .field-inline input { flex: 1 1 auto; min-width: 0; }
-      .id-hint { margin-top: 4px; font-size: 11px; color: #94a3b8; min-height: 16px; }
-      .id-hint.ok { color: #86efac; }
-      .id-hint.err { color: #fca5a5; }
-      @media (max-width: 560px) { .product-form-grid { grid-template-columns: 1fr; } }
-      .test-block { margin-top: 12px; padding: 12px; border-radius: 10px; border: 1px dashed rgba(251, 191, 36, 0.4); background: rgba(251, 191, 36, 0.06); }
-      .form-row .btn { flex-shrink: 0; }
-      .mi-card { margin-top: 12px; padding: 14px; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; }
-      .mi-card:first-of-type { margin-top: 0; }
-      .section-title { font-size: 14px; font-weight: 600; color: #cbd5e1; margin: 16px 0 8px 0; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); }
-      .section-title:first-child { margin-top: 0; }
-      .paid-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; table-layout: auto; }
-      .paid-table th, .paid-table td { padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.08); vertical-align: top; white-space: nowrap; }
-      .paid-table th { color: #94a3b8; font-weight: 600; }
-      .paid-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.02); }
-      .paid-table tr:last-child td { border-bottom: none; }
-      .paid-table td code { white-space: normal; word-break: break-word; overflow-wrap: anywhere; line-height: 1.2; display: inline-block; }
+      .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, 0.92fr); gap: 18px; }
+      .subgrid { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(300px, 0.9fr); gap: 18px; }
+      .bo-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+      .bo-grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+      .bo-grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+      .bo-stack { display: flex; flex-direction: column; gap: 16px; }
+      .bo-stack--dense { gap: 12px; }
+      .bo-stack--loose { gap: 24px; }
+      .bo-hero {
+        padding: 28px;
+        background:
+          radial-gradient(circle at top right, rgba(216,195,162,0.12), transparent 32%),
+          linear-gradient(180deg, rgba(27,36,52,0.96), rgba(14,20,30,0.98));
+      }
+      .bo-page-header {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: start;
+      }
+      .bo-page-overline {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        color: var(--accent-strong);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+      }
+      .bo-page-title {
+        margin: 0;
+        font-family: "Avenir Next", "SF Pro Display", "Segoe UI", sans-serif;
+        font-size: clamp(30px, 3vw, 42px);
+        line-height: 1.05;
+        letter-spacing: -0.04em;
+      }
+      .bo-page-subtitle {
+        margin-top: 10px;
+        max-width: 74ch;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+      .bo-context-list {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 16px;
+      }
+      .bo-context-chip, .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.04);
+        color: var(--muted-strong);
+        font-size: 12px;
+      }
+      .bo-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        align-items: center;
+      }
+      label {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+      input, textarea, select {
+        width: 100%;
+        max-width: 100%;
+        box-sizing: border-box;
+        border-radius: var(--radius-sm);
+        border: 1px solid rgba(255,255,255,0.12);
+        background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
+        color: var(--text);
+        padding: 12px 14px;
+        min-height: 46px;
+        outline: none;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+        transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+      }
+      input::placeholder, textarea::placeholder { color: #6f7f98; }
+      input:focus, textarea:focus, select:focus {
+        border-color: rgba(216,195,162,0.46);
+        box-shadow: 0 0 0 3px rgba(216,195,162,0.12);
+        background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025));
+      }
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+        line-height: 1.55;
+      }
+      button,
+      a.bo-btn,
+      .top-nav a,
+      .paid-nav a,
+      .bo-link-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 11px 16px;
+        border-radius: var(--radius-sm);
+        border: 1px solid rgba(255,255,255,0.1);
+        background: linear-gradient(180deg, rgba(226,232,240,0.94), rgba(196,204,216,0.88));
+        color: var(--accent-ink);
+        cursor: pointer;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        transition: transform 0.18s ease, border-color 0.18s ease, filter 0.18s ease, background 0.18s ease;
+        text-decoration: none;
+      }
+      button:hover,
+      a.bo-btn:hover,
+      .top-nav a:hover,
+      .paid-nav a:hover,
+      .bo-link-btn:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.03);
+      }
+      button.secondary,
+      a.bo-btn--secondary,
+      .bo-link-btn--secondary,
+      .paid-nav a,
+      .top-nav a {
+        background: rgba(255,255,255,0.05);
+        color: var(--text-soft);
+        border-color: rgba(255,255,255,0.1);
+      }
+      button.error,
+      a.bo-btn--danger,
+      .bo-link-btn--danger {
+        background: rgba(240,165,165,0.14);
+        border-color: rgba(240,165,165,0.28);
+        color: #ffd6d6;
+      }
+      button.ghost,
+      a.bo-btn--ghost,
+      .bo-link-btn--ghost {
+        background: transparent;
+        color: var(--muted-strong);
+        border-color: rgba(255,255,255,0.08);
+      }
+      button:disabled {
+        opacity: 0.7;
+        cursor: wait;
+        transform: none;
+      }
+      a[aria-disabled="true"] {
+        pointer-events: none;
+        opacity: 0.55;
+      }
+      .small {
+        font-size: 12px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+      .muted { color: var(--muted); }
       .mono-wrap { min-width: 220px; max-width: 440px; }
       .wallet-col { min-width: 240px; max-width: 460px; }
-      .events-scroll { max-height: 430px; overflow-y: auto; overflow-x: auto; border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; }
-      .product-card { margin-top: 20px; padding: 18px; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; background: rgba(0,0,0,0.12); }
-      .product-card:first-of-type { margin-top: 12px; }
-      .products-existing-block { margin-top: 40px; padding-top: 32px; border-top: 1px solid rgba(255,255,255,0.15); }
-      .product-card-header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
-      .test-badge { display: inline-block; padding: 4px 10px; border-radius: 8px; font-size: 12px; font-weight: 600; background: rgba(251,191,36,0.2); border: 1px solid rgba(251,191,36,0.5); color: #fbbf24; }
-      .paid-nav { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
-      .paid-nav a { text-decoration:none; }
-      .overview-grid { display:grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap:12px; margin-top:16px; }
-      .overview-card { padding:14px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:rgba(255,255,255,0.04); }
-      .overview-card .value { font-size:24px; font-weight:700; margin-top:4px; }
-      .subgrid { display:grid; grid-template-columns: 1.2fr 0.8fr; gap:14px; }
-      .status-badge { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:600; border:1px solid rgba(255,255,255,0.16); }
-      .status-live { background: rgba(34,197,94,0.16); color:#86efac; border-color: rgba(34,197,94,0.45); }
-      .status-test { background: rgba(251,191,36,0.16); color:#fde68a; border-color: rgba(251,191,36,0.45); }
-      .status-active { background: rgba(59,130,246,0.16); color:#93c5fd; border-color: rgba(59,130,246,0.45); }
-      .status-pending { background: rgba(250,204,21,0.14); color:#fde047; border-color: rgba(250,204,21,0.35); }
-      .status-expiring { background: rgba(249,115,22,0.14); color:#fdba74; border-color: rgba(249,115,22,0.35); }
-      .status-expired { background: rgba(239,68,68,0.14); color:#fca5a5; border-color: rgba(239,68,68,0.35); }
-      .status-failed { background: rgba(239,68,68,0.18); color:#fca5a5; border-color: rgba(239,68,68,0.45); }
-      .status-muted { background: rgba(148,163,184,0.14); color:#cbd5e1; border-color: rgba(148,163,184,0.25); }
-      .flow-list { margin:0; padding-left:18px; color:#cbd5e1; }
-      .flow-list li { margin:6px 0; }
-      .warning-card { padding:12px; border-radius:12px; border:1px solid rgba(249,115,22,0.4); background:rgba(249,115,22,0.08); color:#fed7aa; }
-      .danger-card { padding:12px; border-radius:12px; border:1px solid rgba(239,68,68,0.4); background:rgba(239,68,68,0.08); color:#fecaca; }
-      .mono-list { margin:0; padding-left:18px; }
-      .mono-list li code { color:#e2e8f0; }
-      @media (max-width: 880px) { .overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .subgrid { grid-template-columns: 1fr; } }
-      @media (max-width: 900px) {
-        .wrap { padding: 10px; }
-        .card { padding: 12px; }
-        .paid-table { font-size: 12px; }
-        .linked-chat-grid { grid-template-columns: 1fr; }
-        .nowpayments-grid { grid-template-columns: 1fr; }
+      code,
+      .bo-code {
+        display: inline-block;
+        max-width: 100%;
+        padding: 3px 8px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.035);
+        color: #e8edf6;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        word-break: break-word;
       }
-      @media (max-width: 560px) { .overview-grid { grid-template-columns: 1fr; } }
+      .error,
+      .success,
+      .warning-card,
+      .danger-card,
+      .bo-note {
+        padding: 14px 16px;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(255,255,255,0.08);
+        line-height: 1.6;
+      }
+      .error { background: rgba(240,165,165,0.1); border-color: rgba(240,165,165,0.24); color: #ffd1d1; }
+      .success { background: rgba(159,202,176,0.12); border-color: rgba(159,202,176,0.24); color: #ddf7e6; }
+      .warning-card { background: rgba(221,193,131,0.1); border-color: rgba(221,193,131,0.24); color: #f7e7bf; }
+      .danger-card { background: rgba(240,165,165,0.1); border-color: rgba(240,165,165,0.24); color: #ffd1d1; }
+      .bo-note--info { background: rgba(173,197,255,0.1); border-color: rgba(173,197,255,0.22); color: #d9e5ff; }
+      .bo-note--warning { background: rgba(221,193,131,0.1); border-color: rgba(221,193,131,0.24); color: #f7e7bf; }
+      .bo-note--danger { background: rgba(240,165,165,0.1); border-color: rgba(240,165,165,0.24); color: #ffd1d1; }
+      .bo-note--success { background: rgba(159,202,176,0.12); border-color: rgba(159,202,176,0.24); color: #ddf7e6; }
+      .bo-kpi-grid,
+      .overview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 14px;
+      }
+      .bo-kpi-card,
+      .overview-card,
+      .bot-card,
+      .mi-card,
+      .product-card,
+      .linked-chat-card {
+        position: relative;
+        min-width: 0;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(255,255,255,0.08);
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.015)),
+          rgba(12,17,26,0.84);
+        box-shadow: var(--shadow-md);
+      }
+      .bo-kpi-card,
+      .overview-card { padding: 18px; }
+      .bo-kpi-label {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .bo-kpi-value,
+      .overview-card .value {
+        margin-top: 8px;
+        font-size: clamp(24px, 2.5vw, 34px);
+        line-height: 1.05;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -0.04em;
+      }
+      .bo-kpi-helper { margin-top: 10px; color: var(--muted-strong); font-size: 13px; line-height: 1.55; }
+      .bo-kpi-card--compact .bo-kpi-value {
+        font-size: 24px;
+      }
+      .bo-panel-header,
+      .bo-section-head,
+      .product-card-header {
+        display: flex;
+        gap: 14px;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        margin-bottom: 16px;
+      }
+      .bo-section-title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+      }
+      .bo-section-text { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+      .bot-card {
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .bot-card.created {
+        border-color: rgba(159,202,176,0.42);
+        box-shadow: 0 0 0 1px rgba(159,202,176,0.25), var(--shadow-md);
+      }
+      .bot-title {
+        font-size: 19px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .bo-stateline {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .bo-meta-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .bo-meta-tile {
+        padding: 13px 14px;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(255,255,255,0.07);
+        background: rgba(255,255,255,0.03);
+      }
+      .bo-meta-label {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .bo-meta-value {
+        margin-top: 7px;
+        color: var(--text-soft);
+        font-size: 14px;
+        line-height: 1.55;
+        word-break: break-word;
+      }
+      .bo-action-groups {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .bo-action-group {
+        padding: 14px;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(255,255,255,0.07);
+        background: rgba(255,255,255,0.025);
+      }
+      .bo-action-group--muted {
+        background: rgba(255,255,255,0.015);
+      }
+      .bo-action-label {
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+      }
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        border: 1px solid rgba(255,255,255,0.1);
+      }
+      .status-live { background: rgba(159,202,176,0.12); color: #d8f1e1; border-color: rgba(159,202,176,0.26); }
+      .status-test { background: rgba(221,193,131,0.12); color: #f4e3b7; border-color: rgba(221,193,131,0.28); }
+      .status-active { background: rgba(173,197,255,0.12); color: #dbe7ff; border-color: rgba(173,197,255,0.28); }
+      .status-pending { background: rgba(221,193,131,0.12); color: #f4e3b7; border-color: rgba(221,193,131,0.28); }
+      .status-expiring { background: rgba(237,154,106,0.12); color: #ffd7bb; border-color: rgba(237,154,106,0.28); }
+      .status-expired { background: rgba(240,165,165,0.1); color: #ffd2d2; border-color: rgba(240,165,165,0.24); }
+      .status-failed { background: rgba(240,165,165,0.12); color: #ffd5d5; border-color: rgba(240,165,165,0.3); }
+      .status-muted { background: rgba(148,163,184,0.1); color: #d3dbe7; border-color: rgba(148,163,184,0.2); }
+      .form-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .form-row label { margin-bottom: 8px; }
+      .form-row .field,
+      .field-wrap {
+        flex: 1 1 220px;
+        min-width: 0;
+      }
+      .form-row select.field { width: auto; min-width: 140px; max-width: 280px; }
+      .bo-form-cluster {
+        padding: 16px;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(255,255,255,0.07);
+        background: rgba(255,255,255,0.025);
+      }
+      .bo-form-cluster-head {
+        display: flex;
+        gap: 12px;
+        justify-content: space-between;
+        align-items: flex-start;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      .bo-form-cluster-title {
+        margin: 0;
+        color: var(--muted-strong);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .bo-form-cluster-copy {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .product-form-grid,
+      .nowpayments-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px 18px;
+        align-items: start;
+      }
+      .product-form-grid .field-wrap input,
+      .product-form-grid .field-wrap select,
+      .product-form-grid .field-wrap textarea,
+      .nowpayments-grid .field-wrap input {
+        width: 100%;
+      }
+      .linked-chat-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 10px;
+      }
+      .linked-chat-card {
+        padding: 16px;
+      }
+      .linked-chat-card .title {
+        margin-bottom: 10px;
+        color: var(--muted-strong);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+      }
+      .linked-chat-card .field-wrap { margin-bottom: 10px; }
+      .linked-chat-card .field-wrap:last-child { margin-bottom: 0; }
+      .toggle-field {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 50px;
+        padding: 10px 14px;
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.03);
+      }
+      .toggle-field label {
+        margin: 0;
+        font-size: 12px;
+        color: var(--muted-strong);
+      }
+      .toggle-field input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 auto;
+        padding: 0;
+        margin: 0;
+        accent-color: #d8c3a2;
+      }
+      .mini-btn {
+        padding: 8px 10px;
+        min-height: auto;
+        font-size: 12px;
+        border-radius: 12px;
+      }
+      .field-inline { display: flex; gap: 8px; align-items: center; }
+      .field-inline input { flex: 1 1 auto; min-width: 0; }
+      .id-hint { margin-top: 6px; font-size: 11px; color: var(--muted); min-height: 16px; }
+      .id-hint.ok { color: #bce8cd; }
+      .id-hint.err { color: #ffc2c2; }
+      .test-block {
+        padding: 16px;
+        border-radius: var(--radius-lg);
+        border: 1px dashed rgba(221,193,131,0.32);
+        background: rgba(221,193,131,0.05);
+      }
+      .section-title {
+        margin: 20px 0 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        color: var(--muted-strong);
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .section-title:first-child { margin-top: 0; }
+      .bo-toolbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
+        padding: 18px;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(255,255,255,0.08);
+        background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.015));
+      }
+      .bo-toolbar-main {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 14px;
+      }
+      .bo-toolbar-side {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: flex-end;
+      }
+      .bo-export-list {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .bo-data-caption {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .bo-table-shell,
+      .events-scroll,
+      .table-wrap {
+        overflow: auto;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(7,10,16,0.54);
+      }
+      .bo-table-shell { padding: 0; }
+      .events-scroll { max-height: 460px; }
+      table,
+      .paid-table {
+        width: 100%;
+        min-width: 100%;
+        border-collapse: collapse;
+        table-layout: auto;
+      }
+      table thead th,
+      .paid-table th {
+        padding: 13px 14px;
+        text-align: left;
+        vertical-align: bottom;
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        background: rgba(255,255,255,0.03);
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        backdrop-filter: blur(16px);
+      }
+      table tbody td,
+      .paid-table td {
+        padding: 14px;
+        text-align: left;
+        vertical-align: top;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        white-space: nowrap;
+      }
+      table tbody tr:hover,
+      .paid-table tbody tr:hover {
+        background: rgba(255,255,255,0.025);
+      }
+      table tbody tr:nth-child(even),
+      .paid-table tbody tr:nth-child(even) {
+        background: rgba(255,255,255,0.015);
+      }
+      table tbody tr:last-child td,
+      .paid-table tr:last-child td {
+        border-bottom: none;
+      }
+      .paid-table td code,
+      table td code {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+      .table-number { text-align: right; font-variant-numeric: tabular-nums; }
+      .overview-card,
+      .product-card,
+      .mi-card {
+        padding: 18px;
+      }
+      .products-existing-block {
+        margin-top: 34px;
+        padding-top: 26px;
+        border-top: 1px solid rgba(255,255,255,0.08);
+      }
+      .paid-nav {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .paid-nav a {
+        padding: 10px 14px;
+        border-radius: 999px;
+      }
+      .flow-list {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted-strong);
+      }
+      .flow-list li { margin: 8px 0; }
+      .mono-list {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted-strong);
+      }
+      .mono-list li { margin: 8px 0; }
+      .mono-list li code { color: #eef2f9; }
+      details {
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.025);
+        padding: 0 16px 16px;
+      }
+      details > summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 14px 0;
+      }
+      details > summary::-webkit-details-marker { display: none; }
+      @media (max-width: 1080px) {
+        .grid,
+        .subgrid,
+        .bo-grid-3,
+        .bo-grid-4 {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 900px) {
+        .wrap { padding: 16px 12px 36px; }
+        .card,
+        .bo-hero { padding: 18px; }
+        .top-nav { align-items: flex-start; }
+        .top-nav__actions { width: 100%; }
+        .bo-page-header,
+        .bo-toolbar {
+          grid-template-columns: 1fr;
+        }
+        .product-form-grid,
+        .linked-chat-grid,
+        .nowpayments-grid,
+        .bo-grid-2,
+        .bo-meta-grid,
+        .bo-action-groups,
+        .bo-split-utility {
+          grid-template-columns: 1fr;
+        }
+        table,
+        .paid-table {
+          font-size: 12px;
+        }
+      }
+      @media (max-width: 640px) {
+        .top-nav { flex-direction: column; align-items: stretch; }
+        .top-nav__actions { justify-content: stretch; }
+        .top-nav__actions > * { flex: 1 1 auto; }
+        button,
+        a.bo-btn,
+        .paid-nav a,
+        .top-nav a {
+          width: 100%;
+        }
+      }
     </style>
   </head>
   <body>
     <div class="wrap">
-      <div class="card">
-        <div class="top-nav">
+      <div class="top-nav">
+        <div class="top-nav__meta">Telegram Bot Konstruktor · Backoffice</div>
+        <div class="top-nav__actions">
           <button class="secondary" type="button" onclick="history.back()">← Назад</button>
-          <a href="/backoffice"><button class="secondary" type="button">🏠 На главную backoffice</button></a>
+          <a href="/backoffice" class="bo-btn bo-btn--secondary">Главная backoffice</a>
         </div>
-        ${body}
+      </div>
+      <div class="card">
+        <div class="bo-page">
+          ${body}
+        </div>
       </div>
     </div>
     <script>
@@ -419,7 +1139,7 @@ function renderLinkedChatReadiness(product: { linkedChats?: unknown; billingType
     return renderStatusBadge(`Ссылки: ${diagnostics.displayLinkCount}`, "active");
   }
   if (!diagnostics.removalReady) {
-    return renderStatusBadge("Удаление по expiry недоступно", "failed");
+    return renderStatusBadge("REMOVAL UNAVAILABLE", "failed");
   }
   return renderStatusBadge(`Удаление готово (${diagnostics.banIdentifierCount})`, "active");
 }
@@ -431,6 +1151,102 @@ function escapeHtml(input: string): string {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+type ActionTone = "primary" | "secondary" | "ghost" | "danger";
+
+function renderActionLink(label: string, href: string, tone: ActionTone = "secondary", attrs = ""): string {
+  const toneClass =
+    tone === "danger"
+      ? "bo-link-btn bo-link-btn--danger"
+      : tone === "ghost"
+        ? "bo-link-btn bo-link-btn--ghost"
+        : tone === "secondary"
+          ? "bo-link-btn bo-link-btn--secondary"
+          : "bo-link-btn";
+  return `<a href="${escapeHtml(href)}" class="${toneClass}"${attrs ? ` ${attrs}` : ""}>${escapeHtml(label)}</a>`;
+}
+
+function renderMetricCard(label: string, value: string, helper = "", extraClass = ""): string {
+  return `<div class="bo-kpi-card${extraClass ? ` ${extraClass}` : ""}">
+    <div class="bo-kpi-label">${escapeHtml(label)}</div>
+    <div class="bo-kpi-value">${value}</div>
+    ${helper ? `<div class="bo-kpi-helper">${helper}</div>` : ""}
+  </div>`;
+}
+
+function renderPageHeader(params: {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  context?: string[];
+  actions?: string;
+}): string {
+  return `<section class="bo-hero">
+    <div class="bo-page-header">
+      <div>
+        ${params.eyebrow ? `<div class="bo-page-overline">${escapeHtml(params.eyebrow)}</div>` : ""}
+        <h1 class="bo-page-title">${escapeHtml(params.title)}</h1>
+        ${params.subtitle ? `<div class="bo-page-subtitle">${params.subtitle}</div>` : ""}
+        ${
+          params.context?.length
+            ? `<div class="bo-context-list">${params.context.map((item) => `<span class="bo-context-chip">${item}</span>`).join("")}</div>`
+            : ""
+        }
+      </div>
+      ${params.actions ? `<div class="bo-actions">${params.actions}</div>` : ""}
+    </div>
+  </section>`;
+}
+
+function renderSectionPanel(params: {
+  id?: string;
+  title: string;
+  subtitle?: string;
+  actions?: string;
+  body: string;
+  extraClass?: string;
+}): string {
+  return `<section${params.id ? ` id="${escapeHtml(params.id)}"` : ""} class="bo-panel bo-stack${params.extraClass ? ` ${params.extraClass}` : ""}">
+    <div class="bo-section-head">
+      <div>
+        <h2 class="bo-section-title">${escapeHtml(params.title)}</h2>
+        ${params.subtitle ? `<div class="bo-section-text">${params.subtitle}</div>` : ""}
+      </div>
+      ${params.actions ? `<div class="bo-actions">${params.actions}</div>` : ""}
+    </div>
+    ${params.body}
+  </section>`;
+}
+
+function renderStageBlock(params: {
+  eyebrow?: string;
+  title: string;
+  subtitle?: string;
+  actions?: string;
+  body: string;
+}): string {
+  return `<section class="bo-stage">
+    <div class="bo-stage-head">
+      <div>
+        ${params.eyebrow ? `<div class="bo-page-overline">${escapeHtml(params.eyebrow)}</div>` : ""}
+        <h2 class="bo-stage-title">${escapeHtml(params.title)}</h2>
+        ${params.subtitle ? `<div class="bo-stage-copy">${params.subtitle}</div>` : ""}
+      </div>
+      ${params.actions ? `<div class="bo-actions">${params.actions}</div>` : ""}
+    </div>
+    <div class="bo-stage-body">
+      ${params.body}
+    </div>
+  </section>`;
+}
+
+function renderNote(
+  tone: "info" | "warning" | "danger" | "success",
+  body: string,
+  title?: string
+): string {
+  return `<div class="bo-note bo-note--${tone}">${title ? `<strong>${escapeHtml(title)}</strong><br>` : ""}${body}</div>`;
 }
 
 /** @internal Exported for testing */
@@ -460,31 +1276,54 @@ export function buildCreateBotForm(opts: {
     ? `<div class="error" role="alert">${escapeHtml(opts.createError)}</div>`
     : "";
   return `${errorBlock}
-            <form id="create-bot-form" method="POST" action="/backoffice/api/bots/create" style="margin-top:12px" onsubmit="var btn=this.querySelector('button[type=submit]');if(btn&&!btn.disabled){btn.disabled=true;btn.textContent='Создание…';}">
-              <div style="margin-bottom:10px">
-                <label>Название бота</label>
-                <input name="name" type="text" required value="${name}" />
+            <form id="create-bot-form" method="POST" action="/backoffice/api/bots/create" class="bo-stack" style="margin-top:12px" onsubmit="var btn=this.querySelector('button[type=submit]');if(btn&&!btn.disabled){btn.disabled=true;btn.textContent='Создание…';}">
+              ${renderNote("info", `После создания появится новый <code>BotInstance</code> и активный template с базовой структурой. Токен не сохраняется в открытом виде.`)}
+              <div class="bo-form-cluster">
+                <div class="bo-form-cluster-head">
+                  <div>
+                    <div class="bo-form-cluster-title">Идентификация и запуск</div>
+                    <div class="bo-form-cluster-copy">Запускающий блок для нового bot instance: название, токен, username и базовый язык собраны в одном рабочем модуле.</div>
+                  </div>
+                </div>
+                <div class="bo-grid-2">
+                  <div>
+                    <label>Название бота</label>
+                    <input name="name" type="text" required value="${name}" />
+                  </div>
+                  <div>
+                    <label>Telegram Bot Token</label>
+                    <input name="telegramBotToken" type="text" required placeholder="Введите токен" autocomplete="off" />
+                  </div>
+                </div>
+                <div class="bo-grid-2" style="margin-top:14px">
+                  <div>
+                    <label>Telegram Username бота (опционально)</label>
+                    <input name="telegramBotUsername" type="text" placeholder="my_bot" value="${username}" />
+                  </div>
+                  <div>
+                    <label>Базовый язык</label>
+                    <select name="baseLanguageCode">
+                      ${langSelectOptions}
+                    </select>
+                  </div>
+                </div>
               </div>
-              <div style="margin-bottom:10px">
-                <label>Telegram Bot Token</label>
-                <input name="telegramBotToken" type="text" required placeholder="Введите токен" autocomplete="off" />
+              <div class="bo-form-cluster">
+                <div class="bo-form-cluster-head">
+                  <div>
+                    <div class="bo-form-cluster-title">Владелец и сопровождение</div>
+                    <div class="bo-form-cluster-copy">Опциональная привязка будущего owner-пользователя. Permission flow и активация ролей остаются прежними.</div>
+                  </div>
+                </div>
+                <div>
+                  <label>Username владельца (опционально)</label>
+                  <input name="ownerTelegramUsername" type="text" placeholder="@username клиента, создавшего токен" value="${ownerUsername}" />
+                  <div class="small" style="margin-top:6px">Будущий владелец увидит пустой экран до активации роли в разделе «Роли».</div>
+                </div>
               </div>
-              <div style="margin-bottom:10px">
-                <label>Telegram Username бота (опционально)</label>
-                <input name="telegramBotUsername" type="text" placeholder="my_bot" value="${username}" />
+              <div class="bo-actions" style="justify-content:flex-start">
+                <button type="submit" id="create-bot-submit">Создать бота</button>
               </div>
-              <div style="margin-bottom:10px">
-                <label>Username владельца (опционально)</label>
-                <input name="ownerTelegramUsername" type="text" placeholder="@username клиента, создавшего токен" value="${ownerUsername}" />
-                <div class="small" style="margin-top:2px; color:#94a3b8">Будущий владелец увидит пустой экран до активации роли в разделе «Роли».</div>
-              </div>
-              <div style="margin-bottom:10px">
-                <label>Базовый язык</label>
-                <select name="baseLanguageCode">
-                  ${langSelectOptions}
-                </select>
-              </div>
-              <button type="submit" id="create-bot-submit">Создать</button>
             </form>`;
 }
 
@@ -505,53 +1344,89 @@ export type DashboardParams = {
 export function renderDashboardBody(params: DashboardParams): string {
   const { bots, role, email, lang, createdBotId, createError, formValues, canViewAudience, languageOptions } = params;
   const createdBot = createdBotId ? bots.find((b) => b.id === createdBotId) : undefined;
+  const totalBots = bots.length;
+  const activeBots = bots.filter((b) => b.status === "ACTIVE").length;
+  const disabledBots = bots.filter((b) => b.status === "DISABLED").length;
+  const newestBot = bots[0];
   const cards = bots
     .map((b) => {
       const openUrl = b.telegramBotUsername ? `https://t.me/${b.telegramBotUsername}` : "#";
       const settingsBtn = canPerform(role, "bot_settings:write", email)
-        ? `<a href="/backoffice/bots/${b.id}/settings" style="text-decoration:none"><button class="secondary" type="button">Настройки</button></a>`
+        ? renderActionLink("Настройки", `/backoffice/bots/${b.id}/settings`, "primary")
         : ``;
       const rolesBtn = canPerform(role, "bot_roles:manage", email)
-        ? `<a href="/backoffice/bots/${b.id}/roles" style="text-decoration:none"><button class="secondary" type="button">${i18n.t(lang, "bo_roles_btn")}</button></a>`
+        ? renderActionLink(i18n.t(lang, "bo_roles_btn"), `/backoffice/bots/${b.id}/roles`, "secondary")
         : ``;
       const cloneBtn = canPerform(role, "bot_clone:create", email)
-        ? `<a href="/backoffice/bots/${b.id}/clone" style="text-decoration:none"><button class="secondary" type="button">Клонировать шаблон</button></a>`
+        ? renderActionLink("Клонировать шаблон", `/backoffice/bots/${b.id}/clone`, "ghost")
         : ``;
       const paidBtn = canPerform(role, "paid_access:manage", email)
-        ? `<a href="/backoffice/bots/${b.id}/paid" style="text-decoration:none"><button class="secondary" type="button">Оплаты и доступ</button></a>`
+        ? renderActionLink("Оплаты и доступ", `/backoffice/bots/${b.id}/paid`, "secondary")
         : ``;
       const audienceBtn = canViewAudience
-        ? `<a href="/backoffice/audience?bot=${encodeURIComponent(b.id)}" style="text-decoration:none"><button class="secondary" type="button">Аудитория</button></a>`
+        ? renderActionLink("Аудитория", `/backoffice/audience?bot=${encodeURIComponent(b.id)}`, "secondary")
         : ``;
+      const openBtn = renderActionLink(
+        "Открыть",
+        openUrl,
+        "ghost",
+        b.telegramBotUsername ? `target="_blank" rel="noopener noreferrer"` : `aria-disabled="true"`
+      );
+      const primaryActions = [settingsBtn, paidBtn, audienceBtn].filter(Boolean);
+      const secondaryActions = [rolesBtn, cloneBtn, openBtn].filter(Boolean);
       const createdClass = b.id === createdBotId ? " created" : "";
       const cardId = b.id === createdBotId ? ` id="bot-${b.id}"` : "";
       return `<div class="bot-card${createdClass}"${cardId}>
-          <div class="row" style="align-items:flex-start">
+          <div class="bo-panel-header">
             <div style="min-width:220px">
-              <div class="bot-title">${b.name}</div>
-              <div class="small" style="margin-top:4px">@${b.telegramBotUsername ?? "—"}</div>
+              <div class="bo-stateline">
+                <span class="pill">${escapeHtml(b.status === "ACTIVE" ? "Активен" : b.status === "DISABLED" ? "Отключён" : b.status)}</span>
+                <span class="small">Создан ${formatIsoDate(b.createdAt).slice(0, 10)}</span>
+              </div>
+              <div class="bot-title" style="margin-top:10px">${escapeHtml(b.name)}</div>
+              <div class="small" style="margin-top:6px">@${escapeHtml(b.telegramBotUsername ?? "—")}</div>
             </div>
-            <div style="text-align:right">
-              <span class="pill">${escapeHtml(b.status === "ACTIVE" ? "Активен" : b.status === "DISABLED" ? "Отключён" : b.status)}</span>
-              <div class="small" style="margin-top:6px">${b.createdAt.toISOString().slice(0, 10)}</div>
+            <div class="bo-stack bo-stack--dense" style="align-items:flex-end">
+              <div class="small">ID</div>
+              <code>${escapeHtml(b.id)}</code>
             </div>
           </div>
-          <div style="margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center">
-            <a href="${openUrl}" target="_blank" style="text-decoration:none"><button class="secondary" type="button">Открыть</button></a>
-            ${settingsBtn}
-            ${audienceBtn}
-            ${paidBtn}
-            ${rolesBtn}
-            ${cloneBtn}
+          <div class="bo-meta-grid">
+            <div class="bo-meta-tile">
+              <div class="bo-meta-label">Telegram</div>
+              <div class="bo-meta-value">${b.telegramBotUsername ? `@${escapeHtml(b.telegramBotUsername)}` : "Username не задан"}</div>
+            </div>
+            <div class="bo-meta-tile">
+              <div class="bo-meta-label">Основной контур</div>
+              <div class="bo-meta-value">${primaryActions.length ? `Доступно ${primaryActions.length} ключевых маршрута для ежедневной работы.` : "Набор действий определяется ролью backoffice-пользователя."}</div>
+            </div>
+            <div class="bo-meta-tile">
+              <div class="bo-meta-label">Публичное открытие</div>
+              <div class="bo-meta-value">${b.telegramBotUsername ? "Ссылка в Telegram доступна" : "Нужен username бота для быстрого открытия"}</div>
+            </div>
+          </div>
+          <div class="bo-action-groups">
+            <div class="bo-action-group">
+              <div class="bo-action-label">Основные действия</div>
+              <div class="bo-actions" style="justify-content:flex-start">
+                ${primaryActions.join("") || `<span class="small">Для этого бота нет основных действий в рамках текущей роли.</span>`}
+              </div>
+            </div>
+            <div class="bo-action-group bo-action-group--muted">
+              <div class="bo-action-label">Управление и утилиты</div>
+              <div class="bo-actions" style="justify-content:flex-start">
+                ${secondaryActions.join("") || `<span class="small">Дополнительные действия станут доступны по роли или после настройки username.</span>`}
+              </div>
+            </div>
           </div>
         </div>`;
     })
     .join("\n");
   const audienceLink = canViewAudience
-    ? `<a href="/backoffice/audience" style="text-decoration:none"><button class="secondary" type="button">Аудитория</button></a>`
+    ? renderActionLink("Аудитория", "/backoffice/audience", "secondary")
     : "";
   const databaseLink = canViewAudience
-    ? `<a href="/backoffice/database" style="text-decoration:none"><button class="secondary" type="button">База данных</button></a>`
+    ? renderActionLink("База данных", "/backoffice/database", "secondary")
     : "";
   const successBanner =
     createdBot && createdBotId
@@ -561,35 +1436,91 @@ export function renderDashboardBody(params: DashboardParams): string {
   const scrollScript = createdBotId
     ? `<script>(function(){var el=document.getElementById("bot-${escapeHtml(createdBotId)}");if(el&&el.scrollIntoView)el.scrollIntoView({behavior:"smooth",block:"nearest"});})();</script>`
     : "";
-  return `<div class="row" style="justify-content:space-between">
-          <div>
-            <h2 style="margin:0">Панель управления</h2>
-            <div class="small" style="margin-top:4px">Мои bot instances</div>
-          </div>
-          <div class="row" style="flex:0 0 auto; gap:8px">
-            ${audienceLink}
-            ${databaseLink}
-            <a href="/backoffice/logout" style="text-decoration:none"><button class="secondary" type="button">Выйти</button></a>
-          </div>
+  const actionCards = [
+    canViewAudience
+      ? `<div class="overview-card">
+          <div class="section-title">Аудитория</div>
+          <div class="small">Платформенный каталог пользователей, фильтры и экспорт по всем ботам.</div>
+          <div class="bo-actions" style="justify-content:flex-start; margin-top:14px">${audienceLink}</div>
+        </div>`
+      : "",
+    canViewAudience
+      ? `<div class="overview-card">
+          <div class="section-title">База данных</div>
+          <div class="small">Компактная аналитика по ботам: пользователи, рассылки, платежи и структура.</div>
+          <div class="bo-actions" style="justify-content:flex-start; margin-top:14px">${databaseLink}</div>
+        </div>`
+      : "",
+    `<div class="overview-card">
+        <div class="section-title">Сессия и навигация</div>
+        <div class="small">Создание нового бота вынесено в отдельный модуль ниже, а выход из backoffice оставлен тихим системным действием.</div>
+        <div class="bo-actions" style="justify-content:flex-start; margin-top:14px">
+          ${renderActionLink("Создать бота", "#create-bot-panel", "primary")}
+          ${renderActionLink("Выйти", "/backoffice/logout", "ghost")}
+        </div>
+      </div>`
+  ]
+    .filter(Boolean)
+    .join("");
+  return `${renderPageHeader({
+    eyebrow: "Операционный центр",
+    title: "Панель управления",
+    subtitle:
+      "Backoffice собран вокруг существующих bot instances: быстрый переход в настройки, paid workspace, аудиторию и платформенную аналитику без изменения бизнес-логики.",
+    context: [
+      `<span>Роль: <strong>${escapeHtml(role)}</strong></span>`,
+      `<span>Email: <strong>${escapeHtml(email)}</strong></span>`,
+      newestBot ? `<span>Последний созданный: <strong>${escapeHtml(newestBot.name)}</strong></span>` : `<span>Боты ещё не созданы</span>`
+    ],
+    actions: [
+      renderActionLink("Создать бота", "#create-bot-panel", "primary"),
+      audienceLink,
+      databaseLink,
+      renderActionLink("Выйти", "/backoffice/logout", "ghost")
+    ]
+      .filter(Boolean)
+      .join("")
+  })}
+        <div class="bo-kpi-grid">
+          ${renderMetricCard("Всего ботов", String(totalBots), newestBot ? `Последний: <strong>${escapeHtml(newestBot.name)}</strong>` : `Создайте первый bot instance`)}
+          ${renderMetricCard("Активные", String(activeBots), activeBots ? `${renderStatusBadge("Готовы к работе", "active")}` : `${renderStatusBadge("Нет активных", "muted")}`)}
+          ${renderMetricCard("Отключённые", String(disabledBots), disabledBots ? `${renderStatusBadge("Требуют внимания", "failed")}` : `${renderStatusBadge("Без отключений", "active")}`)}
+          ${renderMetricCard("Навигация", canViewAudience ? "3" : "1", canViewAudience ? `Dashboard · Аудитория · База данных` : `Доступен только dashboard`)}
         </div>
         ${successBanner}
-        <div style="margin-top:16px" class="grid">
-          <div>
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
-              <h3 style="margin:0">Список ботов</h3>
-              <span class="small">${bots.length} шт</span>
-            </div>
-            <div style="display:flex; flex-direction:column; gap:12px">${cards || `<div class="small">Пока нет созданных bot instances.</div>`}</div>
-          </div>
-          <div>
-            <h3 style="margin-top:0">➕ Добавить бота</h3>
-            <div class="small">Создаётся новый BotInstance + активный template (root/welcome + пустая структура).</div>
-            ${createForm}
-            <div class="small" style="margin-top:10px">
-              В целях безопасности токен не отображается. Валидатор использует <code>getMe</code>.
-            </div>
-          </div>
-        </div>
+        ${renderStageBlock({
+          eyebrow: "Навигация",
+          title: "Системные действия и платформенные переходы",
+          subtitle:
+            "Глобальные действия вынесены из списка ботов в отдельную управляющую зону, чтобы сами bot instances перестали конкурировать с platform-level навигацией.",
+          body: `<div class="bo-grid-3">${actionCards}</div>`
+        })}
+        ${renderStageBlock({
+          eyebrow: "Рабочие контуры",
+          title: "Bot instances",
+          subtitle:
+            "Карточки показывают состояние, контекст и приоритет действий быстрее, а сеточная композиция убирает ощущение длинного однотипного списка.",
+          actions: `<span class="bo-context-chip">${bots.length} шт.</span>`,
+          body:
+            cards
+              ? `<div class="bo-grid-2">${cards}</div>`
+              : renderNote("warning", `Пока нет созданных <code>bot instances</code>. Используйте модуль запуска ниже, чтобы подготовить первый рабочий контур.`)
+        })}
+        ${renderStageBlock({
+          eyebrow: "Запуск нового экземпляра",
+          title: "Создать нового бота",
+          subtitle:
+            "Создание вынесено в самостоятельный full-width модуль и больше не выглядит как побочная форма рядом со списком. Это отдельный операционный шаг с чётким контекстом и безопасными подсказками.",
+          body: `${renderSectionPanel({
+            id: "create-bot-panel",
+            title: "Новый bot instance",
+            subtitle:
+              "Заполняйте поля как launch-панель: имя, токен, username, владелец и базовый язык. Логика создания и проверка через getMe не менялись.",
+            body: `${createForm}
+              <div class="small">В целях безопасности токен не отображается после отправки. Проверка выполняется через <code>getMe</code>, а успешный бот автоматически подсвечивается в списке.`,
+            extraClass: "bo-panel--raised"
+          })}`
+        })}
         ${scrollScript}`;
 }
 
@@ -889,14 +1820,19 @@ export async function registerBackofficeRoutes(
       .map(
         (u) => `
     <tr>
-      <td><a href="/backoffice/audience/user/${encodeURIComponent(u.id)}" style="color:var(--accent)">${escapeHtml(u.id.slice(0, 8))}</a></td>
-      <td>${u.username ? `<a href="https://t.me/${escapeHtml(u.username)}" target="_blank">@${escapeHtml(u.username)}</a>` : "—"}</td>
-      <td>${escapeHtml(String(u.telegramUserId))}</td>
-      <td>${escapeHtml(u.fullName || u.firstName || "—")}</td>
-      <td>${u.botName ? escapeHtml(u.botName) : "—"}</td>
-      <td>${escapeHtml(u.selectedLanguage)}</td>
-      <td>${u.lastSeenAt ? escapeHtml(u.lastSeenAt.toISOString().slice(0, 19)) : "—"}</td>
-      <td>${escapeHtml(u.createdAt.toISOString().slice(0, 19))}</td>
+      <td>
+        <div><a href="/backoffice/audience/user/${encodeURIComponent(u.id)}"><strong>${escapeHtml(u.id.slice(0, 8))}</strong></a></div>
+        <div class="small"><code>${escapeHtml(u.id)}</code></div>
+      </td>
+      <td>${u.username ? `<div><a href="https://t.me/${escapeHtml(u.username)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(u.username)}</a></div>` : `<span class="small">—</span>`}</td>
+      <td><code>${escapeHtml(String(u.telegramUserId))}</code></td>
+      <td>
+        <div>${escapeHtml(u.fullName || u.firstName || "—")}</div>
+        <div class="small">Язык: <strong>${escapeHtml(u.selectedLanguage)}</strong></div>
+      </td>
+      <td>${u.botName ? `<strong>${escapeHtml(u.botName)}</strong>` : `<span class="small">—</span>`}</td>
+      <td>${u.lastSeenAt ? `<div>${escapeHtml(u.lastSeenAt.toISOString().slice(0, 19).replace("T", " "))}</div>` : `<span class="small">—</span>`}</td>
+      <td><div>${escapeHtml(u.createdAt.toISOString().slice(0, 19).replace("T", " "))}</div></td>
     </tr>`
       )
       .join("");
@@ -911,66 +1847,110 @@ export async function registerBackofficeRoutes(
       ? `<a href="/backoffice/audience?page=${nextPage}&perPage=${perPage}${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}">Вперёд →</a>`
       : "";
 
-    const summaryCards = `
-      <div class="row" style="gap:12px; margin-bottom:16px; flex-wrap:wrap">
-        <div class="bot-card" style="min-width:120px"><strong>${summary.totalUsers}</strong><br><span class="small">Всего пользователей</span></div>
-        <div class="bot-card" style="min-width:120px"><strong>${summary.totalBots}</strong><br><span class="small">Ботов</span></div>
-        <div class="bot-card" style="min-width:120px"><strong>${summary.multiBotUserCount}</strong><br><span class="small">В нескольких ботах</span></div>
-      </div>`;
+    const exportLinks = `
+      ${renderActionLink("HTML", `/backoffice/audience/export?format=html${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}`, "ghost")}
+      ${renderActionLink("Excel", `/backoffice/audience/export?format=xlsx${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}`, "ghost")}
+      ${renderActionLink("CSV", `/backoffice/audience/export?format=csv${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}`, "ghost")}`;
+    const hasActiveFilters = Boolean(botId || search);
 
     return reply.type("text/html").send(
       renderPage(
         "Платформа: Аудитория",
-        `<div class="row" style="justify-content:space-between; align-items:center">
-          <div>
-            <h2 style="margin:0">Аудитория</h2>
-            <div class="small" style="margin-top:4px">Централизованная база пользователей по всем ботам</div>
-          </div>
-          <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">← К списку ботов</button></a>
+        `${renderPageHeader({
+          eyebrow: "Глобальный каталог",
+          title: "Аудитория",
+          subtitle:
+            "Централизованная база пользователей по всем ботам. Фильтры и поиск остаются основным рабочим контуром, а экспорт вынесен в отдельный вторичный блок внутри того же toolbar.",
+          context: [
+            `<span>Всего в каталоге: <strong>${summary.totalUsers}</strong></span>`,
+            `<span>Ботов в выборке: <strong>${summary.totalBots}</strong></span>`,
+            botId ? `<span>Фильтр по боту активен</span>` : `<span>Показываются все боты</span>`
+          ],
+          actions: renderActionLink("← К списку ботов", "/backoffice", "secondary")
+        })}
+        <div class="bo-kpi-grid">
+          ${renderMetricCard("Всего пользователей", String(summary.totalUsers), `Текущая выборка: <strong>${total}</strong>`)}
+          ${renderMetricCard("Ботов", String(summary.totalBots), botId ? `Фильтр применён к одному боту` : `Покрытие всей платформы`)}
+          ${renderMetricCard("Мультибот-пользователи", String(summary.multiBotUserCount), `Пересечение аудиторий между ботами`)}
+          ${renderMetricCard("Страница", `${page}/${totalPages || 1}`, `По ${perPage} строк на экран`)}
         </div>
-        ${summaryCards}
-        <form method="GET" action="/backoffice/audience" style="margin-bottom:16px" class="row">
-          <div style="flex:1; min-width:140px">
-            <label>Бот</label>
-            <select name="bot">
-              <option value="">— Все боты —</option>
-              ${botOptions}
-            </select>
-          </div>
-          <div style="flex:1; min-width:180px">
-            <label>Поиск (username, id, имя)</label>
-            <input name="search" type="text" value="${escapeHtml(search)}" placeholder="Поиск..." />
-          </div>
-          <div style="flex:0 0 auto; align-self:flex-end; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-            <button type="submit">Применить</button>
-            <span class="small" style="color:#94a3b8">Экспорт:</span>
-            <a href="/backoffice/audience/export?format=html${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}" style="display:inline-block; text-decoration:none; padding:8px 12px; font-size:13px; border-radius:10px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#e5e7eb">HTML</a>
-            <a href="/backoffice/audience/export?format=xlsx${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}" style="display:inline-block; text-decoration:none; padding:8px 12px; font-size:13px; border-radius:10px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#e5e7eb">Excel</a>
-            <a href="/backoffice/audience/export?format=csv${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}" style="display:inline-block; text-decoration:none; padding:8px 12px; font-size:13px; border-radius:10px; border:1px solid rgba(255,255,255,0.16); background:rgba(255,255,255,0.08); color:#e5e7eb">CSV</a>
-          </div>
-        </form>
-        <div class="table-wrap" style="overflow-x:auto">
-          <table style="width:100%; border-collapse:collapse">
-            <thead>
-              <tr>
-                <th style="text-align:left; padding:8px">ID</th>
-                <th style="text-align:left; padding:8px">Username</th>
-                <th style="text-align:left; padding:8px">Telegram ID</th>
-                <th style="text-align:left; padding:8px">Имя</th>
-                <th style="text-align:left; padding:8px">Бот</th>
-                <th style="text-align:left; padding:8px">Язык</th>
-                <th style="text-align:left; padding:8px">Последняя активность</th>
-                <th style="text-align:left; padding:8px">Регистрация</th>
-              </tr>
-            </thead>
-            <tbody>${tableRows || "<tr><td colspan='8' class='small'>Нет пользователей</td></tr>"}
-            </tbody>
-          </table>
-        </div>
-        <div class="row" style="margin-top:12px; justify-content:space-between">
-          <span class="small">Страница ${page} из ${totalPages || 1} · Всего: ${total}</span>
-          <span>${prevLink} ${nextLink ? ` · ${nextLink}` : ""}</span>
-        </div>`
+        ${renderStageBlock({
+          eyebrow: "Сегментация",
+          title: "Поиск, фильтры и экспорт",
+          subtitle:
+            "Фильтрация остаётся первичным действием для операторов. Экспорт вынесен в отдельный вторичный модуль, чтобы таблица ощущалась рабочим directory view, а не экраном выгрузки.",
+          body: `<div class="bo-split-utility">
+              ${renderSectionPanel({
+                title: "Рабочий фильтр",
+                subtitle: "Сузьте каталог по боту или по строкам профиля, не меняя существующую query-схему.",
+                body: `<form method="GET" action="/backoffice/audience" class="bo-stack bo-stack--dense">
+                    <div class="bo-toolbar-main">
+                      <div>
+                        <label>Бот</label>
+                        <select name="bot">
+                          <option value="">— Все боты —</option>
+                          ${botOptions}
+                        </select>
+                      </div>
+                      <div>
+                        <label>Поиск (username, id, имя)</label>
+                        <input name="search" type="text" value="${escapeHtml(search)}" placeholder="Поиск по каталогу..." />
+                      </div>
+                    </div>
+                    <div class="bo-actions" style="justify-content:flex-start">
+                      <button type="submit">Применить фильтр</button>
+                      ${hasActiveFilters ? renderActionLink("Сбросить", "/backoffice/audience", "ghost") : ""}
+                    </div>
+                  </form>`,
+                extraClass: "bo-panel--raised"
+              })}
+              ${renderSectionPanel({
+                title: "Экспорт выборки",
+                subtitle: "Все выгрузки сохраняют текущие фильтры и поиск. Форматы не убраны, но больше не спорят за внимание с сегментацией.",
+                body: `<div class="bo-stack bo-stack--dense">
+                    <div class="bo-export-list">${exportLinks}</div>
+                    <div class="bo-data-caption">HTML удобно для быстрых ручных просмотров, Excel и CSV оставлены для последующей аналитики и передачи данных.</div>
+                    ${renderNote("info", hasActiveFilters ? "Выгрузка будет построена по текущей отфильтрованной выборке." : "Сейчас выгружается весь каталог пользователей по всем ботам.")}
+                  </div>`,
+                extraClass: "bo-panel--utility"
+              })}
+            </div>`
+        })}
+        ${renderStageBlock({
+          eyebrow: "Directory view",
+          title: "Каталог пользователей",
+          subtitle:
+            "ID и технические поля остались доступны, но теперь у таблицы есть явный directory-контекст: профиль и временные метки отделены, а навигация по страницам утяжелена меньше.",
+          actions: `<span class="bo-context-chip">Всего: ${total}</span>`,
+          body: `${renderSectionPanel({
+            title: "Пользователи",
+            subtitle: "Текущая выборка каталога со всеми прежними ссылками в карточку пользователя и фильтрами по ботам.",
+            body: `<div class="bo-table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID пользователя</th>
+                      <th>Username</th>
+                      <th>Telegram ID</th>
+                      <th>Профиль</th>
+                      <th>Бот</th>
+                      <th>Последняя активность</th>
+                      <th>Регистрация</th>
+                    </tr>
+                  </thead>
+                  <tbody>${tableRows || "<tr><td colspan='7' class='small'>Нет пользователей</td></tr>"}</tbody>
+                </table>
+              </div>
+              <div class="row" style="justify-content:space-between; margin-top:14px">
+                <span class="small">Страница ${page} из ${totalPages || 1} · Всего строк: ${total}</span>
+                <div class="bo-actions" style="justify-content:flex-end">
+                  ${prevLink ? renderActionLink("← Назад", `/backoffice/audience?page=${prevPage}&perPage=${perPage}${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}`, "ghost") : ""}
+                  ${nextLink ? renderActionLink("Вперёд →", `/backoffice/audience?page=${nextPage}&perPage=${perPage}${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}`, "ghost") : ""}
+                </div>
+              </div>`,
+            extraClass: "bo-panel--raised"
+          })}`
+        })}`
       )
     );
   });
@@ -1314,15 +2294,17 @@ export async function registerBackofficeRoutes(
       .map(
         (row) => `
     <tr>
-      <td style="padding:10px 12px"><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}">${escapeHtml(row.botName)}</a></td>
-      <td style="padding:10px 12px"><span class="small">@${escapeHtml(row.username ?? "—")}</span></td>
-      <td style="padding:10px 12px; text-align:right"><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}">${row.stats.users}</a></td>
-      <td style="padding:10px 12px; text-align:right">${row.stats.broadcasts}</td>
-      <td style="padding:10px 12px; text-align:right">${row.stats.dripCampaigns}</td>
-      <td style="padding:10px 12px; text-align:right">${row.stats.payments}</td>
-      <td style="padding:10px 12px; text-align:right">${row.stats.paidPayments}</td>
-      <td style="padding:10px 12px; text-align:right">${row.stats.templates}</td>
-      <td style="padding:10px 12px; text-align:right">${row.stats.menuItems}</td>
+      <td>
+        <div><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}"><strong>${escapeHtml(row.botName)}</strong></a></div>
+        <div class="small">@${escapeHtml(row.username ?? "—")} · ${renderStatusBadge(row.stats.users > 0 ? "Есть данные" : "Пусто", row.stats.users > 0 ? "active" : "muted")}</div>
+      </td>
+      <td class="table-number"><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}">${row.stats.users}</a></td>
+      <td class="table-number">${row.stats.broadcasts}</td>
+      <td class="table-number">${row.stats.dripCampaigns}</td>
+      <td class="table-number">${row.stats.payments}</td>
+      <td class="table-number">${row.stats.paidPayments}</td>
+      <td class="table-number">${row.stats.templates}</td>
+      <td class="table-number">${row.stats.menuItems}</td>
     </tr>`
       )
       .join("");
@@ -1339,54 +2321,103 @@ export async function registerBackofficeRoutes(
       }),
       { users: 0, broadcasts: 0, dripCampaigns: 0, payments: 0, paidPayments: 0, templates: 0, menuItems: 0 }
     );
+    const botsWithUsers = statsByBot.filter((row) => row.stats.users > 0).length;
+    const botsWithPayments = statsByBot.filter((row) => row.stats.payments > 0).length;
+    const emptyBots = statsByBot.filter((row) => row.stats.users === 0 && row.stats.payments === 0 && row.stats.menuItems === 0).length;
 
     const totalsRow =
       statsByBot.length > 1
         ? `
-    <tr style="border-top:2px solid rgba(255,255,255,0.2); font-weight:600">
-      <td style="padding:10px 12px" colspan="2">Всего</td>
-      <td style="padding:10px 12px; text-align:right">${totals.users}</td>
-      <td style="padding:10px 12px; text-align:right">${totals.broadcasts}</td>
-      <td style="padding:10px 12px; text-align:right">${totals.dripCampaigns}</td>
-      <td style="padding:10px 12px; text-align:right">${totals.payments}</td>
-      <td style="padding:10px 12px; text-align:right">${totals.paidPayments}</td>
-      <td style="padding:10px 12px; text-align:right">${totals.templates}</td>
-      <td style="padding:10px 12px; text-align:right">${totals.menuItems}</td>
+    <tr style="border-top:2px solid rgba(255,255,255,0.14); font-weight:700; background:rgba(255,255,255,0.03)">
+      <td>Всего</td>
+      <td class="table-number">${totals.users}</td>
+      <td class="table-number">${totals.broadcasts}</td>
+      <td class="table-number">${totals.dripCampaigns}</td>
+      <td class="table-number">${totals.payments}</td>
+      <td class="table-number">${totals.paidPayments}</td>
+      <td class="table-number">${totals.templates}</td>
+      <td class="table-number">${totals.menuItems}</td>
     </tr>`
         : "";
 
     return reply.type("text/html").send(
       renderPage(
         "База данных по ботам",
-        `<div class="row" style="justify-content:space-between; align-items:center">
-          <div>
-            <h2 style="margin:0">База данных</h2>
-            <div class="small" style="margin-top:4px">Статистика по каждому боту</div>
-          </div>
-          <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">← К списку ботов</button></a>
+        `${renderPageHeader({
+          eyebrow: "Platform analytics",
+          title: "База данных",
+          subtitle:
+            "Компактный обзор по каждому боту: пользователи, рассылки, цепочки, платежи и активные элементы структуры. Страница стала аналитическим workspace, а не пустым табличным листом.",
+          context: [
+            `<span>Ботов в отчёте: <strong>${statsByBot.length}</strong></span>`,
+            `<span>Пользователей суммарно: <strong>${totals.users}</strong></span>`,
+            `<span>Платежей суммарно: <strong>${totals.payments}</strong></span>`
+          ],
+          actions: renderActionLink("← К списку ботов", "/backoffice", "secondary")
+        })}
+        <div class="bo-kpi-grid">
+          ${renderMetricCard("Пользователи", String(totals.users), `По всем ботам в базе`)}
+          ${renderMetricCard("Рассылки", String(totals.broadcasts), `Активность коммуникаций`)}
+          ${renderMetricCard("Платежи", String(totals.payments), `Оплачено: <strong>${totals.paidPayments}</strong>`)}
+          ${renderMetricCard("Шаблоны и меню", `${totals.templates} / ${totals.menuItems}`, `Активные шаблоны и пункты меню`)}
         </div>
-        <div class="table-wrap" style="overflow-x:auto; margin-top:20px">
-          <table style="width:100%; border-collapse:collapse">
-            <thead>
-              <tr>
-                <th style="text-align:left; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Бот</th>
-                <th style="text-align:left; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Username</th>
-                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Пользователи</th>
-                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Рассылки</th>
-                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Цепочки</th>
-                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Платежи</th>
-                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Оплачено</th>
-                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Шаблоны</th>
-                <th style="text-align:right; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,0.2)">Пункты меню</th>
-              </tr>
-            </thead>
-            <tbody>${tableRows || "<tr><td colspan='9' class='small'>Нет ботов</td></tr>"}${totalsRow}
-            </tbody>
-          </table>
-        </div>
-        <div class="small" style="margin-top:12px; color:#94a3b8">
-          Клик по числу пользователей — переход к списку аудитории с фильтром по боту.
-        </div>`
+        ${renderStageBlock({
+          eyebrow: "Снимок платформы",
+          title: "Охват и насыщенность данных",
+          subtitle:
+            "Этот слой даёт быстрый ответ, насколько система живая: сколько ботов реально наполнены данными, где уже есть платежи и какие контуры пока пустые.",
+          body: `<div class="bo-split-utility">
+              ${renderSectionPanel({
+                title: "Качество наполнения",
+                subtitle: "Показатели не меняют логику отчёта, но помогают сразу понять, насколько платформа операционно насыщена.",
+                body: `<div class="bo-kpi-grid">
+                    ${renderMetricCard("Боты с пользователями", String(botsWithUsers), `${renderStatusBadge(botsWithUsers ? "Есть активная база" : "Пока пусто", botsWithUsers ? "active" : "muted")}`, "bo-kpi-card--compact")}
+                    ${renderMetricCard("Боты с платежами", String(botsWithPayments), `${renderStatusBadge(botsWithPayments ? "Коммерческий контур активен" : "Платежей нет", botsWithPayments ? "active" : "pending")}`, "bo-kpi-card--compact")}
+                    ${renderMetricCard("Пустые контуры", String(emptyBots), emptyBots ? `${renderStatusBadge("Есть неинициализированные боты", "pending")}` : `${renderStatusBadge("Пустых контуров нет", "active")}`, "bo-kpi-card--compact")}
+                  </div>`,
+                extraClass: "bo-panel--raised"
+              })}
+              ${renderSectionPanel({
+                title: "Как читать страницу",
+                subtitle: "Таблица ниже остаётся источником истины по каждому боту, а быстрые выводы справа помогают не теряться в сухих числах.",
+                body: `<div class="bo-stack bo-stack--dense">
+                    <div class="bo-data-caption">Имя бота и статус наполненности стоят первыми, чтобы оператор сразу отделял живые контуры от пустых. Число пользователей по-прежнему ведёт в аудиторию с фильтром.</div>
+                    ${renderNote("info", `Всего в отчёте <strong>${statsByBot.length}</strong> ботов. Суммарно <strong>${totals.users}</strong> пользователей и <strong>${totals.payments}</strong> платежей.`)}
+                  </div>`,
+                extraClass: "bo-panel--utility"
+              })}
+            </div>`
+        })}
+        ${renderStageBlock({
+          eyebrow: "Пер-бот аналитика",
+          title: "Статистика по ботам",
+          subtitle:
+            "Основная таблица оставлена компактной, но визуально усилена как аналитический модуль: заголовок, числовой ритм и итоговая строка читаются заметно быстрее.",
+          actions: `<span class="bo-context-chip">Ботов: ${statsByBot.length}</span>`,
+          body: `${renderSectionPanel({
+            title: "Статистика по ботам",
+            subtitle: "Сначала имя и статус наполненности, затем численные показатели. Итоговая строка сохранена и усилена визуально.",
+            body: `<div class="bo-table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Бот</th>
+                      <th class="table-number">Пользователи</th>
+                      <th class="table-number">Рассылки</th>
+                      <th class="table-number">Цепочки</th>
+                      <th class="table-number">Платежи</th>
+                      <th class="table-number">Оплачено</th>
+                      <th class="table-number">Шаблоны</th>
+                      <th class="table-number">Пункты меню</th>
+                    </tr>
+                  </thead>
+                  <tbody>${tableRows || "<tr><td colspan='8' class='small'>Нет ботов</td></tr>"}${totalsRow}</tbody>
+                </table>
+              </div>
+              <div class="small" style="margin-top:12px">Клик по числу пользователей сохраняет прежний маршрут и ведёт в аудиторию с фильтром по выбранному боту.</div>`,
+            extraClass: "bo-panel--raised"
+          })}`
+        })}`
       )
     );
   });
@@ -2657,7 +3688,7 @@ export async function registerBackofficeRoutes(
         PENDING: { label: "В ожидании", tone: "pending" },
         UNPAID: { label: "Не оплачено", tone: "pending" },
         BATCHED: { label: "В пакете выплаты", tone: "pending" },
-        FAILED: { label: "Ошибка", tone: "failed" },
+        FAILED: { label: "FAILED", tone: "failed" },
         CANCELLED: { label: "Отменено", tone: "failed" },
         REJECTED: { label: "Отклонено", tone: "failed" },
         EXPIRED: { label: "Истекло", tone: "expired" },
@@ -2695,7 +3726,7 @@ export async function registerBackofficeRoutes(
       const job = expiryJobByAccessId.get(accessRightId);
       if (!job) return `<span class="small">—</span>`;
       if (job.status === "FAILED") {
-        return `${renderStatusBadge("Ошибка удаления", "failed")}<div class="small" style="margin-top:4px">${escapeHtml(job.errorMessage ?? "неизвестная ошибка")}</div>`;
+        return `${renderStatusBadge("FAILED", "failed")}<div class="small" style="margin-top:4px">Ошибка удаления: ${escapeHtml(job.errorMessage ?? "неизвестная ошибка")}</div>`;
       }
       return `${renderPaymentStatus(job.status)}<div class="small" style="margin-top:4px">${formatIsoDate(job.runAt)}</div>`;
     };
@@ -2718,25 +3749,40 @@ export async function registerBackofficeRoutes(
 
       return `<div class="product-card">
         <div class="product-card-header">
-          <span><b>${escapeHtml(loc?.title ?? product.code)}</b></span>
-          ${renderProductModeBadge(product)}
-          ${renderStatusBadge(product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "Временный доступ" : "Бессрочно", product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "pending" : "active")}
-          <span class="small">${escapeHtml(formatMoney(product.price))} ${escapeHtml(product.currency)} · ${escapeHtml(formatProductDuration(product))}</span>
+          <div>
+            <div class="bo-stateline">
+              ${renderProductModeBadge(product)}
+              ${renderStatusBadge(product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "Временный доступ" : "Бессрочно", product.billingType === "TEMPORARY" || Number(product.durationMinutes ?? 0) > 0 ? "pending" : "active")}
+            </div>
+            <div style="font-size:20px; font-weight:700; letter-spacing:-0.02em; margin-top:10px">${escapeHtml(loc?.title ?? product.code)}</div>
+            <div class="small" style="margin-top:6px">${escapeHtml(formatMoney(product.price))} ${escapeHtml(product.currency)} · ${escapeHtml(formatProductDuration(product))}</div>
+          </div>
           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/archive" style="margin-left:auto">
             <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Архивировать</button>
           </form>
         </div>
 
-        <div class="row" style="margin-bottom:12px">
-          <div class="small">Привязан к разделам: ${sections.length ? sections.map((item) => `<code>${escapeHtml(item)}</code>`).join(", ") : "— пока не привязан"}</div>
-          <div class="small">CTA в боте: <code>${escapeHtml(loc?.payButtonText ?? "Оплатить")}</code></div>
-          <div>${renderLinkedChatReadiness(product)}</div>
+        <div class="bo-grid-2" style="margin-bottom:16px">
+          <div class="bo-note bo-note--info">
+            <strong>Привязка и CTA</strong><br>
+            Разделы: ${sections.length ? sections.map((item) => `<code>${escapeHtml(item)}</code>`).join(", ") : "<span class=\"small\">пока не привязан</span>"}<br>
+            Кнопка в боте: <code>${escapeHtml(loc?.payButtonText ?? "Оплатить")}</code>
+          </div>
+          <div class="${removalWarning ? "warning-card" : "bo-note bo-note--success"}">
+            <strong>Готовность доступа</strong><br>
+            ${renderLinkedChatReadiness(product)}${diagnostics.hasLinkedChats ? ` · <span class="small">ссылок ${diagnostics.displayLinkCount}, ID для удаления ${diagnostics.banIdentifierCount}</span>` : ""}
+            ${removalWarning ? `<div class="small" style="margin-top:6px; color:inherit">${escapeHtml(removalWarning)}</div>` : ""}
+          </div>
         </div>
-        ${removalWarning ? `<div class="warning-card" style="margin-bottom:12px">${escapeHtml(removalWarning)}</div>` : ""}
-        ${diagnostics.hasLinkedChats ? `<div class="small" style="margin-bottom:12px">Связанные чаты: ссылок ${diagnostics.displayLinkCount} · ID для удаления ${diagnostics.banIdentifierCount}</div>` : ""}
 
-        <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/update">
-          <div class="section-title">Основное</div>
+        <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/update" class="bo-stack">
+          <div class="bo-form-cluster">
+            <div class="bo-form-cluster-head">
+              <div>
+                <div class="bo-form-cluster-title">Основное и цена</div>
+                <div class="bo-form-cluster-copy">Оффер, CTA и финансовые параметры продукта собраны в одном базовом модуле.</div>
+              </div>
+            </div>
           <div class="product-form-grid">
             <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required value="${escapeHtml(loc?.title ?? "")}" /></div>
             <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required value="${escapeHtml(loc?.payButtonText ?? "")}" /></div>
@@ -2750,8 +3796,15 @@ export async function registerBackofficeRoutes(
             </div>
             <div class="field-wrap"><label class="small">Дней доступа (LIVE)</label><input name="durationDays" type="number" min="1" value="${product.durationDays ?? ""}" placeholder="30" /></div>
           </div>
+          </div>
 
-          <div class="section-title">Платежи и доступ</div>
+          <div class="bo-form-cluster">
+            <div class="bo-form-cluster-head">
+              <div>
+                <div class="bo-form-cluster-title">Платежи и доступ</div>
+                <div class="bo-form-cluster-copy">LIVE и TEST остаются явно разделёнными: дни управляют production, минуты управляют лабораторным сценарием.</div>
+              </div>
+            </div>
           <div class="product-form-grid">
             <div class="field-wrap"><label class="small">Минуты доступа для TEST</label><input name="durationMinutes" type="number" min="1" max="1440" value="${product.durationMinutes ?? ""}" placeholder="пусто = live" /></div>
           </div>
@@ -2777,18 +3830,34 @@ export async function registerBackofficeRoutes(
             <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
             <div class="small" style="margin-top:4px">Для приватного чата можно хранить и ссылку для входа, и identifier для ban/unban в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда пользователь войдёт по invite-link, а бот сможет удалить его по expiry.</div>
           </div>
-          <div style="margin-top:12px">
+          </div>
+
+          <div class="bo-form-cluster">
+            <div class="bo-form-cluster-head">
+              <div>
+                <div class="bo-form-cluster-title">Описание и оффер</div>
+                <div class="bo-form-cluster-copy">Пользовательский текст отделён от технических настроек, чтобы продукт редактировался как коммерческая карточка, а не как raw-форма.</div>
+              </div>
+            </div>
+          <div>
             <label class="small">Описание на экране оплаты / тарифы (ru)</label>
             <textarea name="descriptionRu" rows="2">${escapeHtml(loc?.description ?? "")}</textarea>
             <div class="small" style="margin-top:4px">Показывается пользователю в едином инвойсе сразу под названием продукта. Сюда пишите оффер, тарифы, бонусы и что откроется после оплаты.</div>
           </div>
-          <button type="submit" style="margin-top:16px">Сохранить</button>
+          </div>
+          <div class="bo-actions" style="justify-content:flex-start">
+            <button type="submit">Сохранить продукт</button>
+          </div>
         </form>
 
         ${
           opts.allowSimulate
             ? `<div class="section-title">Быстрый ручной тест</div>
-               <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/simulate-payment" class="form-row">
+               <div class="bo-note bo-note--warning">
+                 <strong>Тестовый прогон lifecycle</strong><br>
+                 Проверяет grant → invite links → reminders → expiry → removal в ускоренном режиме, не меняя production-маршрут.
+               </div>
+               <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/${escapeHtml(product.id)}/simulate-payment" class="form-row" style="margin-top:12px">
                  <div class="field" style="min-width:220px; max-width:320px">
                    <select name="userId" required>
                      <option value="">— Выберите пользователя —</option>
@@ -2796,8 +3865,7 @@ export async function registerBackofficeRoutes(
                    </select>
                  </div>
                  <div class="btn"><button type="submit" class="secondary">Выдать тестовый доступ</button></div>
-               </form>
-               <div class="small" style="margin-top:6px">Проверит grant → invite links → reminders → expiry → removal в ускоренном режиме.</div>`
+               </form>`
             : ""
         }
       </div>`;
@@ -2946,371 +4014,524 @@ export async function registerBackofficeRoutes(
            : ""
        }`;
 
+    const topStateBanners = [
+      simulateOk
+        ? renderNote(
+            "success",
+            "Тестовый сценарий запущен: доступ выдан, reminders и expiry/removal будут обработаны по policy продукта."
+          )
+        : "",
+      simulateError ? renderNote("danger", escapeHtml(simulateError), "Ошибка тестового сценария") : "",
+      paidPageError ? renderNote("danger", escapeHtml(paidPageError), "Ошибка операции") : "",
+      misconfiguredProducts.length
+        ? renderNote(
+            "warning",
+            `Найдены продукты с истечением без привязки чатов, пригодных для удаления: ${misconfiguredProducts
+              .map((product) => `<code>${escapeHtml(productLabelById.get(product.id) ?? product.code)}</code>`)
+              .join(", ")}. Кнопки приглашения покажутся, но гарантировать удаление по expiry нельзя.`
+          )
+        : ""
+    ]
+      .filter(Boolean)
+      .join("");
+
+    const bindingsTable = menuItems.length
+      ? `<div class="bo-table-shell"><table class="paid-table">
+           <thead><tr><th>Раздел</th><th>Статус</th><th>Продукт и режим</th><th>CTA в боте</th><th>Действие</th></tr></thead>
+           <tbody>
+             ${menuItems
+               .map((mi) => {
+                 const title = mi.localizations[0]?.title ?? mi.key;
+                 const product = mi.productId ? products.find((item) => item.id === mi.productId) : null;
+                 const productLabel = mi.productId ? productLabelById.get(mi.productId) ?? mi.productId : null;
+                 const productButtonText = product ? productLoc(product)?.payButtonText ?? "Оплатить" : "—";
+                 return mi.productId
+                   ? `<tr>
+                        <td><strong>${escapeHtml(title)}</strong><div class="small">Раздел закрыт и привязан к продукту</div></td>
+                        <td>${renderStatusBadge("Закрыто", "pending")}</td>
+                        <td><code>${escapeHtml(productLabel ?? "")}</code> ${product ? renderProductModeBadge(product) : ""}</td>
+                        <td><code>${escapeHtml(productButtonText)}</code></td>
+                        <td>
+                          <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/unlock" style="display:inline">
+                            <button type="submit" class="secondary">Снять блокировку</button>
+                          </form>
+                        </td>
+                      </tr>`
+                   : `<tr>
+                        <td><strong>${escapeHtml(title)}</strong><div class="small">Раздел открыт и доступен без оплаты</div></td>
+                        <td>${renderStatusBadge("Открыто", "active")}</td>
+                        <td>
+                          <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" style="margin:0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; max-width:560px">
+                            <div class="field" style="min-width:220px; flex:1 1 260px">
+                              <select name="productId" required class="field" style="width:100%">
+                                ${productSelectOptions}
+                              </select>
+                            </div>
+                            <div class="btn" style="flex:0 0 auto"><button type="submit">Привязать продукт</button></div>
+                          </form>
+                        </td>
+                        <td>—</td>
+                        <td><span class="small">После привязки появится CTA оплаты</span></td>
+                      </tr>`;
+               })
+               .join("")}
+           </tbody>
+         </table></div>`
+      : renderNote("warning", "Нет пунктов меню для настройки paid access.");
+
+    const liveCreateBlock = `<div class="bo-note bo-note--info">
+         Live-продукты работают по production-логике: стандартный duration в днях, реальные продажи и штатный контур доступа. TEST-логика вынесена в отдельную лабораторию ниже.
+       </div>
+       <div class="bo-panel" style="margin-top:16px">
+         <div class="bo-section-head">
+           <div>
+             <h3 class="bo-section-title">Создать live-product</h3>
+             <div class="bo-section-text">Создание production-продукта без ускоренных минутных таймеров.</div>
+           </div>
+         </div>
+         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create" class="bo-stack">
+           <div class="product-form-grid">
+             <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required placeholder="Обучение / VIP доступ" /></div>
+             <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить обучение" /></div>
+             <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="10" /></div>
+             <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="USDT" /></div>
+             <div class="field-wrap"><label class="small">Тип</label>
+               <select name="billingType">
+                 <option value="ONE_TIME">Разовая продажа</option>
+                 <option value="TEMPORARY" selected>Временный доступ (подписка)</option>
+               </select>
+             </div>
+             <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" placeholder="30" /></div>
+           </div>
+           <details>
+             <summary class="small">Платежи и доступ</summary>
+             <div class="bo-stack" style="margin-top:12px">
+               <div>
+                 <label class="small">Ссылки доступа в чат / канал</label>
+                 <div class="linked-chat-grid">
+                   <div class="linked-chat-card">
+                     <div class="title">Кнопка 1</div>
+                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
+                     <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
+                     <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
+                     <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+                   </div>
+                   <div class="linked-chat-card">
+                     <div class="title">Кнопка 2</div>
+                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
+                     <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
+                     <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
+                     <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+                   </div>
+                 </div>
+                 <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
+                 <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
+                 <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
+               </div>
+               <div>
+                 <label class="small">Описание на экране оплаты / тарифы (ru)</label>
+                 <textarea name="descriptionRu" rows="2"></textarea>
+                 <div class="small" style="margin-top:4px">Показывается пользователю в едином инвойсе сразу под названием продукта. Сюда удобно писать тарифы и то, что человек получит после оплаты.</div>
+               </div>
+             </div>
+           </details>
+           <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Создать live-product</button></div>
+         </form>
+       </div>`;
+
+    const testCreateBlock = `<div class="bo-note bo-note--warning">
+         TEST-логика остаётся полностью явной: source of truth — <code>durationMinutes &gt; 0</code>, reminders идут за <strong>3 / 2 / 1 минуты</strong>, а expiry/removal отрабатывают в ускоренном режиме.
+       </div>
+       <div class="bo-panel test-block" style="margin-top:16px">
+         <div class="bo-section-head">
+           <div>
+             <h3 class="bo-section-title">Создать тестовый продукт</h3>
+             <div class="bo-section-text">Изолированная лаборатория для быстрого прогона полного access lifecycle.</div>
+           </div>
+         </div>
+         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create" class="bo-stack">
+           <input type="hidden" name="billingType" value="TEMPORARY" />
+           <input type="hidden" name="currency" value="USDT" />
+           <div class="product-form-grid">
+             <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required placeholder="Тест: обучение 5 мин" /></div>
+             <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required value="Оплатить тест" /></div>
+             <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="1" /></div>
+             <div class="field-wrap"><label class="small">Срок в минутах</label><input name="durationMinutes" type="number" required min="1" max="1440" value="5" /></div>
+           </div>
+           <div>
+             <label class="small">Ссылки доступа в чат / канал</label>
+             <div class="linked-chat-grid">
+               <div class="linked-chat-card">
+                 <div class="title">Кнопка 1</div>
+                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
+                 <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
+                 <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
+                 <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+               </div>
+               <div class="linked-chat-card">
+                 <div class="title">Кнопка 2</div>
+                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
+                 <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
+                 <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
+                 <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+               </div>
+             </div>
+             <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
+             <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
+           </div>
+           <div>
+             <label class="small">Описание на экране оплаты / тарифы (ru)</label>
+             <textarea name="descriptionRu" rows="2" placeholder="Тестовый продукт для прогона access lifecycle"></textarea>
+             <div class="small" style="margin-top:4px">Показывается в едином инвойсе тестового продукта сразу под названием. Здесь удобно описать оффер, тариф и что откроется после оплаты.</div>
+           </div>
+           <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Создать тестовый продукт</button></div>
+         </form>
+         <div class="small" style="margin-top:8px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats. Для приватного чата используйте либо <code>https://t.me/c/1234567890/1</code>, либо комбинированный формат <code>https://t.me/+inviteHash | -1001234567890</code>. Тогда пользователь войдёт по invite-link, а ban/unban пойдёт по identifier.</div>
+       </div>`;
+
+    const paymentEventsTable = paymentEvents.length
+      ? `<div class="events-scroll"><table class="paid-table">
+           <thead><tr><th>Когда</th><th>Событие</th><th>Пользователь</th><th>Продукт</th><th>Сумма</th><th>Статус</th><th>Референс / заказ</th><th>Кошелёк</th></tr></thead>
+           <tbody>
+             ${paymentEvents
+               .map(
+                 (event) => `<tr>
+                   <td>${formatIsoDate(event.createdAt)}</td>
+                   <td><code>${escapeHtml(event.kind)}</code></td>
+                   <td>${renderUserLabel(event.user)}</td>
+                   <td>${escapeHtml(event.productLabel)}</td>
+                   <td>${escapeHtml(event.amount)}</td>
+                   <td>${renderPaymentStatus(event.status)}</td>
+                   <td class="mono-wrap"><code>${escapeHtml(event.note)}</code></td>
+                   <td class="wallet-col"><code>${escapeHtml(event.walletAddress ?? "-")}</code></td>
+                 </tr>`
+               )
+               .join("")}
+           </tbody>
+         </table></div>`
+      : `<div class="small">Пока нет событий платежей.</div>`;
+
+    const accessAuditTable = recentAccessRights.length
+      ? `<div class="bo-table-shell"><table class="paid-table">
+           <thead><tr><th>Пользователь</th><th>Продукт</th><th>Режим</th><th>Статус</th><th>Истекает</th><th>Чаты</th><th>Напоминания</th><th>Истечение / удаление</th></tr></thead>
+           <tbody>
+             ${recentAccessRights
+               .map((right) => {
+                 const loc =
+                   right.product.localizations.find((item) => item.languageCode === baseLang) ??
+                   right.product.localizations.find((item) => item.languageCode === "ru") ??
+                   right.product.localizations[0];
+                 return `<tr>
+                   <td>${renderUserLabel(right.user)}</td>
+                   <td>${escapeHtml(loc?.title ?? right.product.code)}</td>
+                   <td>${renderProductModeBadge(right.product)}</td>
+                   <td>${renderAccessStatus(right)}</td>
+                   <td>${formatIsoDate(right.activeUntil)}</td>
+                   <td>${renderLinkedChatReadiness(right.product)}</td>
+                   <td>${renderReminderSummary(right.id)}</td>
+                   <td>${renderExpirySummary(right.id)}</td>
+                 </tr>`;
+               })
+               .join("")}
+           </tbody>
+         </table></div>`
+      : `<div class="small">Пока нет событий доступа для этого бота.</div>`;
+
     return reply.type("text/html").send(
       renderPage(
         "Платный доступ",
-        `<h2 style="margin-top:0">Оплаты и доступ</h2>
-         <div class="small" style="margin-top:6px">Бот: <code>${escapeHtml(bot.id)}</code></div>
-         ${simulateOk ? `<div class="success" style="margin-top:12px">Тестовый сценарий запущен: доступ выдан, reminders и expiry/removal будут отработаны по policy продукта.</div>` : ""}
-         ${simulateError ? `<div class="error" style="margin-top:12px">Ошибка тестового сценария: ${escapeHtml(simulateError)}</div>` : ""}
-         ${paidPageError ? `<div class="error" style="margin-top:12px">${escapeHtml(paidPageError)}</div>` : ""}
-         ${misconfiguredProducts.length ? `<div class="warning-card" style="margin-top:12px">Найдены продукты с истечением без привязки чатов, пригодных для удаления. Кнопки приглашения покажутся, но по истечении срока нельзя гарантировать исключение из чата/канала: ${misconfiguredProducts.map((product) => `<code>${escapeHtml(productLabelById.get(product.id) ?? product.code)}</code>`).join(", ")}</div>` : ""}
-
-         <div class="paid-nav">
-           <a href="#overview"><button class="secondary" type="button">Обзор</button></a>
-           <a href="#bindings"><button class="secondary" type="button">Контент и доступ</button></a>
-           <a href="#live-products"><button class="secondary" type="button">Боевые продукты</button></a>
-           <a href="#test-lab"><button class="secondary" type="button">Тестовая лаборатория</button></a>
-           <a href="#payments-balance"><button class="secondary" type="button">Платежи / баланс</button></a>
-           <a href="#nowpayments"><button class="secondary" type="button">NOWPayments / выплаты</button></a>
-           <a href="#access-audit"><button class="secondary" type="button">Аудит доступа</button></a>
-         </div>
-
-         <div id="overview" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Обзор</h3>
-           <div class="small">Сводка для владельца: продукты, закрытые разделы, истекающие доступы и ошибки при удалении из чатов.</div>
-           <div class="overview-grid">
-             <div class="overview-card"><div class="small">Платный доступ</div><div class="value">${bot.paidAccessEnabled ? "Вкл" : "Выкл"}</div><div style="margin-top:6px">${bot.paidAccessEnabled ? renderStatusBadge("Активен", "active") : renderStatusBadge("Выключен", "failed")}</div></div>
-             <div class="overview-card"><div class="small">Закрытые разделы</div><div class="value">${menuItems.filter((item) => Boolean(item.productId)).length}</div><div class="small" style="margin-top:6px">${menuItems.length} всего разделов</div></div>
-             <div class="overview-card"><div class="small">Продукты</div><div class="value">${products.length}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Боевые ${liveProducts.length}`, "live")} ${renderStatusBadge(`Тест ${testProducts.length}`, "test")}</div></div>
-             <div class="overview-card"><div class="small">Активные доступы</div><div class="value">${activeAccessCount}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Скоро истекут ${expiringSoonCount}`, expiringSoonCount ? "expiring" : "muted")}</div></div>
-             <div class="overview-card"><div class="small">Ожидающие платежи</div><div class="value">${pendingPaymentsCount}</div><div class="small" style="margin-top:6px">${renderStatusBadge(`Депозиты в ожидании ${pendingDepositsCount}`, pendingDepositsCount ? "pending" : "muted")}</div></div>
-             <div class="overview-card"><div class="small">Проблемы по истечению</div><div class="value">${failedExpiryJobsCount}</div><div class="small" style="margin-top:6px">${failedExpiryJobsCount ? renderStatusBadge("Ошибки удаления — проверьте", "failed") : renderStatusBadge("Сбоев не найдено", "active")}</div></div>
-           </div>
-           <div class="subgrid" style="margin-top:16px">
-             <div class="card" style="padding:14px">
-               <div class="section-title">Быстрый порядок действий</div>
-               <ol class="flow-list">
-                 <li>Создайте боевой или тестовый продукт.</li>
-                 <li>Привяжите продукт к разделу в блоке «Контент и доступ».</li>
-                 <li>Проверьте кнопку оплаты и готовность ссылок на чаты.</li>
-                 <li>Для теста используйте «Выдать тестовый доступ», чтобы прогнать сценарий за минуты.</li>
-                 <li>Следите за напоминаниями и удалением в «Аудит доступа».</li>
-               </ol>
-             </div>
-             <div class="card" style="padding:14px">
-               <div class="section-title">Режим оформления оплаты</div>
-               <div>${balanceFlowEnabled ? renderStatusBadge("ПОПОЛНЕНИЕ БАЛАНСА + ОПЛАТА С БАЛАНСА", "active") : renderStatusBadge("ПРЯМОЙ СЧЁТ / РУЧНОЙ ЗАПРОС ОПЛАТЫ", "pending")}</div>
-               <div class="small" style="margin-top:8px">Оплата через NOWPayments. Сеть: USDT (BEP20). Владелец получает выплаты на указанный кошелёк.</div>
-             </div>
-           </div>
-         </div>
-
-         <div id="bindings" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Контент и доступ</h3>
-           <div class="small" style="margin-bottom:12px">Здесь находится business-flow alpha-owner: раздел → привязка продукта → страница-витрина раздела → CTA-кнопка оплаты в боте.</div>
-           <div class="card" style="padding:14px; margin-bottom:14px">
-             <h4 style="margin-top:0">Глобальное включение</h4>
-             <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/toggle" class="form-row">
-               <div class="field">
-                 <label class="small">Режим</label>
-                 <select name="paidAccessEnabled" class="field">
-                   <option value="true" ${bot.paidAccessEnabled ? "selected" : ""}>Включено</option>
-                   <option value="false" ${!bot.paidAccessEnabled ? "selected" : ""}>Выключено</option>
-                 </select>
-               </div>
-               <div class="btn"><button type="submit">Сохранить</button></div>
-             </form>
-           </div>
-           ${
-             menuItems.length
-               ? `<table class="paid-table">
-                   <thead><tr><th>Раздел</th><th>Статус</th><th>Продукт</th><th>CTA в боте</th><th style="width:260px">Действие</th></tr></thead>
-                   <tbody>
-                     ${menuItems.map((mi) => {
-                       const title = mi.localizations[0]?.title ?? mi.key;
-                       const product = mi.productId ? products.find((item) => item.id === mi.productId) : null;
-                       const productLabel = mi.productId ? productLabelById.get(mi.productId) ?? mi.productId : null;
-                       const productButtonText = product ? (productLoc(product)?.payButtonText ?? "Оплатить") : "—";
-                       return mi.productId
-                         ? `<tr>
-                              <td><b>${escapeHtml(title)}</b></td>
-                              <td>${renderStatusBadge("Закрыто", "pending")}</td>
-                              <td><code>${escapeHtml(productLabel ?? "")}</code> ${product ? renderProductModeBadge(product) : ""}</td>
-                              <td><code>${escapeHtml(productButtonText)}</code></td>
-                              <td>
-                                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/unlock" style="display:inline">
-                                  <button type="submit" class="secondary">Снять блокировку</button>
-                                </form>
-                              </td>
-                            </tr>`
-                         : `<tr>
-                              <td><b>${escapeHtml(title)}</b></td>
-                              <td>${renderStatusBadge("Открыто", "active")}</td>
-                              <td>
-                                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/menu-items/${escapeHtml(mi.id)}/lock" style="margin:0; display:flex; flex-wrap:wrap; gap:8px; align-items:center; max-width:560px">
-                                  <div class="field" style="min-width:220px; flex:1 1 260px">
-                                    <select name="productId" required class="field" style="width:100%">
-                                      ${productSelectOptions}
-                                    </select>
-                                  </div>
-                                  <div class="btn" style="flex:0 0 auto"><button type="submit">Привязать продукт</button></div>
-                                </form>
-                              </td>
-                              <td>—</td>
-                              <td><span class="small">После привязки появится CTA оплаты</span></td>
-                            </tr>`;
-                     }).join("")}
-                   </tbody>
-                 </table>`
-               : `<div class="small">Нет пунктов меню.</div>`
-           }
-         </div>
-
-         <div id="live-products" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Продукты · LIVE</h3>
-           <div class="small">Live-продукты — это реальные продукты для продажи. Здесь только production-настройка без тестовых минут.</div>
-           <div class="card" style="padding:14px; margin-top:12px">
-             <h4 style="margin-top:0">Создать live-product</h4>
-             <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create">
-               <div class="product-form-grid">
-                 <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required placeholder="Обучение / VIP доступ" /></div>
-                 <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить обучение" /></div>
-                 <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="10" /></div>
-                 <div class="field-wrap"><label class="small">Валюта</label><input name="currency" type="text" required value="USDT" /></div>
-                <div class="field-wrap"><label class="small">Тип</label>
-                  <select name="billingType">
-                    <option value="ONE_TIME">Разовая продажа</option>
-                    <option value="TEMPORARY" selected>Временный доступ (подписка)</option>
-                  </select>
+        `${renderPageHeader({
+          eyebrow: "Paid access workspace",
+          title: "Оплаты и доступ",
+          subtitle:
+            "Операционный workspace для управления paid access без изменения доменной логики. Production и TEST разделены визуально, финансы и аудит вынесены в самостоятельные модули, а все существующие формы и статусы сохранены.",
+          context: [
+            `<span>Бот: <code>${escapeHtml(bot.id)}</code></span>`,
+            `<span>Режим оплаты: ${balanceFlowEnabled ? "баланс + покупка" : "прямой счёт / ручной запрос"}</span>`,
+            `<span>Live: <strong>${liveProducts.length}</strong> · Test: <strong>${testProducts.length}</strong></span>`
+          ],
+          actions: renderActionLink("Настройки бота", `/backoffice/bots/${escapeHtml(bot.id)}/settings`, "secondary")
+        })}
+        ${topStateBanners}
+        <section class="bo-panel bo-panel--utility">
+          <div class="small" style="margin-bottom:12px">Быстрые переходы по рабочим модулям</div>
+          <div class="paid-nav">
+            <a href="#overview">Обзор</a>
+            <a href="#bindings">Контент и доступ</a>
+            <a href="#live-products">Боевые продукты</a>
+            <a href="#test-lab">Тестовая лаборатория</a>
+            <a href="#payments-balance">Платежи / баланс</a>
+            <a href="#nowpayments">NOWPayments / выплаты</a>
+            <a href="#access-audit">Аудит доступа</a>
+          </div>
+        </section>
+        ${renderStageBlock({
+          eyebrow: "Контур управления",
+          title: "Обзор и доступ",
+          subtitle:
+            "Первый слой workspace собран как control deck: сигналы, глобальное включение paid access и привязка контента находятся выше продуктовых и финансовых деталей.",
+          actions: bot.paidAccessEnabled ? renderStatusBadge("PAID ACCESS ACTIVE", "active") : renderStatusBadge("PAID ACCESS OFF", "failed"),
+          body: `${renderSectionPanel({
+            id: "overview",
+            title: "Обзор workspace",
+            subtitle:
+              "Сначала сигналы и KPI, затем рабочий порядок и режим оплаты. Главные метрики вынесены наверх, чтобы важное читалось раньше диагностического шума.",
+            body: `<div class="bo-kpi-grid">
+                ${renderMetricCard("Платный доступ", bot.paidAccessEnabled ? "Вкл" : "Выкл", bot.paidAccessEnabled ? `${renderStatusBadge("Активен", "active")}` : `${renderStatusBadge("Выключен", "failed")}`)}
+                ${renderMetricCard("Закрытые разделы", String(menuItems.filter((item) => Boolean(item.productId)).length), `${menuItems.length} всего разделов`)}
+                ${renderMetricCard("Продукты", String(products.length), `${renderStatusBadge(`Боевые ${liveProducts.length}`, "live")} ${renderStatusBadge(`Тест ${testProducts.length}`, "test")}`)}
+                ${renderMetricCard("Активные доступы", String(activeAccessCount), `${renderStatusBadge(`Скоро истекут ${expiringSoonCount}`, expiringSoonCount ? "expiring" : "muted")}`)}
+                ${renderMetricCard("Ожидающие платежи", String(pendingPaymentsCount), `${renderStatusBadge(`Депозиты в ожидании ${pendingDepositsCount}`, pendingDepositsCount ? "pending" : "muted")}`)}
+                ${renderMetricCard("Проблемы expiry/removal", String(failedExpiryJobsCount), failedExpiryJobsCount ? `${renderStatusBadge("Проверьте ошибки удаления", "failed")}` : `${renderStatusBadge("Сбоев не найдено", "active")}`)}
+              </div>
+              <div class="subgrid" style="margin-top:18px">
+                <div class="overview-card">
+                  <div class="section-title">Быстрый порядок действий</div>
+                  <ol class="flow-list">
+                    <li>Создайте боевой или тестовый продукт.</li>
+                    <li>Привяжите продукт к разделу в блоке «Контент и доступ».</li>
+                    <li>Проверьте CTA и linked chats.</li>
+                    <li>Для TEST используйте ручную выдачу доступа, чтобы прогнать reminders и expiry за минуты.</li>
+                    <li>Ошибки удаления и статусы доступа контролируйте в аудите.</li>
+                  </ol>
                 </div>
-                 <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" placeholder="30" /></div>
-               </div>
-              <details style="margin-top:12px">
-                 <summary class="small" style="cursor:pointer">Платежи и доступ</summary>
-                 <div style="margin-top:12px">
-                  <label class="small">Ссылки доступа в чат / канал</label>
-                  <div class="linked-chat-grid">
-                    <div class="linked-chat-card">
-                      <div class="title">Кнопка 1</div>
-                      <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
-                      <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
-                      <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
-                      <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+                <div class="overview-card">
+                  <div class="section-title">Режим оформления оплаты</div>
+                  <div>${balanceFlowEnabled ? renderStatusBadge("ПОПОЛНЕНИЕ БАЛАНСА + ОПЛАТА С БАЛАНСА", "active") : renderStatusBadge("ПРЯМОЙ СЧЁТ / РУЧНОЙ ЗАПРОС ОПЛАТЫ", "pending")}</div>
+                  <div class="small" style="margin-top:10px">Оплата через NOWPayments, сеть USDT (BEP20). Live использует дни и стандартный flow, TEST — минуты и ускоренные reminders 3/2/1.</div>
+                </div>
+              </div>`,
+            extraClass: "bo-panel--raised"
+          })}
+          ${renderSectionPanel({
+            id: "bindings",
+            title: "Контент и доступ",
+            subtitle:
+              "Здесь сохраняется текущий business-flow: раздел → привязка продукта → страница-витрина → CTA-кнопка оплаты в боте. Визуально он разложен по рабочим модулям, но логика не меняется.",
+            body: `<div class="bo-grid-2">
+                <div class="overview-card">
+                  <div class="section-title">Глобальное включение</div>
+                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/toggle" class="form-row">
+                    <div class="field">
+                      <label class="small">Режим</label>
+                      <select name="paidAccessEnabled" class="field">
+                        <option value="true" ${bot.paidAccessEnabled ? "selected" : ""}>Включено</option>
+                        <option value="false" ${!bot.paidAccessEnabled ? "selected" : ""}>Выключено</option>
+                      </select>
                     </div>
-                    <div class="linked-chat-card">
-                      <div class="title">Кнопка 2</div>
-                      <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
-                      <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
-                      <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
-                      <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
-                    </div>
+                    <div class="btn"><button type="submit">Сохранить</button></div>
+                  </form>
+                </div>
+                <div class="overview-card">
+                  <div class="section-title">Что важно</div>
+                  <div class="small">TEST и LIVE сохраняют разные source of truth: <code>durationMinutes &gt; 0</code> для TEST и <code>durationDays</code> / standard flow для production. Статусы разделов и CTA не скрываются.</div>
+                </div>
+              </div>
+              <div style="margin-top:16px">${bindingsTable}</div>`,
+            extraClass: "bo-panel--utility"
+          })}`
+        })}
+        ${renderStageBlock({
+          eyebrow: "Каталог продуктов",
+          title: "Боевые и тестовые сценарии",
+          subtitle:
+            "LIVE и TEST теперь отделены не только бейджами, но и самим уровнем композиции. Это позволяет быстрее переключаться между реальными продажами и лабораторным прогоном lifecycle.",
+          actions: `${renderStatusBadge(`LIVE ${liveProducts.length}`, "live")} ${renderStatusBadge(`TEST ${testProducts.length}`, "test")}`,
+          body: `<div class="bo-grid-2">
+              ${renderSectionPanel({
+                id: "live-products",
+                title: "Боевые продукты",
+                subtitle:
+                  "Production-настройка для реальных продаж. Здесь intentionally нет ускоренной минутной логики, чтобы live и test не смешивались визуально.",
+                body: `${liveCreateBlock}
+                  <div class="products-existing-block">
+                    <div class="section-title">Существующие live-products</div>
+                    ${liveProducts.length ? liveProducts.map((product) => renderProductCard(product, { allowSimulate: false })).join("") : `<div class="small">Пока нет live-продуктов.</div>`}
+                  </div>`,
+                extraClass: "bo-panel--raised"
+              })}
+              ${renderSectionPanel({
+                id: "test-lab",
+                title: "Тестовая лаборатория",
+                subtitle:
+                  "Отдельный ускоренный контур для проверки полного access lifecycle без ожидания днями. TEST статусы и минутные reminders не скрыты и остаются явно отмеченными.",
+                body: `${testCreateBlock}
+                  <div class="products-existing-block">
+                    <div class="section-title">Тестовые продукты</div>
+                    ${testProducts.length ? testProducts.map((product) => renderProductCard(product, { allowSimulate: true })).join("") : `<div class="small">Пока нет тестовых продуктов. Создайте первый, чтобы быстро прогонять весь сценарий руками.</div>`}
+                  </div>`,
+                extraClass: "bo-panel--utility"
+              })}
+            </div>`
+        })}
+        ${renderStageBlock({
+          eyebrow: "Финансовый контур",
+          title: "Платежи, баланс и settlement",
+          subtitle:
+            "Финансовый слой отделён от product setup: сначала поток оплаты и пользовательские события, затем конфиг выплат, owner-пул и техническая диагностика.",
+          body: `${renderSectionPanel({
+            id: "payments-balance",
+            title: "Платежи / баланс",
+            subtitle:
+              "Платёжный поток и уведомления визуально отделены от product setup. Основные операции слева, событийному логу и истории отдан отдельный модуль.",
+            body: `<div class="subgrid">
+                <div class="overview-card">
+                  <div class="section-title">Режим оплаты</div>
+                  <div>${balanceFlowEnabled ? renderStatusBadge("NOWPayments активен (USDT BEP20)", "active") : renderStatusBadge("NOWPayments не настроен", "pending")}</div>
+                  <ul class="mono-list" style="margin-top:10px">
+                    <li><code>invoice/pending</code>: пользователь открыл оплату, ждём подтверждение.</li>
+                    <li><code>deposit/confirmed</code>: баланс пополнен через NOWPayments.</li>
+                    <li><code>balance purchase/completed</code>: продукт куплен с баланса.</li>
+                    <li><code>NOWPayments IPN</code>: автоматическое подтверждение после оплаты.</li>
+                  </ul>
+                </div>
+                <div class="overview-card">
+                  <div class="section-title">Последние уведомления</div>
+                  ${
+                    recentNotifications.length
+                      ? recentNotifications
+                          .map(
+                            (notification) => `<div style="margin-top:10px">
+                                <div>${renderPaymentStatus(notification.status)} <code>${escapeHtml(notification.type)}</code></div>
+                                <div class="small">${renderUserLabel(notification.user)} · ${formatIsoDate(notification.createdAt)}</div>
+                              </div>`
+                          )
+                          .join("")
+                      : `<div class="small">Пока нет уведомлений по событиям.</div>`
+                  }
+                </div>
+              </div>
+              <div class="section-title">События платежей</div>
+              ${paymentEventsTable}`,
+            extraClass: "bo-panel--raised"
+          })}
+          ${renderSectionPanel({
+            id: "nowpayments",
+            title: "NOWPayments / выплаты владельцу",
+            subtitle:
+              "Финансовый модуль с owner-пулом, отчётностью по владельцам, конфигом выплат и технической диагностикой. Логи и deposit diagnostics сохранены как secondary disclosures, чтобы не перегружать основной поток.",
+            body: `${nowpaymentsOwnersBlock}
+              ${ownerReportingBlock}
+              <div class="bo-panel bo-panel--diagnostic" style="margin-top:16px">
+                <div class="bo-section-head">
+                  <div>
+                    <h3 class="bo-section-title">Конфиг NOWPayments</h3>
+                    <div class="bo-section-text">Настройка пополнения баланса и ежедневных выплат владельцу бота.</div>
                   </div>
-                   <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
-                   <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
-                   <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
                 </div>
-                <div style="margin-top:12px">
-                  <label class="small">Описание на экране оплаты / тарифы (ru)</label>
-                  <textarea name="descriptionRu" rows="2"></textarea>
-                  <div class="small" style="margin-top:4px">Показывается пользователю в едином инвойсе сразу под названием продукта. Сюда удобно писать тарифы и то, что человек получит после оплаты.</div>
+                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/nowpayments-config" class="bo-stack">
+                  <div class="nowpayments-grid">
+                    <div class="toggle-field"><label class="small" for="np-enabled">Включить NOWPayments</label><input id="np-enabled" type="checkbox" name="enabled" value="1" ${nowPaymentsConfig?.enabled ? "checked" : ""} /></div>
+                    <div class="toggle-field"><label class="small" for="np-owner-payout">Owner payout включён</label><input id="np-owner-payout" type="checkbox" name="ownerPayoutEnabled" value="1" ${nowPaymentsConfig?.ownerPayoutEnabled ? "checked" : ""} /></div>
+                    <div class="toggle-field"><label class="small" for="np-daily-payout">Ежедневные выплаты</label><input id="np-daily-payout" type="checkbox" name="dailyPayoutEnabled" value="1" ${nowPaymentsConfig?.dailyPayoutEnabled !== false ? "checked" : ""} /></div>
+                    <div class="field-wrap"><label class="small">Кошелёк owner (USDT BEP20)</label><input name="ownerWalletAddress" type="text" placeholder="0x..." value="${escapeHtml(nowPaymentsConfig?.ownerWalletAddress ?? "")}" style="width:100%" /></div>
+                    <input type="hidden" name="settlementCurrency" value="usdtbep20" />
+                    <div class="field-wrap"><label class="small">Минимум для выплаты (USDT)</label><input name="dailyPayoutMinAmount" type="text" value="${escapeHtml(String(nowPaymentsConfig?.dailyPayoutMinAmount ?? 0))}" /></div>
+                  </div>
+                  <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Сохранить конфиг</button></div>
+                </form>
+              </div>
+              <div class="subgrid" style="margin-top:16px">
+                <div class="overview-card">
+                  <div class="section-title">Сводка по начислениям</div>
+                  <div class="bo-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
+                    ${renderMetricCard("Записей в ожидании", String(settlementAgg._count), "", "bo-kpi-card--compact")}
+                    ${renderMetricCard("К выплате нетто", Number(settlementAgg._sum.netAmountBeforePayoutFee ?? 0).toFixed(2), "USDT", "bo-kpi-card--compact")}
+                  </div>
                 </div>
+                <div class="overview-card">
+                  <div class="section-title">Пакеты выплат</div>
+                  ${
+                    payoutBatches.length
+                      ? payoutBatches
+                          .slice(0, 5)
+                          .map((b) => {
+                            const batchRu: Record<string, string> = {
+                              CREATED: "Создан",
+                              SENT: "Отправлен",
+                              PARTIAL: "Частично",
+                              PAID: "Выплачен",
+                              FAILED: "Ошибка"
+                            };
+                            const st = batchRu[b.status] ?? b.status;
+                            return `<div class="small" style="margin-top:8px">${formatIsoDate(b.runDate)} · ${escapeHtml(st)} · ${Number(b.netTotal).toFixed(2)} USDT</div>`;
+                          })
+                          .join("")
+                      : `<div class="small">Нет батчей</div>`
+                  }
+                </div>
+              </div>
+              <div class="section-title" style="margin-top:16px">Записи начислений (последние)</div>
+              ${
+                settlementEntries.length
+                  ? `<div class="bo-table-shell"><table class="paid-table"><thead><tr><th>Когда</th><th>Пользователь (пополнил)</th><th>Заказ</th><th>Валовая</th><th>Нетто</th><th>Справочно: владелец</th><th>Статус</th></tr></thead><tbody>${settlementEntries
+                      .map((e) => {
+                        const attributed =
+                          e.attributedOwnerUserId && ownerUserIdSet.has(e.attributedOwnerUserId)
+                            ? e.attributedOwnerUserId
+                            : attributeSettlementToOwnerUserId(e.depositTransaction?.user ?? null);
+                        const ou = attributed ? ownerUserById.get(attributed) : undefined;
+                        const attCell =
+                          attributed && ou
+                            ? renderUserLabel(ou)
+                            : attributed
+                              ? `<code>${escapeHtml(attributed)}</code>`
+                              : `<span class="small">общий пул</span>`;
+                        const payerCell = formatSettlementDepositorCell(e.depositTransaction?.user ?? undefined);
+                        return `<tr><td>${formatIsoDate(e.createdAt)}</td><td>${payerCell}</td><td class="mono-wrap"><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${attCell}</td><td>${renderPaymentStatus(e.status)}</td></tr>`;
+                      })
+                      .join("")}</tbody></table></div>`
+                  : `<div class="small">Нет записей</div>`
+              }
+              <details style="margin-top:16px">
+                <summary class="small">Логи webhook (NOWPayments, только этот бот)</summary>
+                ${
+                  webhookLogs.length
+                    ? `<div class="bo-table-shell" style="margin-top:8px"><table class="paid-table"><thead><tr><th>Когда</th><th>Событие</th><th>Подпись</th><th>Результат</th></tr></thead><tbody>${webhookLogs
+                        .map(
+                          (w) => `<tr><td>${formatIsoDate(w.createdAt)}</td><td><code>${escapeHtml(String((w.bodyJson as any)?.payment_id ?? "-"))}</code></td><td>${w.signatureValid ? "✓" : "✗"}</td><td>${escapeHtml(w.processingResult ?? "-")}</td></tr>`
+                        )
+                        .join("")}</tbody></table></div>`
+                    : `<div class="small" style="margin-top:8px">Нет логов</div>`
+                }
               </details>
-               <button type="submit" style="margin-top:12px">Создать live-product</button>
-             </form>
-           </div>
-           <div class="products-existing-block">
-             <div class="section-title">Существующие live-products</div>
-             ${liveProducts.length ? liveProducts.map((product) => renderProductCard(product, { allowSimulate: false })).join("") : `<div class="small">Пока нет live-продуктов.</div>`}
-           </div>
-         </div>
-
-         <div id="test-lab" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Тестовая лаборатория</h3>
-           <div class="small">Отдельное место для проверки полного цикла доступа без ожидания днями. Тестовые продукты: напоминания за 3/2/1 минуту и истечение в минутах, тот же сценарий выдачи и удаления.</div>
-           <div class="card test-block" style="margin-top:12px">
-             <h4 style="margin-top:0">Создать тестовый продукт</h4>
-             <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create">
-               <input type="hidden" name="billingType" value="TEMPORARY" />
-               <input type="hidden" name="currency" value="USDT" />
-               <div class="product-form-grid">
-                 <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required placeholder="Тест: обучение 5 мин" /></div>
-                 <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required value="Оплатить тест" /></div>
-                 <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="1" /></div>
-                 <div class="field-wrap"><label class="small">Срок в минутах</label><input name="durationMinutes" type="number" required min="1" max="1440" value="5" /></div>
-               </div>
-               <div style="margin-top:12px">
-                 <label class="small">Ссылки доступа в чат / канал</label>
-                <div class="linked-chat-grid">
-                  <div class="linked-chat-card">
-                    <div class="title">Кнопка 1</div>
-                    <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
-                    <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
-                    <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
-                  </div>
-                  <div class="linked-chat-card">
-                    <div class="title">Кнопка 2</div>
-                    <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
-                    <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
-                    <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
-                    <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
-                  </div>
-                </div>
-                 <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
-                 <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
-               </div>
-               <div style="margin-top:12px">
-                 <label class="small">Описание на экране оплаты / тарифы (ru)</label>
-                 <textarea name="descriptionRu" rows="2" placeholder="Тестовый продукт для прогона access lifecycle"></textarea>
-                 <div class="small" style="margin-top:4px">Показывается в едином инвойсе тестового продукта сразу под названием. Здесь удобно описать оффер, тариф и что откроется после оплаты.</div>
-               </div>
-               <button type="submit" style="margin-top:12px">Создать тестовый продукт</button>
-             </form>
-             <div class="small" style="margin-top:8px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats. Для приватного чата используйте либо <code>https://t.me/c/1234567890/1</code>, либо комбинированный формат <code>https://t.me/+inviteHash | -1001234567890</code>. Тогда пользователь войдёт по invite-link, а бан/unban пойдёт по identifier.</div>
-           </div>
-           <div class="products-existing-block">
-             <div class="section-title">Тестовые продукты</div>
-             ${testProducts.length ? testProducts.map((product) => renderProductCard(product, { allowSimulate: true })).join("") : `<div class="small">Пока нет тестовых продуктов. Создайте первый, чтобы быстро прогонять весь сценарий руками.</div>`}
-           </div>
-         </div>
-
-         <div id="payments-balance" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Платежи / баланс</h3>
-           <div class="subgrid">
-             <div class="card" style="padding:14px">
-               <div class="section-title">Режим оплаты</div>
-               <div>${balanceFlowEnabled ? renderStatusBadge("NOWPayments активен (USDT BEP20)", "active") : renderStatusBadge("NOWPayments не настроен", "pending")}</div>
-               <ul class="mono-list" style="margin-top:10px">
-                 <li><code>invoice/pending</code>: пользователь открыл оплату, ждём подтверждение.</li>
-                 <li><code>deposit/confirmed</code>: баланс пополнен через NOWPayments.</li>
-                 <li><code>balance purchase/completed</code>: продукт куплен с баланса.</li>
-                 <li><code>NOWPayments IPN</code>: автоматическое подтверждение после оплаты.</li>
-               </ul>
-             </div>
-             <div class="card" style="padding:14px">
-               <div class="section-title">Последние уведомления</div>
-               ${
-                 recentNotifications.length
-                   ? recentNotifications.map((notification) => `<div style="margin-top:8px"><div>${renderPaymentStatus(notification.status)} <code>${escapeHtml(notification.type)}</code></div><div class="small">${renderUserLabel(notification.user)} · ${formatIsoDate(notification.createdAt)}</div></div>`).join("")
-                   : `<div class="small">Пока нет уведомлений по событиям.</div>`
-               }
-             </div>
-           </div>
-           <div class="section-title">События платежей</div>
-           ${
-             paymentEvents.length
-              ? `<div class="events-scroll"><table class="paid-table">
-                  <thead><tr><th>Когда</th><th>Событие</th><th>Пользователь</th><th>Продукт</th><th>Сумма</th><th>Статус</th><th>Референс / заказ</th><th>Кошелёк</th></tr></thead>
-                   <tbody>
-                     ${paymentEvents.map((event) => `<tr>
-                       <td>${formatIsoDate(event.createdAt)}</td>
-                       <td><code>${escapeHtml(event.kind)}</code></td>
-                       <td>${renderUserLabel(event.user)}</td>
-                       <td>${escapeHtml(event.productLabel)}</td>
-                       <td>${escapeHtml(event.amount)}</td>
-                       <td>${renderPaymentStatus(event.status)}</td>
-                      <td class="mono-wrap"><code>${escapeHtml(event.note)}</code></td>
-                      <td class="wallet-col"><code>${escapeHtml(event.walletAddress ?? "-")}</code></td>
-                     </tr>`).join("")}
-                  </tbody>
-                </table></div>`
-               : `<div class="small">Пока нет событий платежей.</div>`
-           }
-         </div>
-
-         <div id="nowpayments" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">NOWPayments / выплаты владельцу</h3>
-           <div class="small" style="margin-bottom:12px">Настройка пополнения баланса и ежедневных выплат владельцу бота.</div>
-           ${nowpaymentsOwnersBlock}
-           ${ownerReportingBlock}
-           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/nowpayments-config">
-            <div class="nowpayments-grid">
-              <div class="toggle-field"><label class="small" for="np-enabled">Включить NOWPayments</label><input id="np-enabled" type="checkbox" name="enabled" value="1" ${nowPaymentsConfig?.enabled ? "checked" : ""} /></div>
-              <div class="toggle-field"><label class="small" for="np-owner-payout">Owner payout включён</label><input id="np-owner-payout" type="checkbox" name="ownerPayoutEnabled" value="1" ${nowPaymentsConfig?.ownerPayoutEnabled ? "checked" : ""} /></div>
-              <div class="toggle-field"><label class="small" for="np-daily-payout">Ежедневные выплаты</label><input id="np-daily-payout" type="checkbox" name="dailyPayoutEnabled" value="1" ${nowPaymentsConfig?.dailyPayoutEnabled !== false ? "checked" : ""} /></div>
-               <div class="field-wrap"><label class="small">Кошелёк owner (USDT BEP20)</label><input name="ownerWalletAddress" type="text" placeholder="0x..." value="${escapeHtml(nowPaymentsConfig?.ownerWalletAddress ?? "")}" style="width:100%" /></div>
-               <input type="hidden" name="settlementCurrency" value="usdtbep20" />
-               <div class="field-wrap"><label class="small">Минимум для выплаты (USDT)</label><input name="dailyPayoutMinAmount" type="text" value="${escapeHtml(String(nowPaymentsConfig?.dailyPayoutMinAmount ?? 0))}" /></div>
-             </div>
-             <button type="submit">Сохранить конфиг</button>
-           </form>
-           <div class="subgrid" style="margin-top:16px">
-             <div class="card" style="padding:14px">
-               <div class="section-title">Сводка по начислениям</div>
-               <div class="overview-grid" style="grid-template-columns:repeat(auto-fill,minmax(120px,1fr))">
-                 <div><div class="small">Записей в ожидании</div><div class="value">${settlementAgg._count}</div></div>
-                 <div><div class="small">К выплате нетто (USDT)</div><div class="value">${Number(settlementAgg._sum.netAmountBeforePayoutFee ?? 0).toFixed(2)}</div></div>
-               </div>
-             </div>
-             <div class="card" style="padding:14px">
-               <div class="section-title">Пакеты выплат</div>
-               ${payoutBatches.length ? payoutBatches.slice(0, 5).map((b) => {
-                 const batchRu: Record<string, string> = {
-                   CREATED: "Создан",
-                   SENT: "Отправлен",
-                   PARTIAL: "Частично",
-                   PAID: "Выплачен",
-                   FAILED: "Ошибка"
-                 };
-                 const st = batchRu[b.status] ?? b.status;
-                 return `<div class="small" style="margin-top:6px">${formatIsoDate(b.runDate)} · ${escapeHtml(st)} · ${Number(b.netTotal).toFixed(2)} USDT</div>`;
-               }).join("") : `<div class="small">Нет батчей</div>`}
-             </div>
-           </div>
-           <div class="section-title" style="margin-top:16px">Записи начислений (последние)</div>
-           ${settlementEntries.length ? `<table class="paid-table"><thead><tr><th>Когда</th><th>Пользователь (пополнил)</th><th>Заказ</th><th>Валовая</th><th>Нетто</th><th>Справочно: владелец</th><th>Статус</th></tr></thead><tbody>${settlementEntries
-             .map((e) => {
-               const attributed =
-                 e.attributedOwnerUserId && ownerUserIdSet.has(e.attributedOwnerUserId)
-                   ? e.attributedOwnerUserId
-                   : attributeSettlementToOwnerUserId(e.depositTransaction?.user ?? null);
-               const ou = attributed ? ownerUserById.get(attributed) : undefined;
-               const attCell =
-                 attributed && ou
-                   ? renderUserLabel(ou)
-                   : attributed
-                     ? `<code>${escapeHtml(attributed)}</code>`
-                     : `<span class="small">общий пул</span>`;
-               const payerCell = formatSettlementDepositorCell(e.depositTransaction?.user ?? undefined);
-               return `<tr><td>${formatIsoDate(e.createdAt)}</td><td>${payerCell}</td><td class="mono-wrap"><code>${escapeHtml(e.depositTransaction?.orderId ?? "-")}</code></td><td>${Number(e.grossAmount).toFixed(2)}</td><td>${Number(e.netAmountBeforePayoutFee).toFixed(2)}</td><td>${attCell}</td><td>${renderPaymentStatus(e.status)}</td></tr>`;
-             })
-             .join("")}</tbody></table>` : `<div class="small">Нет записей</div>`}
-<details style="margin-top:16px">
-            <summary class="small" style="cursor:pointer">Логи webhook (NOWPayments, только этот бот)</summary>
-             ${webhookLogs.length ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Событие</th><th>Подпись</th><th>Результат</th></tr></thead><tbody>${webhookLogs.map((w) => `<tr><td>${formatIsoDate(w.createdAt)}</td><td><code>${escapeHtml(String((w.bodyJson as any)?.payment_id ?? "-"))}</code></td><td>${w.signatureValid ? "✓" : "✗"}</td><td>${escapeHtml(w.processingResult ?? "-")}</td></tr>`).join("")}</tbody></table>` : `<div class="small" style="margin-top:8px">Нет логов</div>`}
-           </details>
-          <details style="margin-top:12px">
-            <summary class="small" style="cursor:pointer">Диагностика депозитов (только этот бот)</summary>
-            ${depositDiagnosticsRows.length
-              ? `<table class="paid-table" style="margin-top:8px"><thead><tr><th>Когда</th><th>Имя</th><th>Фамилия</th><th>Логин Telegram</th><th>Заказ</th><th>ID платежа</th><th>Статус провайдера</th><th>Кошелёк</th><th>Сумма</th><th>Мин. 98%</th><th>Поступило</th><th>Порог</th><th>Зачислено</th><th>Статус депозита</th><th>Продукт</th><th>Причина</th><th>Поддержка</th></tr></thead><tbody>${depositDiagnosticsRows.map((d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td>${escapeHtml(d.depositorFirstName)}</td><td>${escapeHtml(d.depositorLastName)}</td><td>${d.telegramLoginCell}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(d.toleranceLabel)}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td><td>${d.status === "CONFIRMED" ? `<span class="small">—</span>` : `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/deposits/${escapeHtml(d.orderId)}/emergency-confirm" style="margin:0"><input name="reason" type="text" placeholder="Комментарий" style="min-width:180px" /><button type="submit" class="secondary" style="margin-top:6px;background:rgba(34,197,94,0.18);border-color:rgba(34,197,94,0.45);">Подтвердить вручную</button></form>`}</td></tr>`).join("")}</tbody></table>`
-              : `<div class="small" style="margin-top:8px">Нет строк депозитов</div>`}
-          </details>
-         </div>
-
-         <div id="access-audit" class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">Аудит / события доступа</h3>
-           <div class="small">Здесь видно, кому выдали доступ, когда он истекает, как отработали reminders и что произошло с expiry/removal pipeline.</div>
-           ${
-             recentAccessRights.length
-               ? `<table class="paid-table" style="margin-top:12px">
-                   <thead><tr><th>Пользователь</th><th>Продукт</th><th>Режим</th><th>Статус</th><th>Истекает</th><th>Чаты</th><th>Напоминания</th><th>Истечение / удаление</th></tr></thead>
-                   <tbody>
-                     ${recentAccessRights.map((right) => {
-                       const loc =
-                         right.product.localizations.find((item) => item.languageCode === baseLang) ??
-                         right.product.localizations.find((item) => item.languageCode === "ru") ??
-                         right.product.localizations[0];
-                       return `<tr>
-                         <td>${renderUserLabel(right.user)}</td>
-                         <td>${escapeHtml(loc?.title ?? right.product.code)}</td>
-                         <td>${renderProductModeBadge(right.product)}</td>
-                         <td>${renderAccessStatus(right)}</td>
-                         <td>${formatIsoDate(right.activeUntil)}</td>
-                         <td>${renderLinkedChatReadiness(right.product)}</td>
-                         <td>${renderReminderSummary(right.id)}</td>
-                         <td>${renderExpirySummary(right.id)}</td>
-                       </tr>`;
-                     }).join("")}
-                   </tbody>
-                 </table>`
-               : `<div class="small" style="margin-top:10px">Пока нет событий доступа для этого бота.</div>`
-           }
-         </div>
-
-         <div style="margin-top:16px" class="row">
-           <a href="/backoffice/bots/${escapeHtml(bot.id)}/settings" style="text-decoration:none"><button class="secondary" type="button">Назад</button></a>
-         </div>`
+              <details style="margin-top:12px">
+                <summary class="small">Диагностика депозитов (только этот бот)</summary>
+                ${
+                  depositDiagnosticsRows.length
+                    ? `<div class="bo-table-shell" style="margin-top:8px"><table class="paid-table"><thead><tr><th>Когда</th><th>Имя</th><th>Фамилия</th><th>Логин Telegram</th><th>Заказ</th><th>ID платежа</th><th>Статус провайдера</th><th>Кошелёк</th><th>Сумма</th><th>Мин. 98%</th><th>Поступило</th><th>Порог</th><th>Зачислено</th><th>Статус депозита</th><th>Продукт</th><th>Причина</th><th>Поддержка</th></tr></thead><tbody>${depositDiagnosticsRows
+                        .map(
+                          (d) => `<tr><td>${formatIsoDate(d.createdAt)}</td><td>${escapeHtml(d.depositorFirstName)}</td><td>${escapeHtml(d.depositorLastName)}</td><td>${d.telegramLoginCell}</td><td class="mono-wrap"><code>${escapeHtml(d.orderId)}</code></td><td class="mono-wrap"><code>${escapeHtml(d.providerPaymentId ?? "-")}</code></td><td><code>${escapeHtml(d.providerStatus ?? "-")}</code></td><td class="wallet-col"><code>${escapeHtml(d.providerPayAddress ?? "-")}</code></td><td>${escapeHtml(Number(d.requestedAmountUsd ?? 0).toFixed(2))}</td><td>${escapeHtml(Number(d.minAccepted ?? 0).toFixed(2))}</td><td>${escapeHtml(d.actualOutcomeAmount == null ? "-" : Number(d.actualOutcomeAmount).toFixed(8))}</td><td><code>${escapeHtml(d.toleranceLabel)}</code></td><td>${escapeHtml(Number(d.creditedBalanceAmount ?? 0).toFixed(8))}</td><td>${renderPaymentStatus(d.status)}</td><td class="mono-wrap"><code>${escapeHtml(d.productId ?? "-")}</code></td><td><code>${escapeHtml(d.reason)}</code></td><td>${d.status === "CONFIRMED" ? `<span class="small">—</span>` : `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/deposits/${escapeHtml(d.orderId)}/emergency-confirm" style="margin:0"><input name="reason" type="text" placeholder="Комментарий" style="min-width:180px" /><button type="submit" class="secondary" style="margin-top:6px;background:rgba(34,197,94,0.18);border-color:rgba(34,197,94,0.45);">Подтвердить вручную</button></form>`}</td></tr>`
+                        )
+                        .join("")}</tbody></table></div>`
+                    : `<div class="small" style="margin-top:8px">Нет строк депозитов</div>`
+                }
+              </details>`,
+            extraClass: "bo-panel--utility"
+          })}`
+        })}
+        ${renderStageBlock({
+          eyebrow: "Наблюдаемость",
+          title: "Аудит доступа и критические статусы",
+          subtitle:
+            "Отдельный диагностический слой, который не конкурирует с основными действиями, но оставляет FAILED, REMOVAL UNAVAILABLE и всю observability полностью видимыми.",
+          actions: failedExpiryJobsCount ? renderStatusBadge(`Ошибки удаления ${failedExpiryJobsCount}`, "failed") : renderStatusBadge("Сбоев удаления нет", "active"),
+          body: `${renderSectionPanel({
+            id: "access-audit",
+            title: "Аудит / события доступа",
+            subtitle:
+              "Таблица сохраняет все важные сигналы: статусы доступа, reminders, expiry/removal и readiness linked chats. FAILED-состояния и проблемы удаления не скрываются.",
+            body: `${renderNote(
+              "info",
+              `LIVE использует reminders за <strong>3 / 2 / 1 дня</strong>, TEST — за <strong>3 / 2 / 1 минуты</strong>. Истечение и удаление читаются в последнем столбце без скрытия критических статусов.`
+            )}
+            <div style="margin-top:16px">${accessAuditTable}</div>`,
+            extraClass: "bo-panel--diagnostic"
+          })}`
+        })}
+        <div class="bo-actions" style="justify-content:flex-start">
+          ${renderActionLink("Назад к настройкам", `/backoffice/bots/${escapeHtml(bot.id)}/settings`, "secondary")}
+        </div>`
       )
     );
   });
