@@ -119,29 +119,35 @@ function renderPage(title: string, body: string): string {
     <style>
       :root {
         color-scheme: dark;
-        --bg: #05070b;
-        --bg-deep: #080d15;
-        --panel: #0f151f;
-        --panel-strong: #131b28;
-        --panel-soft: #192233;
-        --panel-muted: rgba(255,255,255,0.035);
-        --border: rgba(226,232,240,0.09);
-        --border-strong: rgba(226,232,240,0.16);
-        --text: #f5f7fb;
-        --text-soft: #e2e8f0;
-        --muted: #94a3b8;
-        --muted-strong: #c5cedb;
-        --link: #c2d4ff;
-        --accent: #d8c3a2;
-        --accent-strong: #e9d7b8;
+        --bg: #0b1119;
+        --bg-deep: #101827;
+        --shell: #182130;
+        --surface: #202a3a;
+        --surface-raised: #283549;
+        --surface-utility: #1c2737;
+        --surface-diagnostic: #152031;
+        --surface-table: #141e2c;
+        --surface-soft: rgba(255,255,255,0.03);
+        --surface-inline: rgba(255,255,255,0.055);
+        --border: rgba(226,232,240,0.11);
+        --border-soft: rgba(226,232,240,0.075);
+        --border-strong: rgba(226,232,240,0.18);
+        --text: #f6f8fc;
+        --text-soft: #e7edf6;
+        --muted: #a0b0c5;
+        --muted-strong: #d2dceb;
+        --link: #d3e0ff;
+        --accent: #d5bfa0;
+        --accent-strong: #eddec2;
         --accent-ink: #11161d;
         --success: #9fcab0;
         --warning: #ddc183;
         --danger: #f0a5a5;
         --danger-soft: rgba(240,165,165,0.1);
         --info: #adc5ff;
-        --shadow-lg: 0 26px 70px rgba(0,0,0,0.36);
-        --shadow-md: 0 18px 44px rgba(0,0,0,0.24);
+        --shadow-lg: 0 24px 56px rgba(3,7,14,0.28);
+        --shadow-md: 0 12px 28px rgba(5,10,18,0.18);
+        --shadow-sm: 0 8px 18px rgba(5,10,18,0.12);
         --radius-xl: 28px;
         --radius-lg: 22px;
         --radius-md: 18px;
@@ -155,9 +161,9 @@ function renderPage(title: string, body: string): string {
         min-height: 100vh;
         font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
         background:
-          radial-gradient(circle at top left, rgba(173,197,255,0.12), transparent 34%),
-          radial-gradient(circle at top right, rgba(216,195,162,0.1), transparent 28%),
-          linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 60%, #04060a 100%);
+          radial-gradient(circle at top left, rgba(173,197,255,0.11), transparent 38%),
+          radial-gradient(circle at top right, rgba(216,195,162,0.08), transparent 30%),
+          linear-gradient(180deg, #0a1119 0%, var(--bg) 24%, var(--bg-deep) 100%);
         color: var(--text);
         letter-spacing: 0.01em;
       }
@@ -189,38 +195,42 @@ function renderPage(title: string, body: string): string {
         border-radius: var(--radius-xl);
         border: 1px solid var(--border);
         background:
-          linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)),
-          linear-gradient(180deg, rgba(18,24,35,0.98), rgba(12,17,26,0.98));
-        box-shadow: var(--shadow-lg);
+          linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012)),
+          linear-gradient(180deg, rgba(27,37,53,0.98), rgba(20,29,42,0.98));
+        box-shadow: var(--shadow-md);
         backdrop-filter: blur(18px);
       }
-      .card { padding: 24px; }
-      .bo-panel { padding: 22px; }
+      .card {
+        padding: 22px;
+        overflow: visible;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01)),
+          linear-gradient(180deg, rgba(28,39,57,0.98), rgba(21,30,43,0.98));
+        box-shadow: var(--shadow-lg);
+      }
+      .bo-panel { padding: 20px; }
       .bo-panel--raised {
         background:
-          radial-gradient(circle at top right, rgba(216,195,162,0.08), transparent 34%),
-          linear-gradient(180deg, rgba(24,32,46,0.98), rgba(13,19,29,0.98));
+          linear-gradient(180deg, rgba(40,54,74,0.98), rgba(28,38,53,0.98));
       }
       .bo-panel--utility {
         background:
-          radial-gradient(circle at top right, rgba(173,197,255,0.08), transparent 34%),
-          linear-gradient(180deg, rgba(17,25,38,0.98), rgba(10,16,25,0.98));
+          linear-gradient(180deg, rgba(31,43,60,0.98), rgba(22,31,44,0.98));
       }
       .bo-panel--diagnostic {
         background:
-          linear-gradient(180deg, rgba(13,18,28,0.98), rgba(8,12,20,0.98));
+          linear-gradient(180deg, rgba(22,32,48,0.98), rgba(16,24,37,0.98));
         border-color: rgba(173,197,255,0.14);
       }
       .bo-page { display: flex; flex-direction: column; gap: 22px; }
       .bo-stage {
-        padding: 22px;
+        padding: 20px;
         border-radius: var(--radius-xl);
-        border: 1px solid rgba(255,255,255,0.07);
+        border: 1px solid var(--border-soft);
         background:
-          radial-gradient(circle at top right, rgba(173,197,255,0.05), transparent 38%),
-          linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0.01)),
-          rgba(8,12,18,0.72);
-        box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), var(--shadow-md);
+          linear-gradient(180deg, rgba(255,255,255,0.018), rgba(255,255,255,0.008)),
+          rgba(17,24,36,0.68);
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), var(--shadow-sm);
       }
       .bo-stage-head {
         display: flex;
@@ -228,11 +238,13 @@ function renderPage(title: string, body: string): string {
         gap: 18px;
         align-items: flex-start;
         flex-wrap: wrap;
-        margin-bottom: 18px;
+        margin-bottom: 16px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid var(--border-soft);
       }
       .bo-stage-title {
         margin: 0;
-        font-size: 24px;
+        font-size: 22px;
         line-height: 1.08;
         letter-spacing: -0.04em;
       }
@@ -240,7 +252,7 @@ function renderPage(title: string, body: string): string {
         margin-top: 8px;
         max-width: 78ch;
         color: var(--muted);
-        font-size: 14px;
+        font-size: 13px;
         line-height: 1.65;
       }
       .bo-stage-body {
@@ -265,7 +277,7 @@ function renderPage(title: string, body: string): string {
         font-size: 12px;
         text-transform: uppercase;
         letter-spacing: 0.16em;
-        color: rgba(255,255,255,0.42);
+        color: rgba(210,220,235,0.54);
       }
       .top-nav__actions {
         display: flex;
@@ -289,10 +301,9 @@ function renderPage(title: string, body: string): string {
       .bo-stack--dense { gap: 12px; }
       .bo-stack--loose { gap: 24px; }
       .bo-hero {
-        padding: 28px;
+        padding: 22px 24px;
         background:
-          radial-gradient(circle at top right, rgba(216,195,162,0.12), transparent 32%),
-          linear-gradient(180deg, rgba(27,36,52,0.96), rgba(14,20,30,0.98));
+          linear-gradient(180deg, rgba(40,54,75,0.96), rgba(26,37,53,0.98));
       }
       .bo-page-header {
         display: grid;
@@ -310,10 +321,21 @@ function renderPage(title: string, body: string): string {
         text-transform: uppercase;
         letter-spacing: 0.18em;
       }
+      .top-nav a,
+      .top-nav button {
+        padding: 9px 12px;
+        min-height: 40px;
+        background: var(--surface-inline);
+        color: var(--muted-strong);
+        border-color: var(--border-soft);
+        font-size: 12px;
+        font-weight: 600;
+        box-shadow: none;
+      }
       .bo-page-title {
         margin: 0;
         font-family: "Avenir Next", "SF Pro Display", "Segoe UI", sans-serif;
-        font-size: clamp(30px, 3vw, 42px);
+        font-size: clamp(28px, 2.6vw, 38px);
         line-height: 1.05;
         letter-spacing: -0.04em;
       }
@@ -321,7 +343,7 @@ function renderPage(title: string, body: string): string {
         margin-top: 10px;
         max-width: 74ch;
         color: var(--muted);
-        font-size: 14px;
+        font-size: 13px;
         line-height: 1.65;
       }
       .bo-context-list {
@@ -336,8 +358,8 @@ function renderPage(title: string, body: string): string {
         gap: 8px;
         padding: 7px 12px;
         border-radius: 999px;
-        border: 1px solid rgba(255,255,255,0.08);
-        background: rgba(255,255,255,0.04);
+        border: 1px solid var(--border-soft);
+        background: var(--surface-inline);
         color: var(--muted-strong);
         font-size: 12px;
       }
@@ -362,8 +384,8 @@ function renderPage(title: string, body: string): string {
         max-width: 100%;
         box-sizing: border-box;
         border-radius: var(--radius-sm);
-        border: 1px solid rgba(255,255,255,0.12);
-        background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02));
+        border: 1px solid rgba(255,255,255,0.13);
+        background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025));
         color: var(--text);
         padding: 12px 14px;
         min-height: 46px;
@@ -471,7 +493,7 @@ function renderPage(title: string, body: string): string {
       .bo-note {
         padding: 14px 16px;
         border-radius: var(--radius-md);
-        border: 1px solid rgba(255,255,255,0.08);
+        border: 1px solid var(--border-soft);
         line-height: 1.6;
       }
       .error { background: rgba(240,165,165,0.1); border-color: rgba(240,165,165,0.24); color: #ffd1d1; }
@@ -497,14 +519,19 @@ function renderPage(title: string, body: string): string {
         position: relative;
         min-width: 0;
         border-radius: var(--radius-lg);
-        border: 1px solid rgba(255,255,255,0.08);
+        border: 1px solid var(--border-soft);
         background:
-          linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.015)),
-          rgba(12,17,26,0.84);
-        box-shadow: var(--shadow-md);
+          linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.016)),
+          rgba(29,40,57,0.84);
+        box-shadow: none;
       }
       .bo-kpi-card,
       .overview-card { padding: 18px; }
+      .bo-kpi-card {
+        display: flex;
+        flex-direction: column;
+        min-height: 134px;
+      }
       .bo-kpi-label {
         color: var(--muted);
         font-size: 11px;
@@ -521,6 +548,7 @@ function renderPage(title: string, body: string): string {
         letter-spacing: -0.04em;
       }
       .bo-kpi-helper { margin-top: 10px; color: var(--muted-strong); font-size: 13px; line-height: 1.55; }
+      .bo-kpi-card .bo-kpi-helper { margin-top: auto; padding-top: 10px; }
       .bo-kpi-card--compact .bo-kpi-value {
         font-size: 24px;
       }
@@ -547,6 +575,7 @@ function renderPage(title: string, body: string): string {
         display: flex;
         flex-direction: column;
         gap: 18px;
+        box-shadow: var(--shadow-sm);
       }
       .bot-card.created {
         border-color: rgba(159,202,176,0.42);
@@ -571,8 +600,8 @@ function renderPage(title: string, body: string): string {
       .bo-meta-tile {
         padding: 13px 14px;
         border-radius: var(--radius-md);
-        border: 1px solid rgba(255,255,255,0.07);
-        background: rgba(255,255,255,0.03);
+        border: 1px solid var(--border-soft);
+        background: var(--surface-inline);
       }
       .bo-meta-label {
         color: var(--muted);
@@ -595,11 +624,11 @@ function renderPage(title: string, body: string): string {
       .bo-action-group {
         padding: 14px;
         border-radius: var(--radius-md);
-        border: 1px solid rgba(255,255,255,0.07);
-        background: rgba(255,255,255,0.025);
+        border: 1px solid var(--border-soft);
+        background: var(--surface-soft);
       }
       .bo-action-group--muted {
-        background: rgba(255,255,255,0.015);
+        background: rgba(255,255,255,0.018);
       }
       .bo-action-label {
         margin-bottom: 10px;
@@ -643,8 +672,8 @@ function renderPage(title: string, body: string): string {
       .bo-form-cluster {
         padding: 16px;
         border-radius: var(--radius-lg);
-        border: 1px solid rgba(255,255,255,0.07);
-        background: rgba(255,255,255,0.025);
+        border: 1px solid var(--border-soft);
+        background: rgba(255,255,255,0.022);
       }
       .bo-form-cluster-head {
         display: flex;
@@ -742,11 +771,11 @@ function renderPage(title: string, body: string): string {
         background: rgba(221,193,131,0.05);
       }
       .section-title {
-        margin: 20px 0 10px;
-        padding-bottom: 10px;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
+        margin: 16px 0 10px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border-soft);
         color: var(--muted-strong);
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.14em;
         text-transform: uppercase;
@@ -758,8 +787,8 @@ function renderPage(title: string, body: string): string {
         gap: 16px;
         padding: 18px;
         border-radius: var(--radius-lg);
-        border: 1px solid rgba(255,255,255,0.08);
-        background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.015));
+        border: 1px solid var(--border-soft);
+        background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
       }
       .bo-toolbar-main {
         display: grid;
@@ -788,8 +817,8 @@ function renderPage(title: string, body: string): string {
       .table-wrap {
         overflow: auto;
         border-radius: var(--radius-lg);
-        border: 1px solid rgba(255,255,255,0.08);
-        background: rgba(7,10,16,0.54);
+        border: 1px solid var(--border-soft);
+        background: linear-gradient(180deg, rgba(26,36,51,0.96), rgba(20,29,43,0.98));
       }
       .bo-table-shell { padding: 0; }
       .events-scroll { max-height: 460px; }
@@ -802,15 +831,15 @@ function renderPage(title: string, body: string): string {
       }
       table thead th,
       .paid-table th {
-        padding: 13px 14px;
+        padding: 12px 14px;
         text-align: left;
         vertical-align: bottom;
-        color: var(--muted);
+        color: #b6c5d8;
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.12em;
-        background: rgba(255,255,255,0.03);
-        border-bottom: 1px solid rgba(255,255,255,0.08);
+        background: rgba(255,255,255,0.05);
+        border-bottom: 1px solid var(--border-soft);
         position: sticky;
         top: 0;
         z-index: 2;
@@ -821,16 +850,21 @@ function renderPage(title: string, body: string): string {
         padding: 14px;
         text-align: left;
         vertical-align: top;
-        border-bottom: 1px solid rgba(255,255,255,0.06);
+        border-bottom: 1px solid rgba(255,255,255,0.05);
+      }
+      table tbody td {
+        white-space: normal;
+      }
+      .paid-table td {
         white-space: nowrap;
       }
       table tbody tr:hover,
       .paid-table tbody tr:hover {
-        background: rgba(255,255,255,0.025);
+        background: rgba(255,255,255,0.03);
       }
       table tbody tr:nth-child(even),
       .paid-table tbody tr:nth-child(even) {
-        background: rgba(255,255,255,0.015);
+        background: rgba(255,255,255,0.018);
       }
       table tbody tr:last-child td,
       .paid-table tr:last-child td {
@@ -841,6 +875,26 @@ function renderPage(title: string, body: string): string {
         white-space: normal;
         overflow-wrap: anywhere;
       }
+      .table-title {
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1.4;
+        color: var(--text-soft);
+      }
+      .table-meta {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .table-nowrap {
+        white-space: nowrap;
+      }
+      .table-total-row td {
+        border-top: 2px solid var(--border-strong);
+        font-weight: 700;
+        background: rgba(255,255,255,0.04);
+      }
       .table-number { text-align: right; font-variant-numeric: tabular-nums; }
       .overview-card,
       .product-card,
@@ -848,9 +902,9 @@ function renderPage(title: string, body: string): string {
         padding: 18px;
       }
       .products-existing-block {
-        margin-top: 34px;
-        padding-top: 26px;
-        border-top: 1px solid rgba(255,255,255,0.08);
+        margin-top: 26px;
+        padding-top: 20px;
+        border-top: 1px solid var(--border-soft);
       }
       .paid-nav {
         display: flex;
@@ -858,8 +912,13 @@ function renderPage(title: string, body: string): string {
         flex-wrap: wrap;
       }
       .paid-nav a {
-        padding: 10px 14px;
+        padding: 8px 12px;
         border-radius: 999px;
+        border-color: var(--border-soft);
+        background: var(--surface-inline);
+        color: var(--muted-strong);
+        font-size: 12px;
+        font-weight: 600;
       }
       .flow-list {
         margin: 0;
@@ -876,8 +935,8 @@ function renderPage(title: string, body: string): string {
       .mono-list li code { color: #eef2f9; }
       details {
         border-radius: var(--radius-lg);
-        border: 1px solid rgba(255,255,255,0.08);
-        background: rgba(255,255,255,0.025);
+        border: 1px solid var(--border-soft);
+        background: rgba(255,255,255,0.02);
         padding: 0 16px 16px;
       }
       details > summary {
@@ -1282,7 +1341,7 @@ export function buildCreateBotForm(opts: {
                 <div class="bo-form-cluster-head">
                   <div>
                     <div class="bo-form-cluster-title">Идентификация и запуск</div>
-                    <div class="bo-form-cluster-copy">Запускающий блок для нового bot instance: название, токен, username и базовый язык собраны в одном рабочем модуле.</div>
+                    <div class="bo-form-cluster-copy">Запускающий блок для нового экземпляра бота: название, токен, username и базовый язык собраны в одном рабочем модуле.</div>
                   </div>
                 </div>
                 <div class="bo-grid-2">
@@ -1466,7 +1525,7 @@ export function renderDashboardBody(params: DashboardParams): string {
     eyebrow: "Операционный центр",
     title: "Панель управления",
     subtitle:
-      "Backoffice собран вокруг существующих bot instances: быстрый переход в настройки, paid workspace, аудиторию и платформенную аналитику без изменения бизнес-логики.",
+      "Backoffice собран вокруг существующих экземпляров ботов: быстрый переход в настройки, оплату и доступ, аудиторию и платформенную аналитику без изменения бизнес-логики.",
     context: [
       `<span>Роль: <strong>${escapeHtml(role)}</strong></span>`,
       `<span>Email: <strong>${escapeHtml(email)}</strong></span>`,
@@ -1482,7 +1541,7 @@ export function renderDashboardBody(params: DashboardParams): string {
       .join("")
   })}
         <div class="bo-kpi-grid">
-          ${renderMetricCard("Всего ботов", String(totalBots), newestBot ? `Последний: <strong>${escapeHtml(newestBot.name)}</strong>` : `Создайте первый bot instance`)}
+          ${renderMetricCard("Всего ботов", String(totalBots), newestBot ? `Последний: <strong>${escapeHtml(newestBot.name)}</strong>` : `Создайте первый экземпляр бота`)}
           ${renderMetricCard("Активные", String(activeBots), activeBots ? `${renderStatusBadge("Готовы к работе", "active")}` : `${renderStatusBadge("Нет активных", "muted")}`)}
           ${renderMetricCard("Отключённые", String(disabledBots), disabledBots ? `${renderStatusBadge("Требуют внимания", "failed")}` : `${renderStatusBadge("Без отключений", "active")}`)}
           ${renderMetricCard("Навигация", canViewAudience ? "3" : "1", canViewAudience ? `Dashboard · Аудитория · База данных` : `Доступен только dashboard`)}
@@ -1492,28 +1551,28 @@ export function renderDashboardBody(params: DashboardParams): string {
           eyebrow: "Навигация",
           title: "Системные действия и платформенные переходы",
           subtitle:
-            "Глобальные действия вынесены из списка ботов в отдельную управляющую зону, чтобы сами bot instances перестали конкурировать с platform-level навигацией.",
+            "Глобальные действия вынесены из списка ботов в отдельную управляющую зону, чтобы сами экземпляры ботов перестали конкурировать с платформенной навигацией.",
           body: `<div class="bo-grid-3">${actionCards}</div>`
         })}
         ${renderStageBlock({
           eyebrow: "Рабочие контуры",
-          title: "Bot instances",
+          title: "Экземпляры ботов",
           subtitle:
             "Карточки показывают состояние, контекст и приоритет действий быстрее, а сеточная композиция убирает ощущение длинного однотипного списка.",
           actions: `<span class="bo-context-chip">${bots.length} шт.</span>`,
           body:
             cards
               ? `<div class="bo-grid-2">${cards}</div>`
-              : renderNote("warning", `Пока нет созданных <code>bot instances</code>. Используйте модуль запуска ниже, чтобы подготовить первый рабочий контур.`)
+              : renderNote("warning", `Пока нет созданных <code>экземпляров ботов</code>. Используйте модуль запуска ниже, чтобы подготовить первый рабочий контур.`)
         })}
         ${renderStageBlock({
           eyebrow: "Запуск нового экземпляра",
           title: "Создать нового бота",
           subtitle:
-            "Создание вынесено в самостоятельный full-width модуль и больше не выглядит как побочная форма рядом со списком. Это отдельный операционный шаг с чётким контекстом и безопасными подсказками.",
+            "Создание вынесено в самостоятельный полноширинный модуль и больше не выглядит как побочная форма рядом со списком. Это отдельный операционный шаг с чётким контекстом и безопасными подсказками.",
           body: `${renderSectionPanel({
             id: "create-bot-panel",
-            title: "Новый bot instance",
+            title: "Новый экземпляр бота",
             subtitle:
               "Заполняйте поля как launch-панель: имя, токен, username, владелец и базовый язык. Логика создания и проверка через getMe не менялись.",
             body: `${createForm}
@@ -1821,18 +1880,18 @@ export async function registerBackofficeRoutes(
         (u) => `
     <tr>
       <td>
-        <div><a href="/backoffice/audience/user/${encodeURIComponent(u.id)}"><strong>${escapeHtml(u.id.slice(0, 8))}</strong></a></div>
-        <div class="small"><code>${escapeHtml(u.id)}</code></div>
+        <div class="table-title"><a href="/backoffice/audience/user/${encodeURIComponent(u.id)}"><strong>${escapeHtml(u.id.slice(0, 8))}</strong></a></div>
+        <div class="table-meta"><code>${escapeHtml(u.id)}</code></div>
       </td>
-      <td>${u.username ? `<div><a href="https://t.me/${escapeHtml(u.username)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(u.username)}</a></div>` : `<span class="small">—</span>`}</td>
-      <td><code>${escapeHtml(String(u.telegramUserId))}</code></td>
+      <td>${u.username ? `<div class="table-title"><a href="https://t.me/${escapeHtml(u.username)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(u.username)}</a></div>` : `<span class="small">—</span>`}</td>
+      <td class="table-nowrap"><code>${escapeHtml(String(u.telegramUserId))}</code></td>
       <td>
-        <div>${escapeHtml(u.fullName || u.firstName || "—")}</div>
-        <div class="small">Язык: <strong>${escapeHtml(u.selectedLanguage)}</strong></div>
+        <div class="table-title">${escapeHtml(u.fullName || u.firstName || "—")}</div>
+        <div class="table-meta">Язык: <strong>${escapeHtml(u.selectedLanguage)}</strong></div>
       </td>
-      <td>${u.botName ? `<strong>${escapeHtml(u.botName)}</strong>` : `<span class="small">—</span>`}</td>
-      <td>${u.lastSeenAt ? `<div>${escapeHtml(u.lastSeenAt.toISOString().slice(0, 19).replace("T", " "))}</div>` : `<span class="small">—</span>`}</td>
-      <td><div>${escapeHtml(u.createdAt.toISOString().slice(0, 19).replace("T", " "))}</div></td>
+      <td>${u.botName ? `<div class="table-title">${escapeHtml(u.botName)}</div>` : `<span class="small">—</span>`}</td>
+      <td class="table-nowrap">${u.lastSeenAt ? `<div>${escapeHtml(u.lastSeenAt.toISOString().slice(0, 19).replace("T", " "))}</div>` : `<span class="small">—</span>`}</td>
+      <td class="table-nowrap"><div>${escapeHtml(u.createdAt.toISOString().slice(0, 19).replace("T", " "))}</div></td>
     </tr>`
       )
       .join("");
@@ -1860,7 +1919,7 @@ export async function registerBackofficeRoutes(
           eyebrow: "Глобальный каталог",
           title: "Аудитория",
           subtitle:
-            "Централизованная база пользователей по всем ботам. Фильтры и поиск остаются основным рабочим контуром, а экспорт вынесен в отдельный вторичный блок внутри того же toolbar.",
+            "Централизованная база пользователей по всем ботам. Фильтры и поиск остаются основным рабочим контуром, а экспорт вынесен в отдельный вторичный блок рядом с сегментацией.",
           context: [
             `<span>Всего в каталоге: <strong>${summary.totalUsers}</strong></span>`,
             `<span>Ботов в выборке: <strong>${summary.totalBots}</strong></span>`,
@@ -1917,7 +1976,7 @@ export async function registerBackofficeRoutes(
             </div>`
         })}
         ${renderStageBlock({
-          eyebrow: "Directory view",
+          eyebrow: "Каталог",
           title: "Каталог пользователей",
           subtitle:
             "ID и технические поля остались доступны, но теперь у таблицы есть явный directory-контекст: профиль и временные метки отделены, а навигация по страницам утяжелена меньше.",
@@ -1929,7 +1988,7 @@ export async function registerBackofficeRoutes(
                 <table>
                   <thead>
                     <tr>
-                      <th>ID пользователя</th>
+                      <th>Пользователь</th>
                       <th>Username</th>
                       <th>Telegram ID</th>
                       <th>Профиль</th>
@@ -2295,8 +2354,8 @@ export async function registerBackofficeRoutes(
         (row) => `
     <tr>
       <td>
-        <div><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}"><strong>${escapeHtml(row.botName)}</strong></a></div>
-        <div class="small">@${escapeHtml(row.username ?? "—")} · ${renderStatusBadge(row.stats.users > 0 ? "Есть данные" : "Пусто", row.stats.users > 0 ? "active" : "muted")}</div>
+        <div class="table-title"><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}"><strong>${escapeHtml(row.botName)}</strong></a></div>
+        <div class="table-meta">@${escapeHtml(row.username ?? "—")} · ${renderStatusBadge(row.stats.users > 0 ? "Есть данные" : "Пусто", row.stats.users > 0 ? "active" : "muted")}</div>
       </td>
       <td class="table-number"><a href="/backoffice/audience?bot=${encodeURIComponent(row.botId)}">${row.stats.users}</a></td>
       <td class="table-number">${row.stats.broadcasts}</td>
@@ -2328,7 +2387,7 @@ export async function registerBackofficeRoutes(
     const totalsRow =
       statsByBot.length > 1
         ? `
-    <tr style="border-top:2px solid rgba(255,255,255,0.14); font-weight:700; background:rgba(255,255,255,0.03)">
+    <tr class="table-total-row">
       <td>Всего</td>
       <td class="table-number">${totals.users}</td>
       <td class="table-number">${totals.broadcasts}</td>
@@ -2344,10 +2403,10 @@ export async function registerBackofficeRoutes(
       renderPage(
         "База данных по ботам",
         `${renderPageHeader({
-          eyebrow: "Platform analytics",
+          eyebrow: "Аналитика платформы",
           title: "База данных",
           subtitle:
-            "Компактный обзор по каждому боту: пользователи, рассылки, цепочки, платежи и активные элементы структуры. Страница стала аналитическим workspace, а не пустым табличным листом.",
+            "Компактный обзор по каждому боту: пользователи, рассылки, цепочки, платежи и активные элементы структуры. Страница стала аналитическим рабочим пространством, а не пустым табличным листом.",
           context: [
             `<span>Ботов в отчёте: <strong>${statsByBot.length}</strong></span>`,
             `<span>Пользователей суммарно: <strong>${totals.users}</strong></span>`,
@@ -3802,7 +3861,7 @@ export async function registerBackofficeRoutes(
             <div class="bo-form-cluster-head">
               <div>
                 <div class="bo-form-cluster-title">Платежи и доступ</div>
-                <div class="bo-form-cluster-copy">LIVE и TEST остаются явно разделёнными: дни управляют production, минуты управляют лабораторным сценарием.</div>
+                <div class="bo-form-cluster-copy">LIVE и TEST остаются явно разделёнными: дни управляют боевым сценарием, минуты управляют лабораторным прогоном.</div>
               </div>
             </div>
           <div class="product-form-grid">
@@ -4241,10 +4300,10 @@ export async function registerBackofficeRoutes(
       renderPage(
         "Платный доступ",
         `${renderPageHeader({
-          eyebrow: "Paid access workspace",
+          eyebrow: "Платный доступ",
           title: "Оплаты и доступ",
           subtitle:
-            "Операционный workspace для управления paid access без изменения доменной логики. Production и TEST разделены визуально, финансы и аудит вынесены в самостоятельные модули, а все существующие формы и статусы сохранены.",
+            "Операционное рабочее пространство для управления оплатой и доступом без изменения доменной логики. Production и TEST разделены визуально, финансы и аудит вынесены в самостоятельные модули, а все существующие формы и статусы сохранены.",
           context: [
             `<span>Бот: <code>${escapeHtml(bot.id)}</code></span>`,
             `<span>Режим оплаты: ${balanceFlowEnabled ? "баланс + покупка" : "прямой счёт / ручной запрос"}</span>`,
@@ -4254,7 +4313,13 @@ export async function registerBackofficeRoutes(
         })}
         ${topStateBanners}
         <section class="bo-panel bo-panel--utility">
-          <div class="small" style="margin-bottom:12px">Быстрые переходы по рабочим модулям</div>
+          <div class="bo-section-head">
+            <div>
+              <h2 class="bo-section-title">Карта рабочего пространства</h2>
+              <div class="bo-section-text">Быстрые переходы между управляющим, продуктовым, финансовым и диагностическим контурами страницы.</div>
+            </div>
+            <div class="bo-context-chip">4 рабочих слоя</div>
+          </div>
           <div class="paid-nav">
             <a href="#overview">Обзор</a>
             <a href="#bindings">Контент и доступ</a>
@@ -4269,11 +4334,11 @@ export async function registerBackofficeRoutes(
           eyebrow: "Контур управления",
           title: "Обзор и доступ",
           subtitle:
-            "Первый слой workspace собран как control deck: сигналы, глобальное включение paid access и привязка контента находятся выше продуктовых и финансовых деталей.",
-          actions: bot.paidAccessEnabled ? renderStatusBadge("PAID ACCESS ACTIVE", "active") : renderStatusBadge("PAID ACCESS OFF", "failed"),
+            "Первый слой собран как управляющая палуба: сигналы, глобальное включение платного доступа и привязка контента находятся выше продуктовых и финансовых деталей.",
+          actions: bot.paidAccessEnabled ? renderStatusBadge("Платный доступ активен", "active") : renderStatusBadge("Платный доступ выключен", "failed"),
           body: `${renderSectionPanel({
             id: "overview",
-            title: "Обзор workspace",
+            title: "Обзор рабочего пространства",
             subtitle:
               "Сначала сигналы и KPI, затем рабочий порядок и режим оплаты. Главные метрики вынесены наверх, чтобы важное читалось раньше диагностического шума.",
             body: `<div class="bo-kpi-grid">
