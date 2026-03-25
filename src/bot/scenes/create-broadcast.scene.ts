@@ -129,6 +129,69 @@ const buildAudienceLanguageKeyboard = (locale: string, i18n: BotContext["service
     ...buildNavigationRow(i18n, locale, { toMain: true }).map((btn) => [btn])
   ]);
 
+type BroadcastDeliveryMode = "single" | "follow_up";
+
+const FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
+
+const canUseFollowUpDelivery = (content: MessageContent | undefined): boolean =>
+  Boolean(content?.mediaType && FOLLOW_UP_MEDIA_TYPES.has(content.mediaType as any));
+
+const clearPreparedBroadcastState = (
+  state: {
+    preparedContent?: MessageContent;
+    preparedFollowUpText?: string;
+    awaitingFollowUpTextInput?: boolean;
+    preparedDeliveryMode?: BroadcastDeliveryMode;
+  }
+) => {
+  state.preparedContent = undefined;
+  state.preparedFollowUpText = undefined;
+  state.awaitingFollowUpTextInput = false;
+  state.preparedDeliveryMode = undefined;
+};
+
+const buildBroadcastContentModeKeyboard = (locale: string, i18n: BotContext["services"]["i18n"]) =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback("🧾 Одним сообщением", makeCallbackData(BROADCAST_PREFIX, "content_mode", "single"))],
+    [Markup.button.callback("➡️ Медиа, потом текст", makeCallbackData(BROADCAST_PREFIX, "content_mode", "follow_up"))],
+    [Markup.button.callback("✏️ Отправить другой контент", makeCallbackData(BROADCAST_PREFIX, "content_mode", "replace"))],
+    [Markup.button.callback(i18n.t(locale, "cancel_btn"), SCENE_CANCEL_DATA)],
+    ...buildNavigationRow(i18n, locale, { toMain: true }).map((btn) => [btn])
+  ]);
+
+const buildBroadcastContentModePrompt = (
+  content: MessageContent & { entities?: any[] }
+): string => {
+  const textPreview = extractFormattedContentText(content).trim();
+  if (content.mediaType === "VIDEO_NOTE") {
+    return textPreview
+      ? "Кружок получен. Можно оставить его как одно сообщение или отправить текст отдельным сообщением сразу после кружка."
+      : "Кружок получен. Оставить только кружок или добавить текст отдельным сообщением сразу после него?";
+  }
+
+  return textPreview
+    ? "Контент получен. Отправить текст подписью в этом же сообщении или отдельным сообщением сразу после медиа?"
+    : "Контент получен. Оставить только медиа или добавить отдельный текст сразу после него?";
+};
+
+const formatBroadcastDeliveryModeLabel = (
+  content: MessageContent | undefined,
+  followUpText?: string
+): string => {
+  if (!content?.mediaType || content.mediaType === "NONE") {
+    return "1 сообщение: текст";
+  }
+  if (followUpText?.trim()) {
+    return content.mediaType === "VIDEO_NOTE"
+      ? "2 сообщения: кружок, затем текст"
+      : "2 сообщения: медиа, затем текст";
+  }
+  if (content.mediaType === "VIDEO_NOTE") {
+    return "1 сообщение: только кружок";
+  }
+  return "1 сообщение: медиа и подпись";
+};
+
 const createBroadcastWizard = (mode: "instant" | "scheduled") =>
   new Scenes.WizardScene<any>(
     mode === "instant" ? CREATE_BROADCAST_SCENE : CREATE_SCHEDULED_BROADCAST_SCENE,
@@ -207,7 +270,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         ) {
           await ctx.answerCbQuery();
           draft.languageCode = parts[2] as any;
-          await ctx.reply("Отправьте текст или медиа с подписью для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+          await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
           return ctx.wizard.next();
         }
       }
@@ -351,7 +414,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         ) {
           await ctx.answerCbQuery();
           draft.languageCode = parts[2] as any;
-          await ctx.reply("Отправьте текст или медиа с подписью для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+          await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
           return ctx.wizard.next();
         }
       }
@@ -359,7 +422,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const langText = readTextMessage(ctx).trim().toLowerCase();
       if (["ru", "en"].includes(langText)) draft.languageCode = langText;
       if (["all", "all_languages", "все", "всеязыки"].includes(langText)) draft.languageCode = CONTENT_LANG_ALL;
-      await ctx.reply("Отправьте текст или медиа с подписью для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+      await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
       return ctx.wizard.next();
     },
     async (ctx) => {
@@ -369,6 +432,9 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const state = ctx.wizard.state as {
         draft?: import("../context").CreateBroadcastDraft;
         preparedContent?: MessageContent;
+        preparedFollowUpText?: string;
+        awaitingFollowUpTextInput?: boolean;
+        preparedDeliveryMode?: BroadcastDeliveryMode;
       };
 
       if (mode === "scheduled") {
@@ -383,14 +449,14 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           ) {
             await ctx.answerCbQuery();
             draft.languageCode = parts[2] as any;
-            await ctx.reply("Отправьте текст или медиа с подписью для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+            await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
             return ctx.wizard.next();
           }
         }
         const langText = readTextMessage(ctx).trim().toLowerCase();
         if (["ru", "en"].includes(langText)) draft.languageCode = langText;
         if (["all", "all_languages", "все", "всеязыки"].includes(langText)) draft.languageCode = CONTENT_LANG_ALL;
-        await ctx.reply("Отправьте текст или медиа с подписью для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+        await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
         return ctx.wizard.next();
       }
 
@@ -398,9 +464,74 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const confirmSend = makeCallbackData(BROADCAST_PREFIX, "confirm", "send");
       const confirmEdit = makeCallbackData(BROADCAST_PREFIX, "confirm", "edit");
       const confirmCancel = makeCallbackData(BROADCAST_PREFIX, "confirm", "cancel");
+      const showPreparedConfirmation = async () => {
+        const formatLabel = formatBroadcastDeliveryModeLabel(state.preparedContent, state.preparedFollowUpText);
+        await ctx.reply(
+          `Готово. Подтвердите отправку рассылки:\nФормат: ${formatLabel}`,
+          Markup.inlineKeyboard([
+            [Markup.button.callback("✅ Отправить", confirmSend)],
+            [Markup.button.callback("✏️ Редактировать", confirmEdit)],
+            [Markup.button.callback("❌ Отменить", confirmCancel)]
+          ])
+        );
+      };
 
       if (ctx.callbackQuery && "data" in ctx.callbackQuery) {
         const data = ctx.callbackQuery.data;
+        const parts = data.split(":");
+
+        if (parts[0] === BROADCAST_PREFIX && parts[1] === "content_mode") {
+          try {
+            await ctx.answerCbQuery();
+          } catch {
+            // ignore
+          }
+
+          if (parts[2] === "replace") {
+            clearPreparedBroadcastState(state);
+            await ctx.reply(
+              "Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.",
+              buildCancelKeyboard(ctx.services.i18n, locale)
+            );
+            return;
+          }
+
+          const content = state.preparedContent;
+          if (!content) {
+            await ctx.reply("Контент не найден. Отправьте его заново.", buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+
+          if (parts[2] === "single") {
+            state.preparedDeliveryMode = "single";
+            state.preparedFollowUpText = undefined;
+            state.awaitingFollowUpTextInput = false;
+            await showPreparedConfirmation();
+            return;
+          }
+
+          if (parts[2] === "follow_up") {
+            const extractedFollowUpText = extractFormattedContentText(content as MessageContent & { entities?: any[] }).trim();
+            state.preparedDeliveryMode = "follow_up";
+            state.preparedContent = { ...content, text: "" };
+            state.preparedFollowUpText = extractedFollowUpText || undefined;
+
+            if (extractedFollowUpText) {
+              state.awaitingFollowUpTextInput = false;
+              await showPreparedConfirmation();
+              return;
+            }
+
+            state.awaitingFollowUpTextInput = true;
+            await ctx.reply(
+              content.mediaType === "VIDEO_NOTE"
+                ? "Теперь отправьте текст, который должен прийти сразу после кружка."
+                : "Теперь отправьте текст, который должен прийти сразу после медиа отдельным сообщением.",
+              buildCancelKeyboard(ctx.services.i18n, locale)
+            );
+            return;
+          }
+        }
 
         if (data === confirmEdit) {
           try {
@@ -408,8 +539,11 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           } catch {
             // ignore
           }
-          state.preparedContent = undefined;
-          await ctx.reply("Отправьте текст или медиа заново для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+          clearPreparedBroadcastState(state);
+          await ctx.reply(
+            "Отправьте текст, фото, видео, документ, голосовое или кружок заново для рассылки.",
+            buildCancelKeyboard(ctx.services.i18n, locale)
+          );
           return;
         }
 
@@ -419,7 +553,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           } catch {
             // ignore
           }
-          state.preparedContent = undefined;
+          clearPreparedBroadcastState(state);
           state.draft = undefined;
           await ctx.reply("Подготовка рассылки отменена.", buildReturnToAdminKeyboard(ctx.services.i18n, locale));
           return ctx.scene.leave();
@@ -449,6 +583,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
                 ? [...LANG_CODES]
                 : undefined,
             text: textForStorage,
+            followUpText: state.preparedFollowUpText ?? "",
             mediaType: content.mediaType,
             mediaFileId: content.mediaFileId,
             externalUrl: content.externalUrl
@@ -456,7 +591,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
 
           const chatId = ctx.chat?.id ?? ctx.currentUser?.telegramUserId;
           if (chatId == null) {
-            state.preparedContent = undefined;
+            clearPreparedBroadcastState(state);
             state.draft = undefined;
             await ctx.reply("Не удалось определить чат для прогресса.", buildReturnToAdminKeyboard(ctx.services.i18n, locale));
             return ctx.scene.leave();
@@ -506,29 +641,55 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
               // Ignore final edit errors (message already changed / can't be edited).
             }
           } finally {
-            state.preparedContent = undefined;
+            clearPreparedBroadcastState(state);
             state.draft = undefined;
           }
           return ctx.scene.leave();
         }
       }
 
-      // Message input => prepare content and show confirm buttons (without sending).
-      state.preparedContent = extractMessageContent(ctx);
-      await ctx.reply(
-        "Готово. Подтвердите отправку рассылки:",
-        Markup.inlineKeyboard([
-          [Markup.button.callback("✅ Отправить", confirmSend)],
-          [Markup.button.callback("✏️ Редактировать", confirmEdit)],
-          [Markup.button.callback("❌ Отменить", confirmCancel)]
-        ])
-      );
+      if (state.awaitingFollowUpTextInput) {
+        const followUpContent = extractMessageContent(ctx);
+        const followUpText = extractFormattedContentText(followUpContent as MessageContent & { entities?: any[] }).trim();
+        if (followUpContent.mediaType || !followUpText) {
+          await ctx.reply("Отправьте только текст вторым сообщением.", buildCancelKeyboard(ctx.services.i18n, locale));
+          return;
+        }
+        state.preparedFollowUpText = followUpText;
+        state.awaitingFollowUpTextInput = false;
+        await showPreparedConfirmation();
+        return;
+      }
+
+      const content = extractMessageContent(ctx);
+      if (!content.text && !content.mediaFileId && !content.externalUrl) {
+        await ctx.reply("Не получилось распознать контент. Отправьте текст, фото, видео, документ, голосовое или кружок.", buildCancelKeyboard(ctx.services.i18n, locale));
+        return;
+      }
+
+      state.preparedContent = content;
+      state.preparedFollowUpText = undefined;
+      state.awaitingFollowUpTextInput = false;
+      state.preparedDeliveryMode = "single";
+
+      if (canUseFollowUpDelivery(content)) {
+        await ctx.reply(
+          buildBroadcastContentModePrompt(content as MessageContent & { entities?: any[] }),
+          buildBroadcastContentModeKeyboard(locale, ctx.services.i18n)
+        );
+        return;
+      }
+
+      await showPreparedConfirmation();
     },
     async (ctx) => {
       const draft = ((ctx.wizard.state as { draft?: import("../context").CreateBroadcastDraft }).draft ??= {});
       const state = ctx.wizard.state as {
         draft?: import("../context").CreateBroadcastDraft;
         preparedContent?: MessageContent;
+        preparedFollowUpText?: string;
+        awaitingFollowUpTextInput?: boolean;
+        preparedDeliveryMode?: BroadcastDeliveryMode;
         scheduledPrepared?: boolean;
         editBroadcastId?: string;
         editScheduleToken?: string;
@@ -538,17 +699,95 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const confirmSend = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "send");
       const confirmEdit = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "edit");
       const confirmCancel = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "cancel");
+      const showScheduledConfirmation = async () => {
+        const dateLabel = formatDateLabel(draft);
+        const timeLabel = draft.deliveryTime ?? "—";
+        const formatLabel = formatBroadcastDeliveryModeLabel(state.preparedContent, state.preparedFollowUpText);
+
+        await ctx.reply(
+          `Подтвердите отложенную рассылку:\n` +
+            `Аудитория: ${formatAudienceLabel(draft)}\n` +
+            `Язык контента: ${formatContentLanguageLabel(draft)}\n` +
+            `Формат: ${formatLabel}\n` +
+            `Дата: ${dateLabel}\n` +
+            `Время: ${timeLabel}\n\n` +
+            `Важно: отправка будет выполнена в это локальное время каждого пользователя.`,
+          Markup.inlineKeyboard([
+            [Markup.button.callback("✅ Подтвердить", confirmSend)],
+            [Markup.button.callback("✏️ Изменить", confirmEdit)],
+            [Markup.button.callback("❌ Отменить", confirmCancel)]
+          ])
+        );
+      };
 
       if (ctx.callbackQuery && "data" in ctx.callbackQuery) {
         const data = ctx.callbackQuery.data;
+        const parts = data.split(":");
+
+        if (parts[0] === BROADCAST_PREFIX && parts[1] === "content_mode") {
+          try {
+            await ctx.answerCbQuery();
+          } catch {
+            // ignore
+          }
+
+          if (parts[2] === "replace") {
+            clearPreparedBroadcastState(state);
+            await ctx.reply(
+              "Отправьте текст, фото, видео, документ, голосовое или кружок заново для рассылки.",
+              buildCancelKeyboard(ctx.services.i18n, locale)
+            );
+            return;
+          }
+
+          const content = state.preparedContent;
+          if (!content) {
+            await ctx.reply("Контент не найден. Отправьте его заново.", buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+
+          if (parts[2] === "single") {
+            state.preparedDeliveryMode = "single";
+            state.preparedFollowUpText = undefined;
+            state.awaitingFollowUpTextInput = false;
+            await showScheduledConfirmation();
+            return;
+          }
+
+          if (parts[2] === "follow_up") {
+            const extractedFollowUpText = extractFormattedContentText(content as MessageContent & { entities?: any[] }).trim();
+            state.preparedDeliveryMode = "follow_up";
+            state.preparedContent = { ...content, text: "" };
+            state.preparedFollowUpText = extractedFollowUpText || undefined;
+
+            if (extractedFollowUpText) {
+              state.awaitingFollowUpTextInput = false;
+              await showScheduledConfirmation();
+              return;
+            }
+
+            state.awaitingFollowUpTextInput = true;
+            await ctx.reply(
+              content.mediaType === "VIDEO_NOTE"
+                ? "Теперь отправьте текст, который должен прийти сразу после кружка."
+                : "Теперь отправьте текст, который должен прийти сразу после медиа отдельным сообщением.",
+              buildCancelKeyboard(ctx.services.i18n, locale)
+            );
+            return;
+          }
+        }
+
         if (data === confirmEdit) {
           try {
             await ctx.answerCbQuery();
           } catch {
             // ignore
           }
-          state.preparedContent = undefined;
-          await ctx.reply("Отправьте текст или медиа заново для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+          clearPreparedBroadcastState(state);
+          await ctx.reply(
+            "Отправьте текст, фото, видео, документ, голосовое или кружок заново для рассылки.",
+            buildCancelKeyboard(ctx.services.i18n, locale)
+          );
           return;
         }
 
@@ -558,7 +797,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           } catch {
             // ignore
           }
-          state.preparedContent = undefined;
+          clearPreparedBroadcastState(state);
           state.draft = undefined;
           await ctx.reply("Подготовка отложенной рассылки отменена.", buildReturnToAdminKeyboard(ctx.services.i18n, locale));
           return ctx.scene.leave();
@@ -679,6 +918,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
               languageCode,
               languageCodes,
               text: textForStorage,
+              followUpText: state.preparedFollowUpText ?? "",
               mediaType: content.mediaType,
               mediaFileId: content.mediaFileId,
               externalUrl: content.externalUrl,
@@ -728,6 +968,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
               languageCode,
               languageCodes,
               text: textForStorage,
+              followUpText: state.preparedFollowUpText ?? "",
               mediaType: content.mediaType,
               mediaFileId: content.mediaFileId,
               externalUrl: content.externalUrl,
@@ -769,32 +1010,45 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
             );
           }
 
-          state.preparedContent = undefined;
+          clearPreparedBroadcastState(state);
           state.draft = undefined;
           return ctx.scene.leave();
         }
       }
 
-      // Message input => extract content, show summary + buttons.
+      if (state.awaitingFollowUpTextInput) {
+        const followUpContent = extractMessageContent(ctx);
+        const followUpText = extractFormattedContentText(followUpContent as MessageContent & { entities?: any[] }).trim();
+        if (followUpContent.mediaType || !followUpText) {
+          await ctx.reply("Отправьте только текст вторым сообщением.", buildCancelKeyboard(ctx.services.i18n, locale));
+          return;
+        }
+        state.preparedFollowUpText = followUpText;
+        state.awaitingFollowUpTextInput = false;
+        await showScheduledConfirmation();
+        return;
+      }
+
       const content = extractMessageContent(ctx);
+      if (!content.text && !content.mediaFileId && !content.externalUrl) {
+        await ctx.reply("Не получилось распознать контент. Отправьте текст, фото, видео, документ, голосовое или кружок.", buildCancelKeyboard(ctx.services.i18n, locale));
+        return;
+      }
+
       state.preparedContent = content;
+      state.preparedFollowUpText = undefined;
+      state.awaitingFollowUpTextInput = false;
+      state.preparedDeliveryMode = "single";
 
-      const dateLabel = formatDateLabel(draft);
-      const timeLabel = draft.deliveryTime ?? "—";
+      if (canUseFollowUpDelivery(content)) {
+        await ctx.reply(
+          buildBroadcastContentModePrompt(content as MessageContent & { entities?: any[] }),
+          buildBroadcastContentModeKeyboard(locale, ctx.services.i18n)
+        );
+        return;
+      }
 
-      await ctx.reply(
-        `Подтвердите отложенную рассылку:\n` +
-          `Аудитория: ${formatAudienceLabel(draft)}\n` +
-          `Язык контента: ${formatContentLanguageLabel(draft)}\n` +
-          `Дата: ${dateLabel}\n` +
-          `Время: ${timeLabel}\n\n` +
-          `Важно: отправка будет выполнена в это локальное время каждого пользователя.`,
-        Markup.inlineKeyboard([
-          [Markup.button.callback("✅ Подтвердить", confirmSend)],
-          [Markup.button.callback("✏️ Изменить", confirmEdit)],
-          [Markup.button.callback("❌ Отменить", confirmCancel)]
-        ])
-      );
+      await showScheduledConfirmation();
     }
   );
 

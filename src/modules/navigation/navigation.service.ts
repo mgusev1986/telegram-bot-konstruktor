@@ -19,7 +19,10 @@ export class NavigationService {
     const resolvePlaceholders = message.resolvePlaceholders !== false;
     const personalizedMessage: RichMessage = {
       ...message,
-      text: message.text ? renderPersonalizedText(message.text, user, { resolvePlaceholders }) : message.text
+      text: message.text ? renderPersonalizedText(message.text, user, { resolvePlaceholders }) : message.text,
+      followUpText: message.followUpText
+        ? renderPersonalizedText(message.followUpText, user, { resolvePlaceholders })
+        : message.followUpText
     };
 
     if (user.lastContentMessageId) {

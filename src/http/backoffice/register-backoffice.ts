@@ -156,6 +156,7 @@ function renderPage(title: string, body: string): string {
       }
       * { box-sizing: border-box; }
       html { scroll-behavior: smooth; }
+      section[id] { scroll-margin-top: 90px; }
       body {
         margin: 0;
         min-height: 100vh;
@@ -232,14 +233,31 @@ function renderPage(title: string, body: string): string {
           rgba(17,24,36,0.68);
         box-shadow: inset 0 1px 0 rgba(255,255,255,0.03), var(--shadow-sm);
       }
+      .bo-stage--primary {
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0.008)),
+          rgba(20,29,42,0.78);
+        border-color: rgba(226,232,240,0.11);
+      }
+      .bo-stage--utility {
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.016), rgba(255,255,255,0.006)),
+          rgba(16,24,36,0.66);
+      }
+      .bo-stage--diagnostic {
+        background:
+          linear-gradient(180deg, rgba(173,197,255,0.035), rgba(255,255,255,0.004)),
+          rgba(14,21,33,0.76);
+        border-color: rgba(173,197,255,0.12);
+      }
       .bo-stage-head {
         display: flex;
         justify-content: space-between;
         gap: 18px;
         align-items: flex-start;
         flex-wrap: wrap;
-        margin-bottom: 16px;
-        padding-bottom: 14px;
+        margin-bottom: 14px;
+        padding-bottom: 12px;
         border-bottom: 1px solid var(--border-soft);
       }
       .bo-stage-title {
@@ -258,11 +276,21 @@ function renderPage(title: string, body: string): string {
       .bo-stage-body {
         display: flex;
         flex-direction: column;
-        gap: 18px;
+        gap: 16px;
       }
       .bo-split-utility {
         display: grid;
         grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.65fr);
+        gap: 18px;
+      }
+      .bo-stage-grid-2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+      .bo-stage-grid-rail {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
         gap: 18px;
       }
       .top-nav {
@@ -301,7 +329,7 @@ function renderPage(title: string, body: string): string {
       .bo-stack--dense { gap: 12px; }
       .bo-stack--loose { gap: 24px; }
       .bo-hero {
-        padding: 22px 24px;
+        padding: 18px 22px;
         background:
           linear-gradient(180deg, rgba(40,54,75,0.96), rgba(26,37,53,0.98));
       }
@@ -335,12 +363,12 @@ function renderPage(title: string, body: string): string {
       .bo-page-title {
         margin: 0;
         font-family: "Avenir Next", "SF Pro Display", "Segoe UI", sans-serif;
-        font-size: clamp(28px, 2.6vw, 38px);
+        font-size: clamp(26px, 2.35vw, 36px);
         line-height: 1.05;
         letter-spacing: -0.04em;
       }
       .bo-page-subtitle {
-        margin-top: 10px;
+        margin-top: 8px;
         max-width: 74ch;
         color: var(--muted);
         font-size: 13px;
@@ -530,7 +558,7 @@ function renderPage(title: string, body: string): string {
       .bo-kpi-card {
         display: flex;
         flex-direction: column;
-        min-height: 134px;
+        min-height: 124px;
       }
       .bo-kpi-label {
         color: var(--muted);
@@ -554,7 +582,8 @@ function renderPage(title: string, body: string): string {
       }
       .bo-panel-header,
       .bo-section-head,
-      .product-card-header {
+      .product-card-header,
+      .bo-subsection-head {
         display: flex;
         gap: 14px;
         justify-content: space-between;
@@ -570,12 +599,73 @@ function renderPage(title: string, body: string): string {
         letter-spacing: -0.03em;
       }
       .bo-section-text { margin-top: 6px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+      .bo-subsection {
+        padding: 16px 18px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-soft);
+        background: rgba(255,255,255,0.018);
+      }
+      .bo-subsection--raised {
+        background: linear-gradient(180deg, rgba(37,50,69,0.95), rgba(27,37,53,0.96));
+      }
+      .bo-subsection--utility {
+        background: linear-gradient(180deg, rgba(31,42,58,0.95), rgba(23,32,45,0.96));
+      }
+      .bo-subsection--diagnostic {
+        background: linear-gradient(180deg, rgba(24,34,49,0.96), rgba(18,27,40,0.96));
+        border-color: rgba(173,197,255,0.12);
+      }
+      .bo-subsection-title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      .bo-subsection-copy {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+        max-width: 72ch;
+      }
+      .bo-subsection + .bo-subsection {
+        margin-top: 16px;
+      }
+      .bo-stage .bo-subsection + .bo-subsection {
+        margin-top: 14px;
+      }
       .bot-card {
         padding: 20px;
         display: flex;
         flex-direction: column;
         gap: 18px;
         box-shadow: var(--shadow-sm);
+      }
+      .bo-inline-meta {
+        display: flex;
+        gap: 10px 18px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .bo-inline-meta-item {
+        display: inline-flex;
+        gap: 8px;
+        align-items: baseline;
+        min-width: 0;
+      }
+      .bo-inline-meta-label {
+        color: var(--muted);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .bo-inline-meta-value {
+        color: var(--text-soft);
+        font-size: 13px;
+        line-height: 1.5;
+        min-width: 0;
+        word-break: break-word;
       }
       .bot-card.created {
         border-color: rgba(159,202,176,0.42);
@@ -856,8 +946,9 @@ function renderPage(title: string, body: string): string {
         white-space: normal;
       }
       .paid-table td {
-        white-space: nowrap;
+        white-space: normal;
       }
+      .paid-table td.table-nowrap { white-space: nowrap; }
       table tbody tr:hover,
       .paid-table tbody tr:hover {
         background: rgba(255,255,255,0.03);
@@ -906,6 +997,14 @@ function renderPage(title: string, body: string): string {
         padding-top: 20px;
         border-top: 1px solid var(--border-soft);
       }
+      .bo-workspace-nav {
+        position: sticky;
+        top: 12px;
+        z-index: 8;
+      }
+      .bo-workspace-nav .bo-section-head {
+        margin-bottom: 12px;
+      }
       .paid-nav {
         display: flex;
         gap: 10px;
@@ -926,6 +1025,7 @@ function renderPage(title: string, body: string): string {
         color: var(--muted-strong);
       }
       .flow-list li { margin: 8px 0; }
+      .flow-list li strong { color: var(--text-soft); }
       .mono-list {
         margin: 0;
         padding-left: 18px;
@@ -967,6 +1067,8 @@ function renderPage(title: string, body: string): string {
         .linked-chat-grid,
         .nowpayments-grid,
         .bo-grid-2,
+        .bo-stage-grid-2,
+        .bo-stage-grid-rail,
         .bo-meta-grid,
         .bo-action-groups,
         .bo-split-utility {
@@ -1258,19 +1360,27 @@ function renderPageHeader(params: {
   </section>`;
 }
 
-function renderSectionPanel(params: {
+function renderSubsection(params: {
   id?: string;
   title: string;
   subtitle?: string;
   actions?: string;
   body: string;
-  extraClass?: string;
+  tone?: "default" | "raised" | "utility" | "diagnostic";
 }): string {
-  return `<section${params.id ? ` id="${escapeHtml(params.id)}"` : ""} class="bo-panel bo-stack${params.extraClass ? ` ${params.extraClass}` : ""}">
-    <div class="bo-section-head">
+  const toneClass =
+    params.tone === "raised"
+      ? " bo-subsection--raised"
+      : params.tone === "utility"
+        ? " bo-subsection--utility"
+        : params.tone === "diagnostic"
+          ? " bo-subsection--diagnostic"
+          : "";
+  return `<section${params.id ? ` id="${escapeHtml(params.id)}"` : ""} class="bo-subsection${toneClass}">
+    <div class="bo-subsection-head">
       <div>
-        <h2 class="bo-section-title">${escapeHtml(params.title)}</h2>
-        ${params.subtitle ? `<div class="bo-section-text">${params.subtitle}</div>` : ""}
+        <h3 class="bo-subsection-title">${escapeHtml(params.title)}</h3>
+        ${params.subtitle ? `<div class="bo-subsection-copy">${params.subtitle}</div>` : ""}
       </div>
       ${params.actions ? `<div class="bo-actions">${params.actions}</div>` : ""}
     </div>
@@ -1279,13 +1389,23 @@ function renderSectionPanel(params: {
 }
 
 function renderStageBlock(params: {
+  id?: string;
   eyebrow?: string;
   title: string;
   subtitle?: string;
   actions?: string;
   body: string;
+  tone?: "default" | "primary" | "utility" | "diagnostic";
 }): string {
-  return `<section class="bo-stage">
+  const toneClass =
+    params.tone === "primary"
+      ? " bo-stage--primary"
+      : params.tone === "utility"
+        ? " bo-stage--utility"
+        : params.tone === "diagnostic"
+          ? " bo-stage--diagnostic"
+          : "";
+  return `<section${params.id ? ` id="${escapeHtml(params.id)}"` : ""} class="bo-stage${toneClass}">
     <div class="bo-stage-head">
       <div>
         ${params.eyebrow ? `<div class="bo-page-overline">${escapeHtml(params.eyebrow)}</div>` : ""}
@@ -1445,37 +1565,26 @@ export function renderDashboardBody(params: DashboardParams): string {
               <div class="bot-title" style="margin-top:10px">${escapeHtml(b.name)}</div>
               <div class="small" style="margin-top:6px">@${escapeHtml(b.telegramBotUsername ?? "—")}</div>
             </div>
-            <div class="bo-stack bo-stack--dense" style="align-items:flex-end">
-              <div class="small">ID</div>
-              <code>${escapeHtml(b.id)}</code>
+            ${primaryActions.length ? `<div class="bo-actions">${primaryActions.join("")}</div>` : ""}
+          </div>
+          <div class="bo-inline-meta">
+            <div class="bo-inline-meta-item">
+              <span class="bo-inline-meta-label">ID</span>
+              <span class="bo-inline-meta-value"><code>${escapeHtml(b.id)}</code></span>
+            </div>
+            <div class="bo-inline-meta-item">
+              <span class="bo-inline-meta-label">Telegram</span>
+              <span class="bo-inline-meta-value">${b.telegramBotUsername ? `@${escapeHtml(b.telegramBotUsername)}` : "Username не задан"}</span>
+            </div>
+            <div class="bo-inline-meta-item">
+              <span class="bo-inline-meta-label">Контур</span>
+              <span class="bo-inline-meta-value">${primaryActions.length ? `Доступно ${primaryActions.length} основных действия.` : "Набор действий определяется ролью."}</span>
             </div>
           </div>
-          <div class="bo-meta-grid">
-            <div class="bo-meta-tile">
-              <div class="bo-meta-label">Telegram</div>
-              <div class="bo-meta-value">${b.telegramBotUsername ? `@${escapeHtml(b.telegramBotUsername)}` : "Username не задан"}</div>
-            </div>
-            <div class="bo-meta-tile">
-              <div class="bo-meta-label">Основной контур</div>
-              <div class="bo-meta-value">${primaryActions.length ? `Доступно ${primaryActions.length} ключевых маршрута для ежедневной работы.` : "Набор действий определяется ролью backoffice-пользователя."}</div>
-            </div>
-            <div class="bo-meta-tile">
-              <div class="bo-meta-label">Публичное открытие</div>
-              <div class="bo-meta-value">${b.telegramBotUsername ? "Ссылка в Telegram доступна" : "Нужен username бота для быстрого открытия"}</div>
-            </div>
-          </div>
-          <div class="bo-action-groups">
-            <div class="bo-action-group">
-              <div class="bo-action-label">Основные действия</div>
-              <div class="bo-actions" style="justify-content:flex-start">
-                ${primaryActions.join("") || `<span class="small">Для этого бота нет основных действий в рамках текущей роли.</span>`}
-              </div>
-            </div>
-            <div class="bo-action-group bo-action-group--muted">
-              <div class="bo-action-label">Управление и утилиты</div>
-              <div class="bo-actions" style="justify-content:flex-start">
-                ${secondaryActions.join("") || `<span class="small">Дополнительные действия станут доступны по роли или после настройки username.</span>`}
-              </div>
+          <div class="bo-action-group bo-action-group--muted">
+            <div class="bo-action-label">Управление и утилиты</div>
+            <div class="bo-actions" style="justify-content:flex-start">
+              ${secondaryActions.join("") || `<span class="small">Дополнительные действия станут доступны по роли или после настройки username.</span>`}
             </div>
           </div>
         </div>`;
@@ -1497,27 +1606,30 @@ export function renderDashboardBody(params: DashboardParams): string {
     : "";
   const actionCards = [
     canViewAudience
-      ? `<div class="overview-card">
-          <div class="section-title">Аудитория</div>
-          <div class="small">Платформенный каталог пользователей, фильтры и экспорт по всем ботам.</div>
-          <div class="bo-actions" style="justify-content:flex-start; margin-top:14px">${audienceLink}</div>
-        </div>`
+      ? renderSubsection({
+          title: "Аудитория",
+          subtitle: "Платформенный каталог пользователей, фильтры и экспорт по всем ботам.",
+          body: `<div class="bo-actions" style="justify-content:flex-start">${audienceLink}</div>`,
+          tone: "utility"
+        })
       : "",
     canViewAudience
-      ? `<div class="overview-card">
-          <div class="section-title">База данных</div>
-          <div class="small">Компактная аналитика по ботам: пользователи, рассылки, платежи и структура.</div>
-          <div class="bo-actions" style="justify-content:flex-start; margin-top:14px">${databaseLink}</div>
-        </div>`
+      ? renderSubsection({
+          title: "База данных",
+          subtitle: "Компактная аналитика по ботам: пользователи, рассылки, платежи и структура.",
+          body: `<div class="bo-actions" style="justify-content:flex-start">${databaseLink}</div>`,
+          tone: "utility"
+        })
       : "",
-    `<div class="overview-card">
-        <div class="section-title">Сессия и навигация</div>
-        <div class="small">Создание нового бота вынесено в отдельный модуль ниже, а выход из backoffice оставлен тихим системным действием.</div>
-        <div class="bo-actions" style="justify-content:flex-start; margin-top:14px">
+    renderSubsection({
+      title: "Сессия и навигация",
+      subtitle: "Создание нового бота вынесено в отдельный модуль ниже, а выход из backoffice оставлен тихим системным действием.",
+      body: `<div class="bo-actions" style="justify-content:flex-start">
           ${renderActionLink("Создать бота", "#create-bot-panel", "primary")}
           ${renderActionLink("Выйти", "/backoffice/logout", "ghost")}
-        </div>
-      </div>`
+        </div>`,
+      tone: "raised"
+    })
   ]
     .filter(Boolean)
     .join("");
@@ -1552,7 +1664,8 @@ export function renderDashboardBody(params: DashboardParams): string {
           title: "Системные действия и платформенные переходы",
           subtitle:
             "Глобальные действия вынесены из списка ботов в отдельную управляющую зону, чтобы сами экземпляры ботов перестали конкурировать с платформенной навигацией.",
-          body: `<div class="bo-grid-3">${actionCards}</div>`
+          body: `<div class="bo-grid-3">${actionCards}</div>`,
+          tone: "utility"
         })}
         ${renderStageBlock({
           eyebrow: "Рабочие контуры",
@@ -1563,22 +1676,24 @@ export function renderDashboardBody(params: DashboardParams): string {
           body:
             cards
               ? `<div class="bo-grid-2">${cards}</div>`
-              : renderNote("warning", `Пока нет созданных <code>экземпляров ботов</code>. Используйте модуль запуска ниже, чтобы подготовить первый рабочий контур.`)
+              : renderNote("warning", `Пока нет созданных <code>экземпляров ботов</code>. Используйте модуль запуска ниже, чтобы подготовить первый рабочий контур.`),
+          tone: "primary"
         })}
         ${renderStageBlock({
           eyebrow: "Запуск нового экземпляра",
           title: "Создать нового бота",
           subtitle:
             "Создание вынесено в самостоятельный полноширинный модуль и больше не выглядит как побочная форма рядом со списком. Это отдельный операционный шаг с чётким контекстом и безопасными подсказками.",
-          body: `${renderSectionPanel({
+          body: `${renderSubsection({
             id: "create-bot-panel",
             title: "Новый экземпляр бота",
             subtitle:
               "Заполняйте поля как launch-панель: имя, токен, username, владелец и базовый язык. Логика создания и проверка через getMe не менялись.",
             body: `${createForm}
               <div class="small">В целях безопасности токен не отображается после отправки. Проверка выполняется через <code>getMe</code>, а успешный бот автоматически подсвечивается в списке.`,
-            extraClass: "bo-panel--raised"
-          })}`
+            tone: "raised"
+          })}`,
+          tone: "utility"
         })}
         ${scrollScript}`;
 }
@@ -1880,16 +1995,15 @@ export async function registerBackofficeRoutes(
         (u) => `
     <tr>
       <td>
-        <div class="table-title"><a href="/backoffice/audience/user/${encodeURIComponent(u.id)}"><strong>${escapeHtml(u.id.slice(0, 8))}</strong></a></div>
+        <div class="table-title"><a href="/backoffice/audience/user/${encodeURIComponent(u.id)}"><strong>${escapeHtml(u.fullName || u.firstName || u.username ? `${u.fullName || u.firstName || `@${u.username}`}` : u.id.slice(0, 8))}</strong></a></div>
+        <div class="table-meta">${u.username ? `<a href="https://t.me/${escapeHtml(u.username)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(u.username)}</a>` : `Без username`}</div>
+      </td>
+      <td>
+        <div class="table-title"><code>${escapeHtml(String(u.telegramUserId))}</code></div>
         <div class="table-meta"><code>${escapeHtml(u.id)}</code></div>
       </td>
-      <td>${u.username ? `<div class="table-title"><a href="https://t.me/${escapeHtml(u.username)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(u.username)}</a></div>` : `<span class="small">—</span>`}</td>
-      <td class="table-nowrap"><code>${escapeHtml(String(u.telegramUserId))}</code></td>
-      <td>
-        <div class="table-title">${escapeHtml(u.fullName || u.firstName || "—")}</div>
-        <div class="table-meta">Язык: <strong>${escapeHtml(u.selectedLanguage)}</strong></div>
-      </td>
       <td>${u.botName ? `<div class="table-title">${escapeHtml(u.botName)}</div>` : `<span class="small">—</span>`}</td>
+      <td><div class="table-title">${escapeHtml(u.selectedLanguage)}</div></td>
       <td class="table-nowrap">${u.lastSeenAt ? `<div>${escapeHtml(u.lastSeenAt.toISOString().slice(0, 19).replace("T", " "))}</div>` : `<span class="small">—</span>`}</td>
       <td class="table-nowrap"><div>${escapeHtml(u.createdAt.toISOString().slice(0, 19).replace("T", " "))}</div></td>
     </tr>`
@@ -1939,7 +2053,7 @@ export async function registerBackofficeRoutes(
           subtitle:
             "Фильтрация остаётся первичным действием для операторов. Экспорт вынесен в отдельный вторичный модуль, чтобы таблица ощущалась рабочим directory view, а не экраном выгрузки.",
           body: `<div class="bo-split-utility">
-              ${renderSectionPanel({
+              ${renderSubsection({
                 title: "Рабочий фильтр",
                 subtitle: "Сузьте каталог по боту или по строкам профиля, не меняя существующую query-схему.",
                 body: `<form method="GET" action="/backoffice/audience" class="bo-stack bo-stack--dense">
@@ -1961,9 +2075,9 @@ export async function registerBackofficeRoutes(
                       ${hasActiveFilters ? renderActionLink("Сбросить", "/backoffice/audience", "ghost") : ""}
                     </div>
                   </form>`,
-                extraClass: "bo-panel--raised"
+                tone: "raised"
               })}
-              ${renderSectionPanel({
+              ${renderSubsection({
                 title: "Экспорт выборки",
                 subtitle: "Все выгрузки сохраняют текущие фильтры и поиск. Форматы не убраны, но больше не спорят за внимание с сегментацией.",
                 body: `<div class="bo-stack bo-stack--dense">
@@ -1971,9 +2085,10 @@ export async function registerBackofficeRoutes(
                     <div class="bo-data-caption">HTML удобно для быстрых ручных просмотров, Excel и CSV оставлены для последующей аналитики и передачи данных.</div>
                     ${renderNote("info", hasActiveFilters ? "Выгрузка будет построена по текущей отфильтрованной выборке." : "Сейчас выгружается весь каталог пользователей по всем ботам.")}
                   </div>`,
-                extraClass: "bo-panel--utility"
+                tone: "utility"
               })}
-            </div>`
+            </div>`,
+          tone: "utility"
         })}
         ${renderStageBlock({
           eyebrow: "Каталог",
@@ -1981,7 +2096,7 @@ export async function registerBackofficeRoutes(
           subtitle:
             "ID и технические поля остались доступны, но теперь у таблицы есть явный directory-контекст: профиль и временные метки отделены, а навигация по страницам утяжелена меньше.",
           actions: `<span class="bo-context-chip">Всего: ${total}</span>`,
-          body: `${renderSectionPanel({
+          body: `${renderSubsection({
             title: "Пользователи",
             subtitle: "Текущая выборка каталога со всеми прежними ссылками в карточку пользователя и фильтрами по ботам.",
             body: `<div class="bo-table-shell">
@@ -1989,15 +2104,14 @@ export async function registerBackofficeRoutes(
                   <thead>
                     <tr>
                       <th>Пользователь</th>
-                      <th>Username</th>
-                      <th>Telegram ID</th>
-                      <th>Профиль</th>
+                      <th>Идентификаторы</th>
                       <th>Бот</th>
+                      <th>Язык</th>
                       <th>Последняя активность</th>
                       <th>Регистрация</th>
                     </tr>
                   </thead>
-                  <tbody>${tableRows || "<tr><td colspan='7' class='small'>Нет пользователей</td></tr>"}</tbody>
+                  <tbody>${tableRows || "<tr><td colspan='6' class='small'>Нет пользователей</td></tr>"}</tbody>
                 </table>
               </div>
               <div class="row" style="justify-content:space-between; margin-top:14px">
@@ -2007,8 +2121,9 @@ export async function registerBackofficeRoutes(
                   ${nextLink ? renderActionLink("Вперёд →", `/backoffice/audience?page=${nextPage}&perPage=${perPage}${botId ? `&bot=${encodeURIComponent(botId)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}`, "ghost") : ""}
                 </div>
               </div>`,
-            extraClass: "bo-panel--raised"
-          })}`
+            tone: "raised"
+          })}`,
+          tone: "primary"
         })}`
       )
     );
@@ -2425,8 +2540,8 @@ export async function registerBackofficeRoutes(
           title: "Охват и насыщенность данных",
           subtitle:
             "Этот слой даёт быстрый ответ, насколько система живая: сколько ботов реально наполнены данными, где уже есть платежи и какие контуры пока пустые.",
-          body: `<div class="bo-split-utility">
-              ${renderSectionPanel({
+          body: `<div class="bo-stage-grid-rail">
+              ${renderSubsection({
                 title: "Качество наполнения",
                 subtitle: "Показатели не меняют логику отчёта, но помогают сразу понять, насколько платформа операционно насыщена.",
                 body: `<div class="bo-kpi-grid">
@@ -2434,18 +2549,19 @@ export async function registerBackofficeRoutes(
                     ${renderMetricCard("Боты с платежами", String(botsWithPayments), `${renderStatusBadge(botsWithPayments ? "Коммерческий контур активен" : "Платежей нет", botsWithPayments ? "active" : "pending")}`, "bo-kpi-card--compact")}
                     ${renderMetricCard("Пустые контуры", String(emptyBots), emptyBots ? `${renderStatusBadge("Есть неинициализированные боты", "pending")}` : `${renderStatusBadge("Пустых контуров нет", "active")}`, "bo-kpi-card--compact")}
                   </div>`,
-                extraClass: "bo-panel--raised"
+                tone: "raised"
               })}
-              ${renderSectionPanel({
+              ${renderSubsection({
                 title: "Как читать страницу",
                 subtitle: "Таблица ниже остаётся источником истины по каждому боту, а быстрые выводы справа помогают не теряться в сухих числах.",
                 body: `<div class="bo-stack bo-stack--dense">
                     <div class="bo-data-caption">Имя бота и статус наполненности стоят первыми, чтобы оператор сразу отделял живые контуры от пустых. Число пользователей по-прежнему ведёт в аудиторию с фильтром.</div>
                     ${renderNote("info", `Всего в отчёте <strong>${statsByBot.length}</strong> ботов. Суммарно <strong>${totals.users}</strong> пользователей и <strong>${totals.payments}</strong> платежей.`)}
                   </div>`,
-                extraClass: "bo-panel--utility"
+                tone: "utility"
               })}
-            </div>`
+            </div>`,
+          tone: "utility"
         })}
         ${renderStageBlock({
           eyebrow: "Пер-бот аналитика",
@@ -2453,7 +2569,7 @@ export async function registerBackofficeRoutes(
           subtitle:
             "Основная таблица оставлена компактной, но визуально усилена как аналитический модуль: заголовок, числовой ритм и итоговая строка читаются заметно быстрее.",
           actions: `<span class="bo-context-chip">Ботов: ${statsByBot.length}</span>`,
-          body: `${renderSectionPanel({
+          body: `${renderSubsection({
             title: "Статистика по ботам",
             subtitle: "Сначала имя и статус наполненности, затем численные показатели. Итоговая строка сохранена и усилена визуально.",
             body: `<div class="bo-table-shell">
@@ -2474,8 +2590,9 @@ export async function registerBackofficeRoutes(
                 </table>
               </div>
               <div class="small" style="margin-top:12px">Клик по числу пользователей сохраняет прежний маршрут и ведёт в аудиторию с фильтром по выбранному боту.</div>`,
-            extraClass: "bo-panel--raised"
-          })}`
+            tone: "raised"
+          })}`,
+          tone: "primary"
         })}`
       )
     );
@@ -4141,14 +4258,14 @@ export async function registerBackofficeRoutes(
     const liveCreateBlock = `<div class="bo-note bo-note--info">
          Live-продукты работают по production-логике: стандартный duration в днях, реальные продажи и штатный контур доступа. TEST-логика вынесена в отдельную лабораторию ниже.
        </div>
-       <div class="bo-panel" style="margin-top:16px">
-         <div class="bo-section-head">
-           <div>
-             <h3 class="bo-section-title">Создать live-product</h3>
-             <div class="bo-section-text">Создание production-продукта без ускоренных минутных таймеров.</div>
+       <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create" class="bo-stack" style="margin-top:16px">
+         <div class="bo-form-cluster">
+           <div class="bo-form-cluster-head">
+             <div>
+               <div class="bo-form-cluster-title">Создать live-product</div>
+               <div class="bo-form-cluster-copy">Production-продукт без ускоренных минутных таймеров. Сначала оффер и биллинг, затем параметры доступа.</div>
+             </div>
            </div>
-         </div>
-         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create" class="bo-stack">
            <div class="product-form-grid">
              <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required placeholder="Обучение / VIP доступ" /></div>
              <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required placeholder="Оплатить обучение" /></div>
@@ -4162,91 +4279,114 @@ export async function registerBackofficeRoutes(
              </div>
              <div class="field-wrap"><label class="small">Дней доступа</label><input name="durationDays" type="number" min="1" placeholder="30" /></div>
            </div>
-           <details>
-             <summary class="small">Платежи и доступ</summary>
-             <div class="bo-stack" style="margin-top:12px">
-               <div>
-                 <label class="small">Ссылки доступа в чат / канал</label>
-                 <div class="linked-chat-grid">
-                   <div class="linked-chat-card">
-                     <div class="title">Кнопка 1</div>
-                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
-                     <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
-                     <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
-                     <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
-                   </div>
-                   <div class="linked-chat-card">
-                     <div class="title">Кнопка 2</div>
-                     <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
-                     <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
-                     <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
-                     <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
-                   </div>
-                 </div>
-                 <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
-                 <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
-                 <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
-               </div>
-               <div>
-                 <label class="small">Описание на экране оплаты / тарифы (ru)</label>
-                 <textarea name="descriptionRu" rows="2"></textarea>
-                 <div class="small" style="margin-top:4px">Показывается пользователю в едином инвойсе сразу под названием продукта. Сюда удобно писать тарифы и то, что человек получит после оплаты.</div>
-               </div>
+         </div>
+         <div class="bo-form-cluster">
+           <div class="bo-form-cluster-head">
+             <div>
+               <div class="bo-form-cluster-title">Доступ и linked chats</div>
+               <div class="bo-form-cluster-copy">Ссылки доступа и идентификаторы чатов собраны в отдельный кластер, чтобы removal-readiness читался без раскрытия скрытых деталей.</div>
              </div>
-           </details>
-           <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Создать live-product</button></div>
-         </form>
-       </div>`;
+           </div>
+           <label class="small">Ссылки доступа в чат / канал</label>
+           <div class="linked-chat-grid">
+             <div class="linked-chat-card">
+               <div class="title">Кнопка 1</div>
+               <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
+               <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
+               <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
+               <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+             </div>
+             <div class="linked-chat-card">
+               <div class="title">Кнопка 2</div>
+               <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
+               <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
+               <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
+               <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+             </div>
+           </div>
+           <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
+           <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
+           <div class="small" style="margin-top:4px">Для приватного чата можно сохранить invite-link и identifier в одной строке: <code>https://t.me/+inviteHash | -1001234567890</code> или <code>https://t.me/+inviteHash | https://t.me/c/1234567890/1</code>. Тогда кнопка доступа будет вести по invite-link, а бот сможет удалить пользователя по expiry.</div>
+         </div>
+         <div class="bo-form-cluster">
+           <div class="bo-form-cluster-head">
+             <div>
+               <div class="bo-form-cluster-title">Описание оффера</div>
+               <div class="bo-form-cluster-copy">Отдельный блок для текста на экране оплаты, чтобы коммерческая часть продукта не смешивалась с техническими настройками.</div>
+             </div>
+           </div>
+           <div>
+             <label class="small">Описание на экране оплаты / тарифы (ru)</label>
+             <textarea name="descriptionRu" rows="2"></textarea>
+             <div class="small" style="margin-top:4px">Показывается пользователю в едином инвойсе сразу под названием продукта. Сюда удобно писать тарифы и то, что человек получит после оплаты.</div>
+           </div>
+         </div>
+         <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Создать live-product</button></div>
+       </form>`;
 
     const testCreateBlock = `<div class="bo-note bo-note--warning">
          TEST-логика остаётся полностью явной: source of truth — <code>durationMinutes &gt; 0</code>, reminders идут за <strong>3 / 2 / 1 минуты</strong>, а expiry/removal отрабатывают в ускоренном режиме.
        </div>
-       <div class="bo-panel test-block" style="margin-top:16px">
-         <div class="bo-section-head">
-           <div>
-             <h3 class="bo-section-title">Создать тестовый продукт</h3>
-             <div class="bo-section-text">Изолированная лаборатория для быстрого прогона полного access lifecycle.</div>
+       <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create" class="bo-stack" style="margin-top:16px">
+         <input type="hidden" name="billingType" value="TEMPORARY" />
+         <input type="hidden" name="currency" value="USDT" />
+         <div class="bo-form-cluster">
+           <div class="bo-form-cluster-head">
+             <div>
+               <div class="bo-form-cluster-title">Создать тестовый продукт</div>
+               <div class="bo-form-cluster-copy">Изолированная лаборатория для быстрого прогона полного access lifecycle без ожидания днями.</div>
+             </div>
            </div>
-         </div>
-         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/products/create" class="bo-stack">
-           <input type="hidden" name="billingType" value="TEMPORARY" />
-           <input type="hidden" name="currency" value="USDT" />
            <div class="product-form-grid">
              <div class="field-wrap"><label class="small">Название продукта в инвойсе (ru)</label><input name="titleRu" type="text" required placeholder="Тест: обучение 5 мин" /></div>
              <div class="field-wrap"><label class="small">Кнопка в разделе (ru)</label><input name="payButtonTextRu" type="text" required value="Оплатить тест" /></div>
              <div class="field-wrap"><label class="small">Цена</label><input name="price" type="text" required value="1" /></div>
              <div class="field-wrap"><label class="small">Срок в минутах</label><input name="durationMinutes" type="number" required min="1" max="1440" value="5" /></div>
            </div>
-           <div>
-             <label class="small">Ссылки доступа в чат / канал</label>
-             <div class="linked-chat-grid">
-               <div class="linked-chat-card">
-                 <div class="title">Кнопка 1</div>
-                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
-                 <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
-                 <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
-                 <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
-               </div>
-               <div class="linked-chat-card">
-                 <div class="title">Кнопка 2</div>
-                 <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
-                 <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
-                 <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
-                 <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
-               </div>
+         </div>
+         <div class="bo-form-cluster">
+           <div class="bo-form-cluster-head">
+             <div>
+               <div class="bo-form-cluster-title">Доступ и удаление</div>
+               <div class="bo-form-cluster-copy">Здесь остаются все поля для проверки invite, reminders, expiry и removal. Важные TEST-семантики не спрятаны.</div>
              </div>
-             <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
-             <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
+           </div>
+           <label class="small">Ссылки доступа в чат / канал</label>
+           <div class="linked-chat-grid">
+             <div class="linked-chat-card">
+               <div class="title">Кнопка 1</div>
+               <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel1" type="text" placeholder="Чат" /></div>
+               <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink1" type="text" placeholder="https://t.me/+inviteHashChat" /></div>
+               <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink1" type="text" placeholder="https://t.me/c/1234567890/1" /></div>
+               <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier1" type="text" placeholder="-1001234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="1">Извлечь ID</button></div><div class="id-hint" data-id-hint="1"></div></div>
+             </div>
+             <div class="linked-chat-card">
+               <div class="title">Кнопка 2</div>
+               <div class="field-wrap"><label class="small">Название</label><input name="linkedChatLabel2" type="text" placeholder="Канал" /></div>
+               <div class="field-wrap"><label class="small">Ссылка-приглашение</label><input name="linkedChatLink2" type="text" placeholder="https://t.me/+inviteHashChannel" /></div>
+               <div class="field-wrap"><label class="small">Ссылка на сообщение</label><input name="linkedChatPostLink2" type="text" placeholder="https://t.me/c/2234567890/1" /></div>
+               <div class="field-wrap"><label class="small">ID чата</label><div class="field-inline"><input name="linkedChatIdentifier2" type="text" placeholder="-1002234567890" /><button class="secondary mini-btn" type="button" data-linked-chat-extract="2">Извлечь ID</button></div><div class="id-hint" data-id-hint="2"></div></div>
+             </div>
+           </div>
+           <textarea name="linkedChatsRaw" rows="3" placeholder="Чат | https://t.me/+inviteHashChat | -1001234567890&#10;Канал | https://t.me/+inviteHashChannel | -1002234567890"></textarea>
+           <div class="small" style="margin-top:6px">Можно не указывать identifier вручную: если вставите post-link вида <code>https://t.me/c/.../...</code>, identifier <code>-100...</code> будет извлечен автоматически.</div>
+           <div class="small" style="margin-top:4px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats. Для приватного чата используйте либо <code>https://t.me/c/1234567890/1</code>, либо комбинированный формат <code>https://t.me/+inviteHash | -1001234567890</code>. Тогда пользователь войдёт по invite-link, а ban/unban пойдёт по identifier.</div>
+         </div>
+         <div class="bo-form-cluster">
+           <div class="bo-form-cluster-head">
+             <div>
+               <div class="bo-form-cluster-title">Описание тестового оффера</div>
+               <div class="bo-form-cluster-copy">Текст продукта остаётся редактируемым отдельно, чтобы не теряться среди ускоренных тестовых параметров.</div>
+             </div>
            </div>
            <div>
              <label class="small">Описание на экране оплаты / тарифы (ru)</label>
              <textarea name="descriptionRu" rows="2" placeholder="Тестовый продукт для прогона access lifecycle"></textarea>
              <div class="small" style="margin-top:4px">Показывается в едином инвойсе тестового продукта сразу под названием. Здесь удобно описать оффер, тариф и что откроется после оплаты.</div>
            </div>
-           <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Создать тестовый продукт</button></div>
-         </form>
-         <div class="small" style="margin-top:8px">Ожидаемое поведение: reminder за 3/2/1 минуты → expiry → попытка удаления из linked chats. Для приватного чата используйте либо <code>https://t.me/c/1234567890/1</code>, либо комбинированный формат <code>https://t.me/+inviteHash | -1001234567890</code>. Тогда пользователь войдёт по invite-link, а ban/unban пойдёт по identifier.</div>
-       </div>`;
+         </div>
+         <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Создать тестовый продукт</button></div>
+       </form>`;
 
     const paymentEventsTable = paymentEvents.length
       ? `<div class="events-scroll"><table class="paid-table">
@@ -4255,11 +4395,11 @@ export async function registerBackofficeRoutes(
              ${paymentEvents
                .map(
                  (event) => `<tr>
-                   <td>${formatIsoDate(event.createdAt)}</td>
-                   <td><code>${escapeHtml(event.kind)}</code></td>
-                   <td>${renderUserLabel(event.user)}</td>
-                   <td>${escapeHtml(event.productLabel)}</td>
-                   <td>${escapeHtml(event.amount)}</td>
+                   <td class="table-nowrap">${formatIsoDate(event.createdAt)}</td>
+                   <td><div class="table-title"><code>${escapeHtml(event.kind)}</code></div></td>
+                   <td><div class="table-title">${renderUserLabel(event.user)}</div></td>
+                   <td><div class="table-title">${escapeHtml(event.productLabel)}</div></td>
+                   <td class="table-nowrap">${escapeHtml(event.amount)}</td>
                    <td>${renderPaymentStatus(event.status)}</td>
                    <td class="mono-wrap"><code>${escapeHtml(event.note)}</code></td>
                    <td class="wallet-col"><code>${escapeHtml(event.walletAddress ?? "-")}</code></td>
@@ -4281,11 +4421,11 @@ export async function registerBackofficeRoutes(
                    right.product.localizations.find((item) => item.languageCode === "ru") ??
                    right.product.localizations[0];
                  return `<tr>
-                   <td>${renderUserLabel(right.user)}</td>
-                   <td>${escapeHtml(loc?.title ?? right.product.code)}</td>
+                   <td><div class="table-title">${renderUserLabel(right.user)}</div></td>
+                   <td><div class="table-title">${escapeHtml(loc?.title ?? right.product.code)}</div></td>
                    <td>${renderProductModeBadge(right.product)}</td>
                    <td>${renderAccessStatus(right)}</td>
-                   <td>${formatIsoDate(right.activeUntil)}</td>
+                   <td class="table-nowrap">${formatIsoDate(right.activeUntil)}</td>
                    <td>${renderLinkedChatReadiness(right.product)}</td>
                    <td>${renderReminderSummary(right.id)}</td>
                    <td>${renderExpirySummary(right.id)}</td>
@@ -4312,13 +4452,19 @@ export async function registerBackofficeRoutes(
           actions: renderActionLink("Настройки бота", `/backoffice/bots/${escapeHtml(bot.id)}/settings`, "secondary")
         })}
         ${topStateBanners}
-        <section class="bo-panel bo-panel--utility">
+        <section class="bo-panel bo-panel--utility bo-workspace-nav">
           <div class="bo-section-head">
             <div>
               <h2 class="bo-section-title">Карта рабочего пространства</h2>
               <div class="bo-section-text">Быстрые переходы между управляющим, продуктовым, финансовым и диагностическим контурами страницы.</div>
             </div>
             <div class="bo-context-chip">4 рабочих слоя</div>
+          </div>
+          <div class="bo-context-list" style="margin-top:0; margin-bottom:12px">
+            <span class="bo-context-chip">Разделы: <strong>${menuItems.length}</strong></span>
+            <span class="bo-context-chip">LIVE / TEST: <strong>${liveProducts.length}</strong> / <strong>${testProducts.length}</strong></span>
+            <span class="bo-context-chip">Платежи в ожидании: <strong>${pendingPaymentsCount}</strong></span>
+            <span class="bo-context-chip">Активные доступы: <strong>${activeAccessCount}</strong></span>
           </div>
           <div class="paid-nav">
             <a href="#overview">Обзор</a>
@@ -4336,7 +4482,8 @@ export async function registerBackofficeRoutes(
           subtitle:
             "Первый слой собран как управляющая палуба: сигналы, глобальное включение платного доступа и привязка контента находятся выше продуктовых и финансовых деталей.",
           actions: bot.paidAccessEnabled ? renderStatusBadge("Платный доступ активен", "active") : renderStatusBadge("Платный доступ выключен", "failed"),
-          body: `${renderSectionPanel({
+          body: `<div class="bo-stage-grid-rail">
+            ${renderSubsection({
             id: "overview",
             title: "Обзор рабочего пространства",
             subtitle:
@@ -4349,52 +4496,53 @@ export async function registerBackofficeRoutes(
                 ${renderMetricCard("Ожидающие платежи", String(pendingPaymentsCount), `${renderStatusBadge(`Депозиты в ожидании ${pendingDepositsCount}`, pendingDepositsCount ? "pending" : "muted")}`)}
                 ${renderMetricCard("Проблемы expiry/removal", String(failedExpiryJobsCount), failedExpiryJobsCount ? `${renderStatusBadge("Проверьте ошибки удаления", "failed")}` : `${renderStatusBadge("Сбоев не найдено", "active")}`)}
               </div>
-              <div class="subgrid" style="margin-top:18px">
-                <div class="overview-card">
-                  <div class="section-title">Быстрый порядок действий</div>
-                  <ol class="flow-list">
-                    <li>Создайте боевой или тестовый продукт.</li>
-                    <li>Привяжите продукт к разделу в блоке «Контент и доступ».</li>
-                    <li>Проверьте CTA и linked chats.</li>
-                    <li>Для TEST используйте ручную выдачу доступа, чтобы прогнать reminders и expiry за минуты.</li>
-                    <li>Ошибки удаления и статусы доступа контролируйте в аудите.</li>
-                  </ol>
+              <div class="bo-form-cluster" style="margin-top:16px">
+                <div class="bo-form-cluster-head">
+                  <div>
+                    <div class="bo-form-cluster-title">Порядок работы</div>
+                    <div class="bo-form-cluster-copy">Этот блок оставляет операционный сценарий перед глазами, чтобы по странице не приходилось идти сверху вниз для понимания следующего шага.</div>
+                  </div>
                 </div>
-                <div class="overview-card">
-                  <div class="section-title">Режим оформления оплаты</div>
-                  <div>${balanceFlowEnabled ? renderStatusBadge("ПОПОЛНЕНИЕ БАЛАНСА + ОПЛАТА С БАЛАНСА", "active") : renderStatusBadge("ПРЯМОЙ СЧЁТ / РУЧНОЙ ЗАПРОС ОПЛАТЫ", "pending")}</div>
-                  <div class="small" style="margin-top:10px">Оплата через NOWPayments, сеть USDT (BEP20). Live использует дни и стандартный flow, TEST — минуты и ускоренные reminders 3/2/1.</div>
-                </div>
+                <ol class="flow-list">
+                  <li><strong>Создайте продукт</strong> в LIVE или TEST-контуре в зависимости от сценария.</li>
+                  <li><strong>Привяжите продукт к разделу</strong> в блоке «Контент и доступ».</li>
+                  <li><strong>Проверьте CTA и linked chats</strong> перед выдачей доступа.</li>
+                  <li><strong>Для TEST</strong> используйте ручную выдачу доступа, чтобы прогнать reminders и expiry за минуты.</li>
+                  <li><strong>Ошибки удаления и статусы доступа</strong> отслеживайте в аудите.</li>
+                </ol>
               </div>`,
-            extraClass: "bo-panel--raised"
+            tone: "raised"
           })}
-          ${renderSectionPanel({
+            ${renderSubsection({
+              title: "Управление контуром",
+              subtitle: "Глобальный переключатель и режим оформления оплаты вынесены в отдельный управляющий rail, чтобы не смешиваться с таблицами и каталогом продуктов.",
+              body: `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/toggle" class="form-row">
+                  <div class="field">
+                    <label class="small">Режим</label>
+                    <select name="paidAccessEnabled" class="field">
+                      <option value="true" ${bot.paidAccessEnabled ? "selected" : ""}>Включено</option>
+                      <option value="false" ${!bot.paidAccessEnabled ? "selected" : ""}>Выключено</option>
+                    </select>
+                  </div>
+                  <div class="btn"><button type="submit">Сохранить</button></div>
+                </form>
+                <div class="bo-note bo-note--info" style="margin-top:14px">
+                  <strong>Режим оформления оплаты</strong><br>
+                  ${balanceFlowEnabled ? "Работает пополнение баланса с покупкой с баланса." : "Используется прямой счёт / ручной запрос оплаты."}
+                </div>
+                <div class="small" style="margin-top:10px">TEST и LIVE сохраняют разные source of truth: <code>durationMinutes &gt; 0</code> для TEST и <code>durationDays</code> / standard flow для production. Reminders и статусы доступа не скрываются.</div>`,
+              tone: "utility"
+            })}
+          </div>
+          ${renderSubsection({
             id: "bindings",
             title: "Контент и доступ",
             subtitle:
               "Здесь сохраняется текущий business-flow: раздел → привязка продукта → страница-витрина → CTA-кнопка оплаты в боте. Визуально он разложен по рабочим модулям, но логика не меняется.",
-            body: `<div class="bo-grid-2">
-                <div class="overview-card">
-                  <div class="section-title">Глобальное включение</div>
-                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/toggle" class="form-row">
-                    <div class="field">
-                      <label class="small">Режим</label>
-                      <select name="paidAccessEnabled" class="field">
-                        <option value="true" ${bot.paidAccessEnabled ? "selected" : ""}>Включено</option>
-                        <option value="false" ${!bot.paidAccessEnabled ? "selected" : ""}>Выключено</option>
-                      </select>
-                    </div>
-                    <div class="btn"><button type="submit">Сохранить</button></div>
-                  </form>
-                </div>
-                <div class="overview-card">
-                  <div class="section-title">Что важно</div>
-                  <div class="small">TEST и LIVE сохраняют разные source of truth: <code>durationMinutes &gt; 0</code> для TEST и <code>durationDays</code> / standard flow для production. Статусы разделов и CTA не скрываются.</div>
-                </div>
-              </div>
-              <div style="margin-top:16px">${bindingsTable}</div>`,
-            extraClass: "bo-panel--utility"
-          })}`
+            body: `${renderNote("info", "Разделы, статусы закрытия и CTA-кнопки остаются полностью явными. Здесь же сохраняется привязка продукта к конкретному контентному entry point.")}<div style="margin-top:14px">${bindingsTable}</div>`,
+            tone: "default"
+          })}`,
+          tone: "primary"
         })}
         ${renderStageBlock({
           eyebrow: "Каталог продуктов",
@@ -4403,7 +4551,7 @@ export async function registerBackofficeRoutes(
             "LIVE и TEST теперь отделены не только бейджами, но и самим уровнем композиции. Это позволяет быстрее переключаться между реальными продажами и лабораторным прогоном lifecycle.",
           actions: `${renderStatusBadge(`LIVE ${liveProducts.length}`, "live")} ${renderStatusBadge(`TEST ${testProducts.length}`, "test")}`,
           body: `<div class="bo-grid-2">
-              ${renderSectionPanel({
+              ${renderSubsection({
                 id: "live-products",
                 title: "Боевые продукты",
                 subtitle:
@@ -4413,9 +4561,9 @@ export async function registerBackofficeRoutes(
                     <div class="section-title">Существующие live-products</div>
                     ${liveProducts.length ? liveProducts.map((product) => renderProductCard(product, { allowSimulate: false })).join("") : `<div class="small">Пока нет live-продуктов.</div>`}
                   </div>`,
-                extraClass: "bo-panel--raised"
+                tone: "raised"
               })}
-              ${renderSectionPanel({
+              ${renderSubsection({
                 id: "test-lab",
                 title: "Тестовая лаборатория",
                 subtitle:
@@ -4425,23 +4573,30 @@ export async function registerBackofficeRoutes(
                     <div class="section-title">Тестовые продукты</div>
                     ${testProducts.length ? testProducts.map((product) => renderProductCard(product, { allowSimulate: true })).join("") : `<div class="small">Пока нет тестовых продуктов. Создайте первый, чтобы быстро прогонять весь сценарий руками.</div>`}
                   </div>`,
-                extraClass: "bo-panel--utility"
+                tone: "utility"
               })}
-            </div>`
+            </div>`,
+          tone: "primary"
         })}
         ${renderStageBlock({
           eyebrow: "Финансовый контур",
           title: "Платежи, баланс и settlement",
           subtitle:
             "Финансовый слой отделён от product setup: сначала поток оплаты и пользовательские события, затем конфиг выплат, owner-пул и техническая диагностика.",
-          body: `${renderSectionPanel({
+          body: `<div class="bo-stage-grid-rail">
+            ${renderSubsection({
             id: "payments-balance",
             title: "Платежи / баланс",
             subtitle:
               "Платёжный поток и уведомления визуально отделены от product setup. Основные операции слева, событийному логу и истории отдан отдельный модуль.",
-            body: `<div class="subgrid">
-                <div class="overview-card">
-                  <div class="section-title">Режим оплаты</div>
+            body: `<div class="bo-stage-grid-2">
+                <div class="bo-form-cluster">
+                  <div class="bo-form-cluster-head">
+                    <div>
+                      <div class="bo-form-cluster-title">Режим оплаты</div>
+                      <div class="bo-form-cluster-copy">Короткая легенда потока оплаты, чтобы быстрее интерпретировать события в таблице ниже.</div>
+                    </div>
+                  </div>
                   <div>${balanceFlowEnabled ? renderStatusBadge("NOWPayments активен (USDT BEP20)", "active") : renderStatusBadge("NOWPayments не настроен", "pending")}</div>
                   <ul class="mono-list" style="margin-top:10px">
                     <li><code>invoice/pending</code>: пользователь открыл оплату, ждём подтверждение.</li>
@@ -4450,8 +4605,13 @@ export async function registerBackofficeRoutes(
                     <li><code>NOWPayments IPN</code>: автоматическое подтверждение после оплаты.</li>
                   </ul>
                 </div>
-                <div class="overview-card">
-                  <div class="section-title">Последние уведомления</div>
+                <div class="bo-form-cluster">
+                  <div class="bo-form-cluster-head">
+                    <div>
+                      <div class="bo-form-cluster-title">Последние уведомления</div>
+                      <div class="bo-form-cluster-copy">Быстрый срез недавних финансовых событий без перехода к нижним diagnostic-таблицам.</div>
+                    </div>
+                  </div>
                   ${
                     recentNotifications.length
                       ? recentNotifications
@@ -4468,20 +4628,20 @@ export async function registerBackofficeRoutes(
               </div>
               <div class="section-title">События платежей</div>
               ${paymentEventsTable}`,
-            extraClass: "bo-panel--raised"
+            tone: "raised"
           })}
-          ${renderSectionPanel({
+            ${renderSubsection({
             id: "nowpayments",
             title: "NOWPayments / выплаты владельцу",
             subtitle:
-              "Финансовый модуль с owner-пулом, отчётностью по владельцам, конфигом выплат и технической диагностикой. Логи и deposit diagnostics сохранены как secondary disclosures, чтобы не перегружать основной поток.",
+              "Owner-пул, кошельки владельцев и отчётность по выплатам собраны в отдельный модуль. Основная настройка доступна без смешения с техническими логами.",
             body: `${nowpaymentsOwnersBlock}
               ${ownerReportingBlock}
-              <div class="bo-panel bo-panel--diagnostic" style="margin-top:16px">
-                <div class="bo-section-head">
+              <div class="bo-form-cluster" style="margin-top:16px">
+                <div class="bo-form-cluster-head">
                   <div>
-                    <h3 class="bo-section-title">Конфиг NOWPayments</h3>
-                    <div class="bo-section-text">Настройка пополнения баланса и ежедневных выплат владельцу бота.</div>
+                    <div class="bo-form-cluster-title">Конфиг NOWPayments</div>
+                    <div class="bo-form-cluster-copy">Настройка пополнения баланса и ежедневных выплат владельцу бота.</div>
                   </div>
                 </div>
                 <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/nowpayments-config" class="bo-stack">
@@ -4495,17 +4655,33 @@ export async function registerBackofficeRoutes(
                   </div>
                   <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Сохранить конфиг</button></div>
                 </form>
-              </div>
-              <div class="subgrid" style="margin-top:16px">
-                <div class="overview-card">
-                  <div class="section-title">Сводка по начислениям</div>
+              </div>`,
+            tone: "utility"
+          })}
+          </div>
+          ${renderSubsection({
+            title: "Settlement и начисления",
+            subtitle: "Сводка по нетто, последние payout batches и журнал начислений вынесены в отдельный модуль, чтобы settlement было проще читать как самостоятельный финансовый поток.",
+            body: `<div class="bo-stage-grid-2">
+                <div class="bo-form-cluster">
+                  <div class="bo-form-cluster-head">
+                    <div>
+                      <div class="bo-form-cluster-title">Сводка по начислениям</div>
+                      <div class="bo-form-cluster-copy">Ожидающее нетто и число записей в settlement-пуле по текущему боту.</div>
+                    </div>
+                  </div>
                   <div class="bo-kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
                     ${renderMetricCard("Записей в ожидании", String(settlementAgg._count), "", "bo-kpi-card--compact")}
                     ${renderMetricCard("К выплате нетто", Number(settlementAgg._sum.netAmountBeforePayoutFee ?? 0).toFixed(2), "USDT", "bo-kpi-card--compact")}
                   </div>
                 </div>
-                <div class="overview-card">
-                  <div class="section-title">Пакеты выплат</div>
+                <div class="bo-form-cluster">
+                  <div class="bo-form-cluster-head">
+                    <div>
+                      <div class="bo-form-cluster-title">Пакеты выплат</div>
+                      <div class="bo-form-cluster-copy">Последние попытки выплаты владельцам без переключения в логовую диагностику.</div>
+                    </div>
+                  </div>
                   ${
                     payoutBatches.length
                       ? payoutBatches
@@ -4547,8 +4723,13 @@ export async function registerBackofficeRoutes(
                       })
                       .join("")}</tbody></table></div>`
                   : `<div class="small">Нет записей</div>`
-              }
-              <details style="margin-top:16px">
+              }`,
+            tone: "utility"
+          })}
+          ${renderSubsection({
+            title: "Техническая диагностика NOWPayments",
+            subtitle: "Webhook-логи и диагностика депозитов оставлены полностью доступными, но вынесены в отдельный диагностический модуль, чтобы не перегружать основной финансовый поток.",
+            body: `<details style="margin-top:0">
                 <summary class="small">Логи webhook (NOWPayments, только этот бот)</summary>
                 ${
                   webhookLogs.length
@@ -4572,8 +4753,9 @@ export async function registerBackofficeRoutes(
                     : `<div class="small" style="margin-top:8px">Нет строк депозитов</div>`
                 }
               </details>`,
-            extraClass: "bo-panel--utility"
-          })}`
+            tone: "diagnostic"
+          })}`,
+          tone: "utility"
         })}
         ${renderStageBlock({
           eyebrow: "Наблюдаемость",
@@ -4581,7 +4763,7 @@ export async function registerBackofficeRoutes(
           subtitle:
             "Отдельный диагностический слой, который не конкурирует с основными действиями, но оставляет FAILED, REMOVAL UNAVAILABLE и всю observability полностью видимыми.",
           actions: failedExpiryJobsCount ? renderStatusBadge(`Ошибки удаления ${failedExpiryJobsCount}`, "failed") : renderStatusBadge("Сбоев удаления нет", "active"),
-          body: `${renderSectionPanel({
+          body: `${renderSubsection({
             id: "access-audit",
             title: "Аудит / события доступа",
             subtitle:
@@ -4591,8 +4773,9 @@ export async function registerBackofficeRoutes(
               `LIVE использует reminders за <strong>3 / 2 / 1 дня</strong>, TEST — за <strong>3 / 2 / 1 минуты</strong>. Истечение и удаление читаются в последнем столбце без скрытия критических статусов.`
             )}
             <div style="margin-top:16px">${accessAuditTable}</div>`,
-            extraClass: "bo-panel--diagnostic"
-          })}`
+            tone: "diagnostic"
+          })}`,
+          tone: "diagnostic"
         })}
         <div class="bo-actions" style="justify-content:flex-start">
           ${renderActionLink("Назад к настройкам", `/backoffice/bots/${escapeHtml(bot.id)}/settings`, "secondary")}

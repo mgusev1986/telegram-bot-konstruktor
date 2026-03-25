@@ -57,6 +57,7 @@ const toPlainTextFallback = (input: string): string => {
 
 export interface RichMessage {
   text?: string;
+  followUpText?: string;
   mediaType?: MediaType;
   mediaFileId?: string | null;
   externalUrl?: string | null;
@@ -68,7 +69,7 @@ export interface RichMessage {
   resolvePlaceholders?: boolean;
 }
 
-export const sendRichMessage = async (
+const sendSingleRichMessage = async (
   telegram: Telegram,
   chatId: string | number | bigint,
   message: RichMessage,
@@ -161,14 +162,7 @@ export const sendRichMessage = async (
         break;
       case MediaType.VIDEO_NOTE:
         if (message.mediaFileId) {
-          const sentVideoNote = await telegram.sendVideoNote(normalizedChatId, message.mediaFileId, mergedExtra as object);
-          if (text) {
-            await telegram.sendMessage(normalizedChatId, text, {
-              ...(mergedExtra as object),
-              ...(looksLikeHtml ? {} : { entities })
-            } as object);
-          }
-          return sentVideoNote;
+          return telegram.sendVideoNote(normalizedChatId, message.mediaFileId, mergedExtra as object);
         }
         break;
       case MediaType.LINK:
@@ -199,7 +193,7 @@ export const sendRichMessage = async (
       delete fallbackExtra.parse_mode;
       delete fallbackExtra.entities;
       delete fallbackExtra.caption_entities;
-      return sendRichMessage(
+      return sendSingleRichMessage(
         telegram,
         normalizedChatId,
         { ...message, text: toPlainTextFallback(rawText) },
@@ -208,4 +202,88 @@ export const sendRichMessage = async (
     }
     throw error;
   }
+};
+
+const describeTelegramSendError = (error: unknown): string => {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  const responseDescription = (error as any)?.response?.description;
+  if (typeof responseDescription === "string" && responseDescription.trim()) {
+    return responseDescription;
+  }
+  return "Unknown Telegram send error";
+};
+
+export const sendRichMessage = async (
+  telegram: Telegram,
+  chatId: string | number | bigint,
+  message: RichMessage,
+  extra: object = {}
+): Promise<Message> => {
+  const explicitFollowUpText = message.followUpText?.trim() ?? "";
+  const legacyVideoNoteFollowUpText =
+    message.mediaType === MediaType.VIDEO_NOTE && !explicitFollowUpText
+      ? message.text?.trim() ?? ""
+      : "";
+  const followUpText = explicitFollowUpText || legacyVideoNoteFollowUpText;
+
+  if (message.mediaType === MediaType.VIDEO_NOTE) {
+    const primaryMessage = await sendSingleRichMessage(
+      telegram,
+      chatId,
+      {
+        ...message,
+        text: undefined,
+        followUpText: undefined
+      },
+      extra
+    );
+
+    if (followUpText) {
+      try {
+        await sendSingleRichMessage(
+          telegram,
+          chatId,
+          { text: followUpText },
+          extra
+        );
+      } catch (error) {
+        throw new Error(
+          `Primary media sent, but follow-up text failed: ${describeTelegramSendError(error)}`
+        );
+      }
+    }
+
+    return primaryMessage;
+  }
+
+  if (explicitFollowUpText) {
+    const primaryMessage = await sendSingleRichMessage(
+      telegram,
+      chatId,
+      {
+        ...message,
+        followUpText: undefined
+      },
+      extra
+    );
+
+    try {
+      await sendSingleRichMessage(
+        telegram,
+        chatId,
+        { text: explicitFollowUpText },
+        extra
+      );
+    } catch (error) {
+      throw new Error(
+        `Primary media sent, but follow-up text failed: ${describeTelegramSendError(error)}`
+      );
+    }
+
+    return primaryMessage;
+  }
+
+  return sendSingleRichMessage(telegram, chatId, message, extra);
 };

@@ -1,3 +1,4 @@
+import { MediaType } from "@prisma/client";
 import { describe, it, expect } from "vitest";
 
 import { sendRichMessage } from "../src/common/media";
@@ -43,5 +44,103 @@ describe("sendRichMessage formatting", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0].extra.parse_mode).toBe("HTML");
   });
-});
 
+  it("keeps legacy media plus caption as a single Telegram message", async () => {
+    const telegram: any = {
+      sendVideo: async (_chatId: any, _fileId: any, extra: any) => ({ message_id: 1, extra }),
+      sendMessage: async () => ({ message_id: 2 })
+    };
+
+    const sent = await sendRichMessage(
+      telegram,
+      1,
+      { mediaType: MediaType.VIDEO, mediaFileId: "video-1", text: "Legacy caption" },
+      {}
+    );
+
+    expect(sent.message_id).toBe(1);
+  });
+
+  it("sends media first and follow-up text second for normal media", async () => {
+    const calls: any[] = [];
+    const telegram: any = {
+      sendPhoto: async (chatId: any, fileId: any, extra: any) => {
+        calls.push(["sendPhoto", chatId, fileId, extra]);
+        return { message_id: 1 };
+      },
+      sendMessage: async (chatId: any, text: any, extra: any) => {
+        calls.push(["sendMessage", chatId, text, extra]);
+        return { message_id: 2 };
+      }
+    };
+
+    await sendRichMessage(
+      telegram,
+      777,
+      {
+        mediaType: MediaType.PHOTO,
+        mediaFileId: "photo-1",
+        text: "",
+        followUpText: "Follow-up text"
+      },
+      {}
+    );
+
+    expect(calls).toEqual([
+      ["sendPhoto", 777, "photo-1", { caption: undefined }],
+      ["sendMessage", 777, "Follow-up text", { entities: [] }]
+    ]);
+  });
+
+  it("preserves legacy hidden video note behavior and sends text after the circle", async () => {
+    const calls: any[] = [];
+    const telegram: any = {
+      sendVideoNote: async (chatId: any, fileId: any, extra: any) => {
+        calls.push(["sendVideoNote", chatId, fileId, extra]);
+        return { message_id: 1 };
+      },
+      sendMessage: async (chatId: any, text: any, extra: any) => {
+        calls.push(["sendMessage", chatId, text, extra]);
+        return { message_id: 2 };
+      }
+    };
+
+    await sendRichMessage(
+      telegram,
+      888,
+      {
+        mediaType: MediaType.VIDEO_NOTE,
+        mediaFileId: "note-1",
+        text: "Legacy note follow-up"
+      },
+      {}
+    );
+
+    expect(calls).toEqual([
+      ["sendVideoNote", 888, "note-1", {}],
+      ["sendMessage", 888, "Legacy note follow-up", { entities: [] }]
+    ]);
+  });
+
+  it("throws a clear error when the follow-up text fails after primary media succeeds", async () => {
+    const telegram: any = {
+      sendVideoNote: async () => ({ message_id: 1 }),
+      sendMessage: async () => {
+        throw new Error("chat is blocked");
+      }
+    };
+
+    await expect(
+      sendRichMessage(
+        telegram,
+        999,
+        {
+          mediaType: MediaType.VIDEO_NOTE,
+          mediaFileId: "note-2",
+          followUpText: "After the note"
+        },
+        {}
+      )
+    ).rejects.toThrow("Primary media sent, but follow-up text failed: chat is blocked");
+  });
+});

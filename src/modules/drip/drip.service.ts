@@ -28,6 +28,7 @@ export interface DripStepInput {
   delayValue: number;
   delayUnit: "MINUTES" | "HOURS" | "DAYS";
   text?: string;
+  followUpText?: string;
   mediaType?: MediaType;
   mediaFileId?: string | null;
   externalUrl?: string | null;
@@ -131,6 +132,7 @@ export class DripService {
               create: {
                 languageCode: step.languageCode,
                 text: step.text ?? "",
+                followUpText: step.followUpText ?? "",
                 mediaType: step.mediaType ?? "NONE",
                 mediaFileId: step.mediaFileId ?? undefined,
                 externalUrl: step.externalUrl ?? undefined,
@@ -222,11 +224,12 @@ export class DripService {
           create: {
             languageCode: input.languageCode,
             text: input.text ?? "",
+            followUpText: input.followUpText ?? "",
             mediaType: input.mediaType ?? "NONE",
             mediaFileId: input.mediaFileId ?? undefined,
             externalUrl: input.externalUrl ?? undefined,
             buttonsJson: input.buttons && input.buttons.length > 0 ? (input.buttons as object) : undefined
-          }
+          } as any
         }
       },
       include: { localizations: true }
@@ -410,6 +413,9 @@ export class DripService {
         progress.user.telegramUserId,
         {
           text: renderPageContent(localization.text, progress.user),
+          followUpText: (localization as any).followUpText
+            ? renderPageContent((localization as any).followUpText, progress.user)
+            : undefined,
           mediaType: localization.mediaType,
           mediaFileId: localization.mediaFileId,
           externalUrl: localization.externalUrl

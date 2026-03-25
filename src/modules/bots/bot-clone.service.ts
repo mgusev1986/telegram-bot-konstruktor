@@ -302,6 +302,7 @@ export class BotCloneService {
                 create: st.localizations.map((l) => ({
                   languageCode: l.languageCode,
                   text: l.text,
+                  followUpText: (l as any).followUpText ?? "",
                   mediaType: l.mediaType,
                   mediaFileId: l.mediaFileId,
                   externalUrl: l.externalUrl,
@@ -349,4 +350,3 @@ export class BotCloneService {
     return result;
   }
 }
-

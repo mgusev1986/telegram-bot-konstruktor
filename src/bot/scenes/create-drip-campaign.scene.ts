@@ -31,6 +31,8 @@ type DripPhase =
   | "step_delay_number"
   | "step_delay_unit"
   | "step_content"
+  | "step_content_mode"
+  | "step_follow_up_text"
   | "summary"
   | "confirm";
 
@@ -44,6 +46,8 @@ interface DripWizardState {
   };
   phase: DripPhase;
   pendingDelay?: { value: number; unit: "MINUTES" | "HOURS" | "DAYS" };
+  pendingStepContent?: import("../helpers/message-content").MessageContent;
+  pendingStepFollowUpText?: string;
   stepButtons?: DripStepButton[];
   stepButtonsPendingLabel?: string;
   stepButtonsPendingSystemKind?: DripSystemKind;
@@ -99,6 +103,35 @@ function textPreview(text: string | undefined, maxLen: number = 40): string {
   return t.length <= maxLen ? t : t.slice(0, maxLen) + "…";
 }
 
+const DRIP_FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
+
+const canUseDripFollowUpDelivery = (content: import("../helpers/message-content").MessageContent | undefined): boolean =>
+  Boolean(content?.mediaType && DRIP_FOLLOW_UP_MEDIA_TYPES.has(content.mediaType as any));
+
+const buildDripContentModeKeyboard = (
+  i18n: BotContext["services"]["i18n"],
+  locale: string
+) => dripKeyboard(i18n, locale, [
+  [{ text: "🧾 Одним сообщением", data: makeCallbackData(DRIP_PREFIX, "content_mode", "single") }],
+  [{ text: "➡️ Медиа, потом текст", data: makeCallbackData(DRIP_PREFIX, "content_mode", "follow_up") }],
+  [{ text: "✏️ Отправить другой контент", data: makeCallbackData(DRIP_PREFIX, "content_mode", "replace") }]
+]);
+
+const buildDripContentModePrompt = (
+  content: import("../helpers/message-content").MessageContent & { entities?: any[] }
+): string => {
+  const text = extractFormattedContentText(content).trim();
+  if (content.mediaType === "VIDEO_NOTE") {
+    return text
+      ? "Кружок получен. Оставить его как одно сообщение или отправить текст отдельным сообщением сразу после кружка?"
+      : "Кружок получен. Оставить только кружок или добавить текст отдельным сообщением сразу после него?";
+  }
+
+  return text
+    ? "Контент получен. Отправить текст подписью в этом же сообщении или отдельным сообщением сразу после медиа?"
+    : "Контент получен. Оставить только медиа или добавить отдельный текст сразу после него?";
+};
+
 /** Replace {{key}} in template with values from params (for non-personalization interpolation). */
 function interpolate(template: string, params: Record<string, string>): string {
   let s = template;
@@ -147,6 +180,55 @@ export const createDripScene = new Scenes.WizardScene<any>(CREATE_DRIP_SCENE, as
   if (!state?.draft) return;
   const locale = ctx.services.i18n.resolveLanguage(ctx.currentUser?.selectedLanguage);
   const i18n = ctx.services.i18n;
+  const showStepsAction = async () => {
+    const msg = state.draft.steps.length === 0
+      ? i18n.t(locale, "drip_no_steps_yet")
+      : interpolate(i18n.t(locale, "drip_wizard_after_steps"), { count: String(state.draft.steps.length) });
+    const rows: { text: string; data: string }[][] = [
+      [{ text: state.draft.steps.length === 0 ? i18n.t(locale, "drip_btn_add_first_step") : i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],
+      ...(state.draft.steps.length > 0
+        ? [[{ text: "🔗 Кнопки к последнему шагу", data: makeCallbackData(DRIP_PREFIX, "add_buttons") }] as { text: string; data: string }[]]
+        : []),
+      ...(state.draft.steps.length > 0
+        ? [[{ text: i18n.t(locale, "drip_btn_edit_last"), data: makeCallbackData(DRIP_PREFIX, "edit_last") }]] as { text: string; data: string }[][]
+        : []),
+      ...(state.draft.steps.length > 0
+        ? [[{ text: i18n.t(locale, "drip_btn_delete_last"), data: makeCallbackData(DRIP_PREFIX, "delete_last") }]] as { text: string; data: string }[][]
+        : []),
+      [{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]
+    ];
+    await ctx.reply(msg, dripKeyboard(i18n, locale, rows));
+  };
+  const saveDraftStep = async (
+    content: import("../helpers/message-content").MessageContent & { entities?: any[] },
+    followUpText?: string
+  ) => {
+    const delay = state.pendingDelay ?? { value: 0, unit: "DAYS" as const };
+    const textForStorage = extractFormattedContentText(content).trim();
+    const step: DripStepInput = {
+      languageCode: state.draft.languageCode ?? "ru",
+      delayValue: delay.value,
+      delayUnit: delay.unit,
+      text: textForStorage,
+      followUpText: followUpText?.trim() || "",
+      mediaType: content.mediaType,
+      mediaFileId: content.mediaFileId ?? null,
+      externalUrl: content.externalUrl ?? null
+    };
+    state.draft.steps.push(step);
+    state.pendingDelay = undefined;
+    state.pendingStepContent = undefined;
+    state.pendingStepFollowUpText = undefined;
+    state.phase = "steps_action";
+
+    const delayStr = formatDelayForSummary(locale, i18n, step.delayValue, step.delayUnit);
+    const savedTemplate = i18n.t(locale, "drip_wizard_step_saved");
+    const savedText = savedTemplate
+      .replace(/\{\{n\}\}/g, String(state.draft.steps.length))
+      .replace(/\{\{delay\}\}/g, delayStr);
+    await ctx.reply(savedText, dripKeyboard(i18n, locale, []));
+    await showStepsAction();
+  };
 
   if (ctx.callbackQuery && "data" in ctx.callbackQuery) {
     const data = ctx.callbackQuery.data;
@@ -217,7 +299,7 @@ export const createDripScene = new Scenes.WizardScene<any>(CREATE_DRIP_SCENE, as
           return;
         }
         state.phase = "summary";
-const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "drip_summary_step"), { n: String(i + 1), delay: formatDelayForSummary(locale, i18n, s.delayValue, s.delayUnit), preview: textPreview(s.text) })).join("\n");
+const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "drip_summary_step"), { n: String(i + 1), delay: formatDelayForSummary(locale, i18n, s.delayValue, s.delayUnit), preview: textPreview(s.followUpText || s.text) })).join("\n");
         const summary = interpolate(i18n.t(locale, "drip_wizard_summary"), { title: state.draft.title ?? "", trigger: getTriggerLabel(locale, i18n, state.draft.triggerType ?? "ON_REGISTRATION"), lang: state.draft.languageCode ?? "ru", count: String(state.draft.steps.length), steps: stepsText }).replace(/\[b\]/g, "<b>").replace(/\[\/b\]/g, "</b>");
         await ctx.reply(summary, { parse_mode: "HTML" });
         await ctx.reply(i18n.t(locale, "drip_confirm_save"), dripKeyboard(i18n, locale, [
@@ -402,6 +484,47 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
       return;
     }
 
+    if (state.phase === "step_content_mode" && prefix === DRIP_PREFIX && parts[1] === "content_mode") {
+      await ctx.answerCbQuery();
+      const pendingContent = state.pendingStepContent as (import("../helpers/message-content").MessageContent & { entities?: any[] }) | undefined;
+      if (!pendingContent) {
+        state.phase = "step_content";
+        await ctx.reply(i18n.t(locale, "drip_wizard_step_content"), dripKeyboard(i18n, locale, []));
+        return;
+      }
+
+      if (parts[2] === "replace") {
+        state.pendingStepContent = undefined;
+        state.pendingStepFollowUpText = undefined;
+        state.phase = "step_content";
+        await ctx.reply(i18n.t(locale, "drip_wizard_step_content"), dripKeyboard(i18n, locale, []));
+        return;
+      }
+
+      if (parts[2] === "single") {
+        await saveDraftStep(pendingContent);
+        return;
+      }
+
+      if (parts[2] === "follow_up") {
+        const followUpText = extractFormattedContentText(pendingContent).trim();
+        state.pendingStepContent = { ...pendingContent, text: "" };
+        state.pendingStepFollowUpText = followUpText || undefined;
+        if (followUpText) {
+          await saveDraftStep(state.pendingStepContent as import("../helpers/message-content").MessageContent & { entities?: any[] }, followUpText);
+          return;
+        }
+        state.phase = "step_follow_up_text";
+        await ctx.reply(
+          pendingContent.mediaType === "VIDEO_NOTE"
+            ? "Теперь отправьте текст, который должен прийти сразу после кружка."
+            : "Теперь отправьте текст, который должен прийти сразу после медиа отдельным сообщением.",
+          dripKeyboard(i18n, locale, [])
+        );
+        return;
+      }
+    }
+
     if (state.phase === "summary" && prefix === DRIP_PREFIX) {
       if (parts[1] === "confirm_save") {
         await ctx.answerCbQuery();
@@ -534,6 +657,23 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
       return;
     }
 
+    if (state.phase === "step_follow_up_text") {
+      const followUpContent = extractMessageContent(ctx);
+      const followUpText = extractFormattedContentText(followUpContent as import("../helpers/message-content").MessageContent & { entities?: any[] }).trim();
+      if (followUpContent.mediaType || !followUpText) {
+        await ctx.reply("Отправьте только текст вторым сообщением.", dripKeyboard(i18n, locale, []));
+        return;
+      }
+      const pendingContent = state.pendingStepContent as (import("../helpers/message-content").MessageContent & { entities?: any[] }) | undefined;
+      if (!pendingContent) {
+        state.phase = "step_content";
+        await ctx.reply(i18n.t(locale, "drip_wizard_step_content"), dripKeyboard(i18n, locale, []));
+        return;
+      }
+      await saveDraftStep(pendingContent, followUpText);
+      return;
+    }
+
     if (state.phase === "step_content") {
       const content = extractMessageContent(ctx);
       const hasContent = (content.text && content.text.trim()) || content.mediaType;
@@ -541,39 +681,18 @@ const stepsText = state.draft.steps.map((s, i) => interpolate(i18n.t(locale, "dr
         await ctx.reply(i18n.t(locale, "drip_error_content"), dripKeyboard(i18n, locale, []));
         return;
       }
-      const delay = state.pendingDelay ?? { value: 0, unit: "DAYS" as const };
-      const textForStorage = extractFormattedContentText(content);
-      const step: DripStepInput = {
-        languageCode: state.draft.languageCode ?? "ru",
-        delayValue: delay.value,
-        delayUnit: delay.unit,
-        text: textForStorage.trim() || "",
-        mediaType: content.mediaType,
-        mediaFileId: content.mediaFileId ?? null,
-        externalUrl: content.externalUrl ?? null
-      };
-      state.draft.steps.push(step);
-      state.pendingDelay = undefined;
-      state.phase = "steps_action";
+      if (canUseDripFollowUpDelivery(content)) {
+        state.pendingStepContent = content;
+        state.pendingStepFollowUpText = undefined;
+        state.phase = "step_content_mode";
+        await ctx.reply(
+          buildDripContentModePrompt(content as import("../helpers/message-content").MessageContent & { entities?: any[] }),
+          buildDripContentModeKeyboard(i18n, locale)
+        );
+        return;
+      }
 
-      const delayStr = formatDelayForSummary(locale, i18n, step.delayValue, step.delayUnit);
-      const savedTemplate = i18n.t(locale, "drip_wizard_step_saved");
-      const savedText = savedTemplate
-        .replace(/\{\{n\}\}/g, String(state.draft.steps.length))
-        .replace(/\{\{delay\}\}/g, delayStr);
-      await ctx.reply(savedText, dripKeyboard(i18n, locale, []));
-
-      const rows: { text: string; data: string }[][] = [
-        [{ text: i18n.t(locale, "drip_btn_add_more"), data: makeCallbackData(DRIP_PREFIX, "add_step") }],
-        [{ text: "🔗 Кнопки к последнему шагу", data: makeCallbackData(DRIP_PREFIX, "add_buttons") }],
-        [{ text: i18n.t(locale, "drip_btn_edit_last"), data: makeCallbackData(DRIP_PREFIX, "edit_last") }],
-        [{ text: i18n.t(locale, "drip_btn_delete_last"), data: makeCallbackData(DRIP_PREFIX, "delete_last") }],
-        [{ text: i18n.t(locale, "drip_btn_finish"), data: makeCallbackData(DRIP_PREFIX, "finish") }]
-      ];
-      await ctx.reply(
-        interpolate(i18n.t(locale, "drip_wizard_after_steps"), { count: String(state.draft.steps.length) }),
-        dripKeyboard(i18n, locale, rows)
-      );
+      await saveDraftStep(content as import("../helpers/message-content").MessageContent & { entities?: any[] });
     }
   }
 });

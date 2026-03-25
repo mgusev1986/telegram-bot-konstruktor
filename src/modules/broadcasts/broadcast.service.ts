@@ -24,6 +24,7 @@ export interface BroadcastInput {
    */
   languageCodes?: string[];
   text?: string;
+  followUpText?: string;
   mediaType?: MediaType;
   mediaFileId?: string | null;
   externalUrl?: string | null;
@@ -71,6 +72,7 @@ export interface ScheduledBroadcastEditInput {
   languageCode: string;
   languageCodes?: string[];
   text?: string;
+  followUpText?: string;
   mediaType?: MediaType;
   mediaFileId?: string | null;
   externalUrl?: string | null;
@@ -109,6 +111,7 @@ export class BroadcastService {
           create: languageCodes.map((code) => ({
             languageCode: code,
             text: input.text ?? "",
+            followUpText: input.followUpText ?? "",
             mediaType: input.mediaType ?? "NONE",
             mediaFileId: input.mediaFileId ?? undefined,
             externalUrl: input.externalUrl ?? undefined
@@ -259,6 +262,7 @@ export class BroadcastService {
         broadcastId,
         languageCode: code,
         text: input.text ?? "",
+        followUpText: input.followUpText ?? "",
         mediaType: input.mediaType ?? "NONE",
         mediaFileId: input.mediaFileId ?? undefined,
         externalUrl: input.externalUrl ?? undefined
@@ -574,6 +578,9 @@ export class BroadcastService {
           recipient.telegramUserId,
           {
             text: renderPageContent(localization.text, recipient),
+            followUpText: (localization as any).followUpText
+              ? renderPageContent((localization as any).followUpText, recipient)
+              : undefined,
             mediaType: localization.mediaType,
             mediaFileId: localization.mediaFileId,
             externalUrl: localization.externalUrl
