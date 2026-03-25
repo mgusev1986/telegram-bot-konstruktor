@@ -851,6 +851,26 @@ function renderPage(title: string, body: string): string {
       }
       .field-inline { display: flex; gap: 8px; align-items: center; }
       .field-inline input { flex: 1 1 auto; min-width: 0; }
+      .owner-wallet-form {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+      }
+      .owner-wallet-form .field {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+      }
+      .owner-wallet-form button {
+        white-space: nowrap;
+      }
+      .owner-wallet-cell {
+        min-width: 0;
+      }
       .id-hint { margin-top: 6px; font-size: 11px; color: var(--muted); min-height: 16px; }
       .id-hint.ok { color: #bce8cd; }
       .id-hint.err { color: #ffc2c2; }
@@ -1051,6 +1071,14 @@ function renderPage(title: string, body: string): string {
         .bo-grid-3,
         .bo-grid-4 {
           grid-template-columns: 1fr;
+        }
+      }
+      @media (max-width: 1280px) {
+        .owner-wallet-form {
+          grid-template-columns: 1fr;
+        }
+        .owner-wallet-form button {
+          width: 100%;
         }
       }
       @media (max-width: 900px) {
@@ -4150,10 +4178,10 @@ export async function registerBackofficeRoutes(
             <td>${a.user.username ? `@${escapeHtml(a.user.username)}` : `<span class="small">—</span>`}</td>
             <td><code>${escapeHtml(String(a.user.telegramUserId))}</code></td>
             <td>${pend}</td>
-            <td>
-              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/owner-payout-wallet" style="margin:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+            <td class="owner-wallet-cell">
+              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/owner-payout-wallet" class="owner-wallet-form">
                 <input type="hidden" name="ownerUserId" value="${escapeHtml(uid)}" />
-                <input name="walletAddress" type="text" placeholder="0x…" value="${escapeHtml(w)}" style="min-width:200px;max-width:min(280px,100%)" class="field" />
+                <input name="walletAddress" type="text" placeholder="0x…" value="${escapeHtml(w)}" class="field" />
                 <button type="submit" class="secondary">Сохранить</button>
               </form>
             </td>
@@ -4177,10 +4205,10 @@ export async function registerBackofficeRoutes(
        ${
          botOwnerAssignments.length === 0
            ? `<div class="small" style="margin-bottom:12px">Нет активных назначений OWNER. Назначьте владельцев в настройках ролей бота.</div>`
-           : `<table class="paid-table" style="margin-bottom:12px">
+           : `<div class="bo-table-shell" style="margin-bottom:12px"><table class="paid-table">
            <thead><tr><th>Имя</th><th>Логин Telegram</th><th>Telegram ID</th><th>Ожидает нетто (USDT)</th><th>Индив. кошелёк BEP20 (учёт)</th></tr></thead>
            <tbody>${ownersRowsHtml}</tbody>
-         </table>`
+         </table></div>`
        }
        ${
          pendingNetUnallocated > 0
