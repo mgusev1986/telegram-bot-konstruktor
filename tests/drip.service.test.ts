@@ -212,7 +212,8 @@ describe("DripService", () => {
                   followUpText: "Текст после видео",
                   mediaType: MediaType.VIDEO,
                   mediaFileId: "video-1",
-                  externalUrl: null
+                  externalUrl: null,
+                  buttonsJson: [{ type: "url", label: "Open", url: "https://example.com" }]
                 }]
               },
               {
@@ -239,14 +240,14 @@ describe("DripService", () => {
     const audit = { log: vi.fn() } as any;
     const service = new DripService(prisma, scheduler, i18n, audit);
 
-    const calls: string[] = [];
+    const calls: any[] = [];
     const telegram = {
-      sendVideo: vi.fn().mockImplementation(async () => {
-        calls.push("sendVideo");
+      sendVideo: vi.fn().mockImplementation(async (_chatId: any, _fileId: any, extra: any) => {
+        calls.push(["sendVideo", extra]);
         return { message_id: 1 };
       }),
-      sendMessage: vi.fn().mockImplementation(async () => {
-        calls.push("sendMessage");
+      sendMessage: vi.fn().mockImplementation(async (_chatId: any, _text: any, extra: any) => {
+        calls.push(["sendMessage", extra]);
         return { message_id: 2 };
       })
     } as any;
@@ -254,7 +255,10 @@ describe("DripService", () => {
 
     await service.processProgress("p3");
 
-    expect(calls).toEqual(["sendVideo", "sendMessage"]);
+    expect(calls[0][0]).toBe("sendVideo");
+    expect(calls[0][1].reply_markup).toBeUndefined();
+    expect(calls[1][0]).toBe("sendMessage");
+    expect(calls[1][1].reply_markup).toBeDefined();
     expect(prisma.userDripProgress.update).toHaveBeenCalledWith({
       where: { id: "p3" },
       data: expect.objectContaining({ currentStep: 2, nextRunAt: expect.any(Date) })

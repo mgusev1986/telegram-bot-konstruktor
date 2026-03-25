@@ -115,6 +115,8 @@ describe("Broadcast multipart delivery", () => {
     expect(calls[0][0]).toBe("sendVideo");
     expect(calls[1][0]).toBe("sendMessage");
     expect(calls[1][2]).toBe("Второй текст");
+    expect(calls[0][3].reply_markup).toBeUndefined();
+    expect(calls[1][3].reply_markup).toBeDefined();
   });
 
   it("sends the same two-message sequence for a scheduled broadcast record", async () => {
@@ -132,14 +134,14 @@ describe("Broadcast multipart delivery", () => {
     const segments = {
       resolveAudience: vi.fn().mockResolvedValue([buildRecipient()])
     } as any;
-    const calls: string[] = [];
+    const calls: any[] = [];
     const telegram: any = {
-      sendPhoto: vi.fn().mockImplementation(async () => {
-        calls.push("sendPhoto");
+      sendPhoto: vi.fn().mockImplementation(async (_chatId: any, _fileId: any, extra: any) => {
+        calls.push(["sendPhoto", extra]);
         return { message_id: 1 };
       }),
-      sendMessage: vi.fn().mockImplementation(async () => {
-        calls.push("sendMessage");
+      sendMessage: vi.fn().mockImplementation(async (_chatId: any, _text: any, extra: any) => {
+        calls.push(["sendMessage", extra]);
         return { message_id: 2 };
       }),
       sendVideo: vi.fn(),
@@ -153,7 +155,10 @@ describe("Broadcast multipart delivery", () => {
 
     await service.dispatchBroadcast("b1");
 
-    expect(calls).toEqual(["sendPhoto", "sendMessage"]);
+    expect(calls[0][0]).toBe("sendPhoto");
+    expect(calls[0][1].reply_markup).toBeUndefined();
+    expect(calls[1][0]).toBe("sendMessage");
+    expect(calls[1][1].reply_markup).toBeDefined();
   });
 
   it("marks the recipient as failed when follow-up text fails after media succeeds", async () => {

@@ -215,6 +215,12 @@ const describeTelegramSendError = (error: unknown): string => {
   return "Unknown Telegram send error";
 };
 
+const stripReplyMarkup = (extra: object): object => {
+  const normalized = { ...(extra as Record<string, unknown>) };
+  delete normalized.reply_markup;
+  return normalized;
+};
+
 export const sendRichMessage = async (
   telegram: Telegram,
   chatId: string | number | bigint,
@@ -227,6 +233,8 @@ export const sendRichMessage = async (
       ? message.text?.trim() ?? ""
       : "";
   const followUpText = explicitFollowUpText || legacyVideoNoteFollowUpText;
+  const finalExtra = extra;
+  const nonFinalExtra = stripReplyMarkup(extra);
 
   if (message.mediaType === MediaType.VIDEO_NOTE) {
     const primaryMessage = await sendSingleRichMessage(
@@ -237,7 +245,7 @@ export const sendRichMessage = async (
         text: undefined,
         followUpText: undefined
       },
-      extra
+      followUpText ? nonFinalExtra : finalExtra
     );
 
     if (followUpText) {
@@ -246,7 +254,7 @@ export const sendRichMessage = async (
           telegram,
           chatId,
           { text: followUpText },
-          extra
+          finalExtra
         );
       } catch (error) {
         throw new Error(
@@ -266,7 +274,7 @@ export const sendRichMessage = async (
         ...message,
         followUpText: undefined
       },
-      extra
+      nonFinalExtra
     );
 
     try {
@@ -274,7 +282,7 @@ export const sendRichMessage = async (
         telegram,
         chatId,
         { text: explicitFollowUpText },
-        extra
+        finalExtra
       );
     } catch (error) {
       throw new Error(

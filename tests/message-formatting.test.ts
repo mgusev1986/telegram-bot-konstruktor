@@ -4,6 +4,26 @@ import { describe, it, expect } from "vitest";
 import { sendRichMessage } from "../src/common/media";
 
 describe("sendRichMessage formatting", () => {
+  it("keeps reply_markup on a single text message", async () => {
+    const calls: any[] = [];
+    const telegram: any = {
+      sendMessage: async (_chatId: any, _text: any, extra: any) => {
+        calls.push(extra);
+        return { message_id: 1 };
+      },
+    };
+
+    await sendRichMessage(
+      telegram,
+      1,
+      { text: "Hello" },
+      { reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] } }
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].reply_markup).toBeDefined();
+  });
+
   it("sends HTML text with parse_mode=HTML and without entities", async () => {
     const calls: any[] = [];
     const telegram: any = {
@@ -46,8 +66,12 @@ describe("sendRichMessage formatting", () => {
   });
 
   it("keeps legacy media plus caption as a single Telegram message", async () => {
+    const calls: any[] = [];
     const telegram: any = {
-      sendVideo: async (_chatId: any, _fileId: any, extra: any) => ({ message_id: 1, extra }),
+      sendVideo: async (_chatId: any, _fileId: any, extra: any) => {
+        calls.push(extra);
+        return { message_id: 1, extra };
+      },
       sendMessage: async () => ({ message_id: 2 })
     };
 
@@ -55,13 +79,14 @@ describe("sendRichMessage formatting", () => {
       telegram,
       1,
       { mediaType: MediaType.VIDEO, mediaFileId: "video-1", text: "Legacy caption" },
-      {}
+      { reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] } }
     );
 
     expect(sent.message_id).toBe(1);
+    expect(calls[0].reply_markup).toBeDefined();
   });
 
-  it("sends media first and follow-up text second for normal media", async () => {
+  it("sends media first without reply_markup and follow-up text second with reply_markup", async () => {
     const calls: any[] = [];
     const telegram: any = {
       sendPhoto: async (chatId: any, fileId: any, extra: any) => {
@@ -83,16 +108,19 @@ describe("sendRichMessage formatting", () => {
         text: "",
         followUpText: "Follow-up text"
       },
-      {}
+      {
+        disable_notification: true,
+        reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] }
+      }
     );
 
     expect(calls).toEqual([
-      ["sendPhoto", 777, "photo-1", { caption: undefined }],
-      ["sendMessage", 777, "Follow-up text", { entities: [] }]
+      ["sendPhoto", 777, "photo-1", { caption: undefined, disable_notification: true }],
+      ["sendMessage", 777, "Follow-up text", { disable_notification: true, reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] }, entities: [] }]
     ]);
   });
 
-  it("preserves legacy hidden video note behavior and sends text after the circle", async () => {
+  it("preserves legacy hidden video note behavior and keeps reply_markup only on the second message", async () => {
     const calls: any[] = [];
     const telegram: any = {
       sendVideoNote: async (chatId: any, fileId: any, extra: any) => {
@@ -113,12 +141,12 @@ describe("sendRichMessage formatting", () => {
         mediaFileId: "note-1",
         text: "Legacy note follow-up"
       },
-      {}
+      { reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] } }
     );
 
     expect(calls).toEqual([
       ["sendVideoNote", 888, "note-1", {}],
-      ["sendMessage", 888, "Legacy note follow-up", { entities: [] }]
+      ["sendMessage", 888, "Legacy note follow-up", { reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] }, entities: [] }]
     ]);
   });
 
