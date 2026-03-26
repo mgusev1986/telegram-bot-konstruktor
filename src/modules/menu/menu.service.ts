@@ -88,6 +88,16 @@ export class MenuService {
     return this.botInstanceId ? { isActive: true, botInstanceId: this.botInstanceId } : { isActive: true };
   }
 
+  private hasExactLocalization(items: Array<{ languageCode: string }>, languageCode: string): boolean {
+    const lc = this.i18n.normalizeLocalizationLanguageCode(languageCode);
+    return items.some((item) => this.i18n.normalizeLocalizationLanguageCode(item.languageCode) === lc);
+  }
+
+  private pickExactLocalization<T extends { languageCode: string }>(items: T[], languageCode: string): T | null {
+    const lc = this.i18n.normalizeLocalizationLanguageCode(languageCode);
+    return items.find((item) => this.i18n.normalizeLocalizationLanguageCode(item.languageCode) === lc) ?? null;
+  }
+
   /** Returns custom paywall message for the bot, or null if not set (use default i18n). */
   public async getPaywallMessage(): Promise<string | null> {
     if (!this.botInstanceId) return null;
@@ -745,13 +755,15 @@ export class MenuService {
 
   public async getMenuItemsForParent(user: User, parentId: string | null): Promise<Array<LocalizedMenuItem & { locked: boolean }>> {
     const template = await this.prisma.presentationTemplate.findFirst({
-      where: this.activeTemplateWhere()
+      where: this.activeTemplateWhere(),
+      include: { localizations: true }
     });
 
     if (!template) {
       return [];
     }
 
+    const contentLang = this.getEffectiveContentLanguage(template as any, user.selectedLanguage);
     const items = await this.prisma.menuItem.findMany({
       where: {
         templateId: template.id,
@@ -766,10 +778,11 @@ export class MenuService {
         sortOrder: "asc"
       }
     });
+    const scopedItems = items.filter((item) => this.hasExactLocalization(item.localizations, contentLang));
 
     const result: Array<LocalizedMenuItem & { locked: boolean }> = [];
 
-    for (const item of items) {
+    for (const item of scopedItems) {
       const allowedByRule = await this.accessRules.evaluate(item.accessRuleId, user, {
         skipProductPurchase: !this.paidAccessEnabled
       });
@@ -937,13 +950,13 @@ export class MenuService {
   }
 
   /** Returns child menu items for the given parent (no access filtering, includes inactive). For admin page editor. */
-  public async getChildMenuItemsForAdmin(parentId: string | null): Promise<Array<MenuItem & { localizations: MenuItemLocalization[] }>> {
+  public async getChildMenuItemsForAdmin(parentId: string | null, languageCode?: string): Promise<Array<MenuItem & { localizations: MenuItemLocalization[] }>> {
     const template = await this.prisma.presentationTemplate.findFirst({
       where: this.activeTemplateWhere()
     });
     if (!template) return [];
 
-    return this.prisma.menuItem.findMany({
+    const items = await this.prisma.menuItem.findMany({
       where: {
         templateId: template.id,
         parentId
@@ -951,6 +964,8 @@ export class MenuService {
       include: { localizations: true },
       orderBy: { sortOrder: "asc" }
     });
+    if (!languageCode) return items;
+    return items.filter((item) => this.hasExactLocalization(item.localizations, languageCode));
   }
 
   /** True if the active template has no root-level menu items (empty menu). */
@@ -1327,7 +1342,7 @@ export class MenuService {
 
   /** Item with resolved title (and target title for SECTION_LINK). */
   private getItemTitle(item: MenuItem & { localizations: MenuItemLocalization[] }, languageCode: string): string {
-    const loc = this.i18n.pickLocalized(item.localizations, languageCode);
+    const loc = this.pickExactLocalization(item.localizations, languageCode);
     return loc?.title ?? item.key ?? item.id;
   }
 
@@ -1473,7 +1488,7 @@ export class MenuService {
     parentId: string | null,
     languageCode: string
   ): Promise<{ childSections: Array<{ id: string; title: string }>; buttons: Array<{ id: string; title: string; targetTitle: string }> }> {
-    const children = await this.getChildMenuItemsForAdmin(parentId);
+    const children = await this.getChildMenuItemsForAdmin(parentId, languageCode);
     const childSections: Array<{ id: string; title: string }> = [];
     const buttons: Array<{ id: string; title: string; targetTitle: string }> = [];
 
@@ -1483,7 +1498,7 @@ export class MenuService {
         const target = await this.findMenuItemById(c.targetMenuItemId);
         buttons.push({ id: c.id, title, targetTitle: target ? this.getItemTitle(target, languageCode) : "—" });
       } else if (c.type === "EXTERNAL_LINK") {
-        const loc = this.i18n.pickLocalized(c.localizations, languageCode);
+        const loc = this.pickExactLocalization(c.localizations, languageCode);
         buttons.push({ id: c.id, title, targetTitle: loc?.externalUrl ?? "—" });
       } else {
         childSections.push({ id: c.id, title });
@@ -1508,10 +1523,11 @@ export class MenuService {
       include: { localizations: true },
       orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }]
     });
+    const scopedItems = items.filter((item) => this.hasExactLocalization(item.localizations, languageCode));
 
     const byParent = new Map<string | null, (MenuItem & { localizations: MenuItemLocalization[] })[]>();
     const byId = new Map<string, MenuItem & { localizations: MenuItemLocalization[] }>();
-    for (const item of items) {
+    for (const item of scopedItems) {
       const pid = item.parentId ?? null;
       if (!byParent.has(pid)) byParent.set(pid, []);
       byParent.get(pid)!.push(item);
@@ -1544,7 +1560,7 @@ export class MenuService {
                   ? this.getItemTitle(byId.get(item.targetMenuItemId)!, languageCode)
                   : "—"
                 : "—"
-              : this.i18n.pickLocalized(item.localizations, languageCode)?.externalUrl ?? "—";
+              : this.pickExactLocalization(item.localizations, languageCode)?.externalUrl ?? "—";
           buttons.push(`${indent}- ${title} → ${targetTitle} (${status})`);
         } else {
           sections.push(item);
@@ -1584,9 +1600,10 @@ export class MenuService {
       where: { templateId: template.id },
       include: { localizations: true }
     });
+    const scopedItems = items.filter((item) => this.hasExactLocalization(item.localizations, languageCode));
     const byParent = new Map<string | null, (MenuItem & { localizations: MenuItemLocalization[] })[]>();
     const byId = new Map<string, MenuItem & { localizations: MenuItemLocalization[] }>();
-    for (const item of items) {
+    for (const item of scopedItems) {
       const pid = item.parentId ?? null;
       if (!byParent.has(pid)) byParent.set(pid, []);
       byParent.get(pid)!.push(item);
@@ -1603,7 +1620,7 @@ export class MenuService {
     let hasMissingTarget = false;
     const titlesByParent = new Map<string | null, Map<string, number>>();
 
-    for (const item of items) {
+    for (const item of scopedItems) {
       if (!item.isActive) hasInactive = true;
       if (item.type === "SECTION_LINK") {
         if (!item.targetMenuItemId) hasUnlinked = true;
@@ -1650,8 +1667,10 @@ export class MenuService {
       orderBy: [{ parentId: "asc" }, { sortOrder: "asc" }]
     });
 
-    return items.map((item) => {
-      const loc = this.i18n.pickLocalized(item.localizations, languageCode);
+    return items
+      .filter((item) => this.hasExactLocalization(item.localizations, languageCode))
+      .map((item) => {
+      const loc = this.pickExactLocalization(item.localizations, languageCode);
       return { id: item.id, title: loc?.title ?? item.key };
     });
   }

@@ -1979,7 +1979,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
       const contentLanguageCode = resolveEditingContentLanguageCode(ctx, user);
 
       const showPageEditor = async (pageId: string) => {
-        const children = await services.menu.getChildMenuItemsForAdmin(pageId === "root" ? null : pageId);
+        const children = await services.menu.getChildMenuItemsForAdmin(pageId === "root" ? null : pageId, contentLanguageCode);
         const pageTitle =
           pageId === "root"
             ? services.i18n.t(locale, "page_root_title")
@@ -2070,7 +2070,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
 
       const showButtonManagement = async (pageId: string) => {
         setNavCurrent(ctx, "page_edit:buttons:" + pageId);
-        const children = await services.menu.getChildMenuItemsForAdmin(pageId === "root" ? null : pageId);
+        const children = await services.menu.getChildMenuItemsForAdmin(pageId === "root" ? null : pageId, contentLanguageCode);
         const contentIdsOrdered = children.map((c) => c.id);
         const slotOrder = await services.menu.getEffectiveSlotOrder(pageId, contentIdsOrdered);
         const isRoot = pageId === "root";
@@ -5251,7 +5251,13 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           setEditingContentLanguageCode(ctx, editingContentLanguageCode);
           const uiLocale = resolveAdminUiLanguageCode(user);
           const all = await services.menu.getAllMenuItemsForAdmin();
-          const pages = all.filter((p) => p.type !== "SECTION_LINK");
+          const pages = all.filter(
+            (p) =>
+              p.type !== "SECTION_LINK" &&
+              p.localizations.some(
+                (loc) => services.i18n.normalizeLocalizationLanguageCode(loc.languageCode) === editingContentLanguageCode
+              )
+          );
           const byParent = new Map<string | null, typeof pages>();
           for (const page of pages) {
             const pid = page.parentId ?? null;
