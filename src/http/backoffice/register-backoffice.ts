@@ -5751,11 +5751,21 @@ export async function registerBackofficeRoutes(
       );
     }
 
+    const backofficeActorRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { email: true }
+    });
+    const backofficeEmail = backofficeActorRow?.email ?? null;
+
+    // `AdminActionLog.userId` points to `users.id` (not `backoffice_users.id`), so we must map to a real User record.
+    const superAdmin = await ensureSuperAdminTelegramUser(prisma);
+
     const audit = new AuditService(prisma);
     const svc = new OwnerNetResetService(prisma, audit);
     const result = await svc.resetPendingOwnerNet({
       botInstanceId: bot.id,
-      actorUserId: backofficeUserId!,
+      actorUserId: superAdmin.id,
+      triggeredBy: { backofficeUserId: backofficeUserId!, backofficeEmail },
       note
     });
 

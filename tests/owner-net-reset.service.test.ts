@@ -51,7 +51,9 @@ describe("OwnerNetResetService", () => {
       pendingBeforeNetAmount: 49.43,
       pendingAfterNetAmount: 0,
       entriesResetCount: 3,
-      note: "test-note"
+      note: "test-note",
+      triggeredByBackofficeUserId: null,
+      triggeredByBackofficeEmail: null
     });
   });
 });

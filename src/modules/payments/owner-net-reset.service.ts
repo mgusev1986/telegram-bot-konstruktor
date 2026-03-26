@@ -22,10 +22,13 @@ export class OwnerNetResetService {
    */
   public async resetPendingOwnerNet(opts: {
     botInstanceId: string;
+    /** User.id from `users` table (FK target for admin_action_logs.user_id). */
     actorUserId: string;
+    /** Backoffice actor data (optional, recorded into audit payload). */
+    triggeredBy?: { backofficeUserId: string; backofficeEmail?: string | null };
     note?: string | null;
   }): Promise<ResetOwnerNetResult> {
-    const { botInstanceId, actorUserId, note } = opts;
+    const { botInstanceId, actorUserId, note, triggeredBy } = opts;
 
     const { pendingBeforeNetAmount, entriesResetCount } = await this.prisma.$transaction(async (tx) => {
       const pendingAgg = await tx.ownerSettlementEntry.aggregate({
@@ -53,7 +56,9 @@ export class OwnerNetResetService {
       pendingBeforeNetAmount,
       pendingAfterNetAmount,
       entriesResetCount,
-      note: note ?? null
+      note: note ?? null,
+      triggeredByBackofficeUserId: triggeredBy?.backofficeUserId ?? null,
+      triggeredByBackofficeEmail: triggeredBy?.backofficeEmail ?? null
     });
 
     return {
