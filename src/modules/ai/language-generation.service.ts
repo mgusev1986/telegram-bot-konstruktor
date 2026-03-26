@@ -23,6 +23,7 @@ type MenuItemShallow = {
   type: string;
   parentId: string | null;
   sortOrder: number;
+  productId?: string | null;
 };
 
 export class LanguageGenerationService {
@@ -116,6 +117,7 @@ export class LanguageGenerationService {
   }): Promise<{
     sourcePresentationWelcomeText: string;
     sourceMenuItemLocalizationsById: Map<string, { title: string; contentText: string }>;
+    sourceProductLocalizationsByProductId: Map<string, { title: string; description: string; payButtonText: string }>;
   }> {
     const { templateId, sourceLanguageCode, targetLanguageCode, menuItems } = params;
 
@@ -179,9 +181,69 @@ export class LanguageGenerationService {
       skipDuplicates: true
     });
 
+    const productIds = Array.from(
+      new Set(
+        menuItems
+          .map((item) => item.productId ?? null)
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
+    const sourceProductLocalizationsByProductId = new Map<string, { title: string; description: string; payButtonText: string }>();
+    if (productIds.length > 0) {
+      const sourceProductLocs = await this.prisma.productLocalization.findMany({
+        where: {
+          productId: { in: productIds },
+          languageCode: sourceLanguageCode
+        },
+        select: {
+          productId: true,
+          title: true,
+          description: true,
+          payButtonText: true
+        }
+      });
+
+      for (const loc of sourceProductLocs) {
+        sourceProductLocalizationsByProductId.set(loc.productId, {
+          title: loc.title ?? "",
+          description: loc.description ?? "",
+          payButtonText: loc.payButtonText ?? ""
+        });
+      }
+
+      const existingTargetProductLocs = await this.prisma.productLocalization.findMany({
+        where: {
+          productId: { in: productIds },
+          languageCode: targetLanguageCode
+        },
+        select: { productId: true }
+      });
+      const existingProductIds = new Set(existingTargetProductLocs.map((loc) => loc.productId));
+      const missingRows = productIds
+        .filter((productId) => !existingProductIds.has(productId))
+        .map((productId) => {
+          const src = sourceProductLocalizationsByProductId.get(productId);
+          return {
+            productId,
+            languageCode: targetLanguageCode,
+            title: src?.title ?? "",
+            description: src?.description ?? "",
+            payButtonText: src?.payButtonText ?? ""
+          };
+        });
+      if (missingRows.length > 0) {
+        await this.prisma.productLocalization.createMany({
+          data: missingRows,
+          skipDuplicates: true
+        });
+      }
+    }
+
     return {
       sourcePresentationWelcomeText: sourcePresentation?.welcomeText ?? "",
-      sourceMenuItemLocalizationsById: sourceById
+      sourceMenuItemLocalizationsById: sourceById,
+      sourceProductLocalizationsByProductId
     };
   }
 
@@ -214,7 +276,8 @@ export class LanguageGenerationService {
         key: true,
         type: true,
         parentId: true,
-        sortOrder: true
+        sortOrder: true,
+        productId: true
       },
       orderBy: [
         { parentId: "asc" },
@@ -227,7 +290,8 @@ export class LanguageGenerationService {
       key: m.key,
       type: m.type,
       parentId: m.parentId,
-      sortOrder: m.sortOrder
+      sortOrder: m.sortOrder,
+      productId: m.productId ?? null
     }));
 
     const depthMap = this.getMenuItemsDepthMap(menuItemsShallow);
@@ -238,7 +302,7 @@ export class LanguageGenerationService {
     });
 
     // Pre-create localizations for target language (safe, media preserved).
-    const { sourcePresentationWelcomeText, sourceMenuItemLocalizationsById } = await this.ensureTargetLanguageLayer({
+    const { sourcePresentationWelcomeText, sourceMenuItemLocalizationsById, sourceProductLocalizationsByProductId } = await this.ensureTargetLanguageLayer({
       templateId: template.id,
       sourceLanguageCode: task.sourceLanguageCode,
       targetLanguageCode: task.targetLanguageCode,
@@ -559,6 +623,66 @@ export class LanguageGenerationService {
       }
     }
 
+    // Translate product localizations used by menu items (title/description/pay button).
+    const productIds = Array.from(sourceProductLocalizationsByProductId.keys());
+    if (productIds.length > 0) {
+      const jobsTitle: Array<{ productId: string; text: string }> = [];
+      const jobsDescription: Array<{ productId: string; text: string }> = [];
+      const jobsPay: Array<{ productId: string; text: string }> = [];
+      for (const productId of productIds) {
+        const src = sourceProductLocalizationsByProductId.get(productId);
+        if (!src) continue;
+        if (src.title.trim()) jobsTitle.push({ productId, text: src.title });
+        if (src.description.trim()) jobsDescription.push({ productId, text: src.description });
+        if (src.payButtonText.trim()) jobsPay.push({ productId, text: src.payButtonText });
+      }
+
+      const makeInput = (text: string) => ({
+        text,
+        sourceLanguageCode: task.sourceLanguageCode,
+        targetLanguageCode: task.targetLanguageCode
+      });
+      const [translatedTitles, translatedDescriptions, translatedPays] = await Promise.all([
+        jobsTitle.length ? aiTranslation.translateBatch(jobsTitle.map((j) => makeInput(j.text))) : Promise.resolve([] as string[]),
+        jobsDescription.length ? aiTranslation.translateBatch(jobsDescription.map((j) => makeInput(j.text))) : Promise.resolve([] as string[]),
+        jobsPay.length ? aiTranslation.translateBatch(jobsPay.map((j) => makeInput(j.text))) : Promise.resolve([] as string[])
+      ]);
+
+      const byProductId = new Map<string, { title?: string; description?: string; payButtonText?: string }>();
+      for (let i = 0; i < jobsTitle.length; i++) {
+        const row = byProductId.get(jobsTitle[i]!.productId) ?? {};
+        row.title = translatedTitles[i] ?? jobsTitle[i]!.text;
+        byProductId.set(jobsTitle[i]!.productId, row);
+      }
+      for (let i = 0; i < jobsDescription.length; i++) {
+        const row = byProductId.get(jobsDescription[i]!.productId) ?? {};
+        row.description = translatedDescriptions[i] ?? jobsDescription[i]!.text;
+        byProductId.set(jobsDescription[i]!.productId, row);
+      }
+      for (let i = 0; i < jobsPay.length; i++) {
+        const row = byProductId.get(jobsPay[i]!.productId) ?? {};
+        row.payButtonText = translatedPays[i] ?? jobsPay[i]!.text;
+        byProductId.set(jobsPay[i]!.productId, row);
+      }
+
+      for (const productId of productIds) {
+        const patch = byProductId.get(productId) ?? {};
+        await this.prisma.productLocalization.update({
+          where: {
+            productId_languageCode: {
+              productId,
+              languageCode: task.targetLanguageCode
+            }
+          },
+          data: {
+            ...(patch.title !== undefined ? { title: patch.title } : {}),
+            ...(patch.description !== undefined ? { description: patch.description } : {}),
+            ...(patch.payButtonText !== undefined ? { payButtonText: patch.payButtonText } : {})
+          }
+        });
+      }
+    }
+
     // Finalize.
     await this.prisma.languageGenerationTask.update({
       where: { id: taskId },
@@ -625,13 +749,13 @@ export class LanguageGenerationService {
     const kb = Markup.inlineKeyboard([
       [
         Markup.button.callback(
-          `👁 ${this.deps.i18n.t(uiLocale, "language_version_open_btn").replace("{{lang}}", targetLanguageLabel)}`,
+          this.deps.i18n.t(uiLocale, "language_version_open_btn").replace("{{lang}}", targetLanguageLabel),
           makeCallbackData("admin", "open_lang_version", task.targetLanguageCode)
         )
       ],
       [
         Markup.button.callback(
-          `🛠 ${this.deps.i18n.t(uiLocale, "language_version_edit_btn").replace("{{lang}}", targetLanguageLabel)}`,
+          this.deps.i18n.t(uiLocale, "language_version_edit_btn").replace("{{lang}}", targetLanguageLabel),
           makeCallbackData("admin", "edit_lang_version", task.targetLanguageCode)
         )
       ],

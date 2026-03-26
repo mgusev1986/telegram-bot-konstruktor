@@ -466,9 +466,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
   ): string | undefined => {
     const locs = product?.localizations;
     if (!locs?.length) return undefined;
-    return locs.find((l) => l.languageCode === userLang)?.payButtonText
-      ?? locs.find((l) => l.languageCode === "ru")?.payButtonText
-      ?? locs[0]?.payButtonText;
+    // For non-RU locales don't force RU fallback: let caller use i18n `pay_now`.
+    // This prevents mixed-language CTA like EN content + RU "Оплатить".
+    return locs.find((l) => l.languageCode === userLang)?.payButtonText;
   };
   const getProductLocalization = (
     product: {
