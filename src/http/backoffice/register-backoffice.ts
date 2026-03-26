@@ -5254,7 +5254,7 @@ export async function registerBackofficeRoutes(
                           )}
                           <div class="field-wrap">
                             <label class="small">Подтвердите сброс (введите <code>RESET_OWNER_NET</code>)</label>
-                            <input name="confirmText" type="text" required />
+                            <input name="confirmText" type="text" placeholder="RESET_OWNER_NET" required />
                           </div>
                           <div class="field-wrap">
                             <label class="small">Причина (опционально)</label>
@@ -5742,7 +5742,8 @@ export async function registerBackofficeRoutes(
     if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
 
     const body = req.body as any;
-    const confirmText = String(body?.confirmText ?? "").trim();
+    const confirmTextRaw = String(body?.confirmText ?? "");
+    const confirmText = confirmTextRaw.trim().toUpperCase();
     const note = String(body?.note ?? "").trim() || null;
 
     if (confirmText !== "RESET_OWNER_NET") {

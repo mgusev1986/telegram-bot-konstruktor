@@ -14,6 +14,7 @@ describe("Backoffice owner net reset UX & safety", () => {
     expect(src).toContain("Сбросить нетто");
     expect(src).toContain('К выплате нетто');
     expect(src).toContain("netAmountBeforePayoutFee");
+    expect(src).toContain('placeholder="RESET_OWNER_NET"');
   });
 
   it("blocks execution on wrong confirmation", () => {
