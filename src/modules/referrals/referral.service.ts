@@ -1,6 +1,5 @@
 import type { PrismaClient, User } from "@prisma/client";
 
-import { env } from "../../config/env";
 import { ValidationError } from "../../common/errors";
 import type { NotificationService } from "../notifications/notification.service";
 
@@ -113,17 +112,6 @@ export class ReferralService {
 
     await this.refreshStatsForChain(invited.id);
     await this.notifications.notifyFirstLineRegistration(inviter, invited);
-
-    const owner = await this.prisma.user.findFirst({
-      where: {
-        telegramUserId: env.SUPER_ADMIN_TELEGRAM_ID,
-        ...(this.botInstanceId ? { botInstanceId: this.botInstanceId } : {})
-      }
-    });
-
-    if (owner && owner.id !== inviter.id) {
-      await this.notifications.notifyGlobalRegistration(owner, invited, inviter);
-    }
   }
 
   public async refreshStatsForChain(userId: string): Promise<void> {

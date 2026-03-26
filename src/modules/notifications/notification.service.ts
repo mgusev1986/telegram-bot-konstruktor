@@ -101,17 +101,6 @@ export class NotificationService {
     await this.sendText(inviter, "FIRST_LINE_REGISTRATION", text, { invitedUserId: invited.id }, invitedLabel.parseMode ? { parse_mode: "HTML" } : undefined);
   }
 
-  public async notifyGlobalRegistration(owner: User, invited: User, inviter: User): Promise<void> {
-    const text = this.i18n.t(owner.selectedLanguage, "user_registered", {
-      fullName: `${invited.fullName || invited.firstName} <- ${inviter.fullName || inviter.firstName}`
-    });
-
-    await this.sendText(owner, "GLOBAL_REGISTRATION", text, {
-      invitedUserId: invited.id,
-      inviterUserId: inviter.id
-    });
-  }
-
   public async notifyMentorRequest(mentor: User, requester: User): Promise<void> {
     const language = mentor.selectedLanguage;
     const text =
