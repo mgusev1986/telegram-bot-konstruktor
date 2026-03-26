@@ -571,7 +571,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
   const shouldShowCabinetLanguageButton = async (user: BotContext["currentUser"]): Promise<boolean> => {
     if (!user) return true;
     const rootItems = await services.menu.getMenuItemsForParent(user, null);
-    const rootSlotOrder = await services.menu.getEffectiveSlotOrder("root", rootItems.map((i) => i.id));
+    const rootSlotOrder = await services.menu.getEffectiveSlotOrder("root", rootItems.map((i) => i.id), user.selectedLanguage);
     return rootSlotOrder.includes(MenuService.SYS_SLOT_LANGUAGE);
   };
 
@@ -663,7 +663,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     }
     const welcome = await services.menu.getWelcome(user, ctx.from ?? undefined);
     const items = await services.menu.getMenuItemsForParent(user, null);
-    const rootSlotOrder = await services.menu.getEffectiveSlotOrder("root", items.map((i) => i.id));
+    const rootSlotOrder = await services.menu.getEffectiveSlotOrder("root", items.map((i) => i.id), user.selectedLanguage);
     const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
     const [partnerRegisterTargetId, mentorContactTargetId] = await Promise.all([
       services.menu.getSystemTargetMenuItemId("partner_register"),
@@ -2893,7 +2893,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           await services.inactivityReminders.cancelPendingForUserExcept(user.id, "root");
           setNavCurrent(ctx, "menu:open:root");
           const items = await services.menu.getMenuItemsForParent(user, null);
-          const rootSlotOrder = await services.menu.getEffectiveSlotOrder("root", items.map((i) => i.id));
+          const rootSlotOrder = await services.menu.getEffectiveSlotOrder("root", items.map((i) => i.id), user.selectedLanguage);
           const mentorUsername =
             user.mentorUserId ? (await services.users.findById(user.mentorUserId))?.username ?? null : null;
           const externalPartnerUrl = await services.cabinet.getPartnerRegisterLinkForUser(user);
@@ -4939,11 +4939,12 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           }
 
           const locale = services.i18n.resolveLanguage(user.selectedLanguage);
+          const editingContentLanguageCode = resolveEditingContentLanguageCode(ctx, user);
           const adminLocale = locale;
 
-          const children = await services.menu.getChildMenuItemsForAdmin(null);
+          const children = await services.menu.getChildMenuItemsForAdmin(null, editingContentLanguageCode);
           const contentIdsOrdered = children.map((c) => c.id);
-          const slotOrder = await services.menu.getEffectiveSlotOrder("root", contentIdsOrdered);
+          const slotOrder = await services.menu.getEffectiveSlotOrder("root", contentIdsOrdered, editingContentLanguageCode);
           const slotSet = new Set(slotOrder);
 
           const sysButtons: Array<{ slotId: string; label: string }> = [
@@ -4990,6 +4991,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           }
           if (!value) return;
 
+          const editingContentLanguageCode = resolveEditingContentLanguageCode(ctx, user);
           const slotId = String(value);
           const allowed = new Set<string>([
             MenuService.SYS_SLOT_LANGUAGE,
@@ -5001,9 +5003,9 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           ]);
           if (!allowed.has(slotId)) return;
 
-          const children = await services.menu.getChildMenuItemsForAdmin(null);
+          const children = await services.menu.getChildMenuItemsForAdmin(null, editingContentLanguageCode);
           const contentIdsOrdered = children.map((c) => c.id);
-          const slotOrder = await services.menu.getEffectiveSlotOrder("root", contentIdsOrdered);
+          const slotOrder = await services.menu.getEffectiveSlotOrder("root", contentIdsOrdered, editingContentLanguageCode);
           const has = slotOrder.includes(slotId);
 
           const next = has ? slotOrder.filter((s) => s !== slotId) : [...slotOrder, slotId];
@@ -5011,15 +5013,15 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             next.push(MenuService.SYS_SLOT_CONFIGURED_MARKER);
           }
 
-          await services.menu.setPageNavConfig("root", next, user.id);
+          await services.menu.setPageNavConfig("root", next, user.id, editingContentLanguageCode);
 
           setNavBeforeShow(ctx, "admin:system_buttons");
           const locale = services.i18n.resolveLanguage(user.selectedLanguage);
           const adminLocale = locale;
 
-          const children2 = await services.menu.getChildMenuItemsForAdmin(null);
+          const children2 = await services.menu.getChildMenuItemsForAdmin(null, editingContentLanguageCode);
           const contentIdsOrdered2 = children2.map((c) => c.id);
-          const slotOrder2 = await services.menu.getEffectiveSlotOrder("root", contentIdsOrdered2);
+          const slotOrder2 = await services.menu.getEffectiveSlotOrder("root", contentIdsOrdered2, editingContentLanguageCode);
           const slotSet2 = new Set(slotOrder2);
 
           const sysButtons: Array<{ slotId: string; label: string }> = [

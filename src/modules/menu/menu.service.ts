@@ -1865,23 +1865,39 @@ export class MenuService {
     MenuService.SYS_SLOT_CONFIGURED_MARKER
   ] as const;
 
+  private navConfigKey(pageId: string, languageCode?: string): string {
+    if (pageId !== "root" || !languageCode) return pageId;
+    const lc = this.i18n.normalizeLocalizationLanguageCode(languageCode);
+    return `root::${lc}`;
+  }
+
   /** Returns stored slot order for page (content ids + __nav_back / __nav_to_main), or null if not set. */
-  public async getPageNavConfig(pageId: string): Promise<string[] | null> {
+  public async getPageNavConfig(pageId: string, languageCode?: string): Promise<string[] | null> {
+    const key = this.navConfigKey(pageId, languageCode);
     const row = await this.prisma.pageNavConfig.findUnique({
-      where: { menuItemId: pageId }
+      where: { menuItemId: key }
     });
+    // Backward compatibility: old bots had a single global "root" config.
+    if (!row && pageId === "root" && languageCode) {
+      const legacy = await this.prisma.pageNavConfig.findUnique({
+        where: { menuItemId: "root" }
+      });
+      if (!legacy || !Array.isArray(legacy.slotOrder)) return null;
+      return legacy.slotOrder as string[];
+    }
     if (!row || !Array.isArray(row.slotOrder)) return null;
     return row.slotOrder as string[];
   }
 
   /** Saves slot order for page. slotOrder may include menu item ids and NAV_SLOT_BACK, NAV_SLOT_TO_MAIN. */
-  public async setPageNavConfig(pageId: string, slotOrder: string[], actorUserId: string): Promise<void> {
+  public async setPageNavConfig(pageId: string, slotOrder: string[], actorUserId: string, languageCode?: string): Promise<void> {
+    const key = this.navConfigKey(pageId, languageCode);
     await this.prisma.pageNavConfig.upsert({
-      where: { menuItemId: pageId },
-      create: { menuItemId: pageId, slotOrder },
+      where: { menuItemId: key },
+      create: { menuItemId: key, slotOrder },
       update: { slotOrder }
     });
-    await this.audit.log(actorUserId, "set_page_nav_config", "page_nav_config", pageId, { slotOrder });
+    await this.audit.log(actorUserId, "set_page_nav_config", "page_nav_config", key, { slotOrder, languageCode });
   }
 
   /**
@@ -1923,8 +1939,8 @@ export class MenuService {
    * Returns effective slot order for a page: from config if present, else default.
    * For root: default = contentIds only (no nav in editor). For non-root: default = contentIds + __nav_back + __nav_to_main.
    */
-  public async getEffectiveSlotOrder(pageId: string, contentIdsOrdered: string[]): Promise<string[]> {
-    const stored = await this.getPageNavConfig(pageId);
+  public async getEffectiveSlotOrder(pageId: string, contentIdsOrdered: string[], languageCode?: string): Promise<string[]> {
+    const stored = await this.getPageNavConfig(pageId, languageCode);
     const isRoot = pageId === "root";
 
     if (isRoot) {
