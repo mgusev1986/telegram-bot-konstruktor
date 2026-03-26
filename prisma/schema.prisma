@@ -245,6 +245,7 @@ enum BalanceLedgerEntryType {
 // Owner settlement (NOWPayments v1): accrual per confirmed user top-up
 enum OwnerSettlementEntryStatus {
   PENDING
+  RESET
   BATCHED
   PAID
   FAILED

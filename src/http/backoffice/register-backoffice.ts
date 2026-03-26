@@ -19,6 +19,7 @@ import { UserService } from "../../modules/users/user.service";
 import { BotRoleAssignmentService } from "../../modules/bot-roles/bot-role-assignment.service";
 import { UserDirectoryService } from "../../modules/users/user-directory.service";
 import { SubscriptionChannelService } from "../../modules/subscription-channel/subscription-channel.service";
+import { OwnerNetResetService } from "../../modules/payments/owner-net-reset.service";
 import { logger } from "../../common/logger";
 import { readStructuredLinkedChatsFromBody } from "../../common/backoffice-linked-chat-form";
 import { parseLinkedChatsFromForm } from "../../common/linked-chat-parser";
@@ -3848,6 +3849,7 @@ export async function registerBackofficeRoutes(
     const simulateOk = (req.query as any)?.simulateOk === "1";
     const simulateError = String((req.query as any)?.simulateError ?? "").trim();
     const paidPageError = String((req.query as any)?.error ?? "").trim();
+    const paidPageOk = String((req.query as any)?.ok ?? "").trim();
 
     const template = await prisma.presentationTemplate.findFirst({
       where: { botInstanceId: bot.id, isActive: true },
@@ -4429,6 +4431,7 @@ export async function registerBackofficeRoutes(
         COMPLETED: { label: "Завершено", tone: "active" },
         ACTIVE: { label: "Активно", tone: "active" },
         PENDING: { label: "В ожидании", tone: "pending" },
+        RESET: { label: "Сброшено", tone: "muted" },
         UNPAID: { label: "Не оплачено", tone: "pending" },
         BATCHED: { label: "В пакете выплаты", tone: "pending" },
         FAILED: { label: "FAILED", tone: "failed" },
@@ -4764,6 +4767,7 @@ export async function registerBackofficeRoutes(
             "Тестовый сценарий запущен: доступ выдан, reminders и expiry/removal будут обработаны по policy продукта."
           )
         : "",
+      paidPageOk ? renderNote("success", escapeHtml(paidPageOk), "Операция выполнена") : "",
       simulateError ? renderNote("danger", escapeHtml(simulateError), "Ошибка тестового сценария") : "",
       paidPageError ? renderNote("danger", escapeHtml(paidPageError), "Ошибка операции") : "",
       misconfiguredProducts.length
@@ -5241,6 +5245,27 @@ export async function registerBackofficeRoutes(
                     ${renderMetricCard("Записей в ожидании", String(settlementAgg._count), "", "bo-kpi-card--compact")}
                     ${renderMetricCard("К выплате нетто", Number(settlementAgg._sum.netAmountBeforePayoutFee ?? 0).toFixed(2), "USDT", "bo-kpi-card--compact")}
                   </div>
+                  ${
+                    Number(settlementAgg._sum.netAmountBeforePayoutFee ?? 0) > 0
+                      ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/paid/reset-owner-net" class="bo-stack bo-stack--dense" style="margin-top:12px">
+                          ${renderNote(
+                            "danger",
+                            `Сбросит ТОЛЬКО текущее pending owner net (“К выплате нетто”) для этого бота. История начислений, payout batches и payment events НЕ удаляется. Действие будет записано в аудит.`
+                          )}
+                          <div class="field-wrap">
+                            <label class="small">Подтвердите сброс (введите <code>RESET_OWNER_NET</code>)</label>
+                            <input name="confirmText" type="text" required />
+                          </div>
+                          <div class="field-wrap">
+                            <label class="small">Причина (опционально)</label>
+                            <input name="note" type="text" placeholder="Например, ошибка атрибуции / административное решение" />
+                          </div>
+                          <div class="bo-actions" style="justify-content:flex-start">
+                            <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);color:#ffd1d1;">Сбросить нетто</button>
+                          </div>
+                        </form>`
+                      : `<div class="small" style="margin-top:12px;color:#94a3b8">К выплате нетто уже равно 0</div>`
+                  }
                 </div>
                 <div class="bo-form-cluster">
                   <div class="bo-form-cluster-head">
@@ -5697,6 +5722,45 @@ export async function registerBackofficeRoutes(
     });
 
     return reply.redirect(`/backoffice/bots/${escapeHtml(bot.id)}/paid#nowpayments`);
+  });
+
+  server.post("/backoffice/api/bots/:botId/paid/reset-owner-net", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const body = req.body as any;
+    const confirmText = String(body?.confirmText ?? "").trim();
+    const note = String(body?.note ?? "").trim() || null;
+
+    if (confirmText !== "RESET_OWNER_NET") {
+      return reply.redirect(
+        `/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Bad confirmation")}`
+      );
+    }
+
+    const audit = new AuditService(prisma);
+    const svc = new OwnerNetResetService(prisma, audit);
+    const result = await svc.resetPendingOwnerNet({
+      botInstanceId: bot.id,
+      actorUserId: backofficeUserId!,
+      note
+    });
+
+    const msg = result.entriesResetCount > 0 ? `Нетто сброшено: было ${result.pendingBeforeNetAmount.toFixed(2)} USDT` : "Нетто уже равно 0";
+    return reply.redirect(`/backoffice/bots/${encodeURIComponent(bot.id)}/paid?ok=${encodeURIComponent(msg)}`);
   });
 
   server.post("/backoffice/api/bots/:botId/paid/owner-payout-wallet", async (req, reply) => {

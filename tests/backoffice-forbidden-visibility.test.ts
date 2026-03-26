@@ -55,6 +55,10 @@ describe("Back-office forbidden visibility", () => {
     expect(getBackofficeCapabilities("ADMIN").has("global_user_directory:view")).toBe(false);
   });
 
+  it("ADMIN cannot manage paid_access:manage — reset owner net must be hidden", () => {
+    expect(canPerform("ADMIN", "paid_access:manage")).toBe(false);
+  });
+
   it("canViewGlobalUserDirectory returns true for ALPHA_OWNER role", () => {
     expect(canViewGlobalUserDirectory("ALPHA_OWNER", "any@example.com")).toBe(true);
   });
