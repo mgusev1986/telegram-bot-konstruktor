@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createSectionScene } from "../src/bot/scenes/create-section.scene";
 
 describe("create-section.scene locale split", () => {
-  it("uses uiLanguageCode for UI prompt and content language for saving", async () => {
+  it.each(["en", "de"])("uses RU UI prompt and saves only %s content layer", async (editingLang) => {
     const createMenuItem = vi.fn().mockResolvedValue({ id: "new-sec" });
     const i18nT = vi.fn().mockImplementation((lang: string, key: string) => `${lang}:${key}`);
 
@@ -13,7 +13,7 @@ describe("create-section.scene locale split", () => {
         state: {
           parentId: null,
           fromPageId: "root",
-          languageCode: "en",
+          languageCode: editingLang,
           uiLanguageCode: "ru"
         },
         leave: vi.fn().mockResolvedValue(undefined)
@@ -48,7 +48,7 @@ describe("create-section.scene locale split", () => {
     ctx.wizard.state = {
       parentId: null,
       fromPageId: "root",
-      languageCode: "en",
+      languageCode: editingLang,
       uiLanguageCode: "ru",
       title: "My section"
     };
@@ -59,7 +59,7 @@ describe("create-section.scene locale split", () => {
     expect(createMenuItem).toHaveBeenCalledTimes(1);
     expect(createMenuItem.mock.calls[0][0]).toEqual(
       expect.objectContaining({
-        languageCode: "en",
+        languageCode: editingLang,
         title: "My section"
       })
     );

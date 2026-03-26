@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { attachVideoFromLibraryScene } from "../src/bot/scenes/attach-video-from-library.scene";
 
 describe("attach-video-from-library.scene locale split", () => {
-  it("uses uiLanguageCode for UI and content language for update", async () => {
+  it.each(["en", "de"])("uses RU UI and updates only %s content layer", async (editingLang) => {
     const updateMenuItemContent = vi.fn().mockResolvedValue(undefined);
     const i18nT = vi.fn().mockImplementation((lang: string, key: string) => `${lang}:${key}`);
 
@@ -12,7 +12,7 @@ describe("attach-video-from-library.scene locale split", () => {
       scene: {
         state: {
           pageId: "page1",
-          languageCode: "en",
+          languageCode: editingLang,
           uiLanguageCode: "ru"
         },
         leave: vi.fn().mockResolvedValue(undefined)
@@ -44,7 +44,7 @@ describe("attach-video-from-library.scene locale split", () => {
     expect(updateMenuItemContent).toHaveBeenCalledWith(
       "page1",
       "u1",
-      "en",
+      editingLang,
       expect.objectContaining({ mediaType: "VIDEO", mediaFileId: "vid-file-id" })
     );
   });

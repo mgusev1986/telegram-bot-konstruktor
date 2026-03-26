@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createButtonLinkScene } from "../src/bot/scenes/create-button-link.scene";
 
 describe("create-button-link.scene locale split", () => {
-  it("uses content language for section picker query and ui language for texts", async () => {
+  it.each(["en", "de"])("uses %s for section picker and keeps RU UI texts", async (editingLang) => {
     const getContentSectionsForPicker = vi.fn().mockResolvedValue([
       { id: "s1", title: "Section 1" }
     ]);
@@ -16,7 +16,7 @@ describe("create-button-link.scene locale split", () => {
         state: {
           parentId: "root",
           fromPageId: "root",
-          languageCode: "en",
+          languageCode: editingLang,
           uiLanguageCode: "ru"
         }
       },
@@ -52,10 +52,10 @@ describe("create-button-link.scene locale split", () => {
     await step2(ctx);
 
     expect(getContentSectionsForPicker).toHaveBeenCalledTimes(1);
-    expect(getContentSectionsForPicker).toHaveBeenCalledWith("en");
+    expect(getContentSectionsForPicker).toHaveBeenCalledWith(editingLang);
 
     // UI text should stay in ru.
     expect(i18nT).toHaveBeenCalledWith("ru", "choose_target_section");
-    expect(i18nT).not.toHaveBeenCalledWith("en", "choose_target_section");
+    expect(i18nT).not.toHaveBeenCalledWith(editingLang, "choose_target_section");
   });
 });

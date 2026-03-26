@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { renameButtonScene } from "../src/bot/scenes/rename-button.scene";
 
 describe("rename-button.scene locale split", () => {
-  it("keeps UI in uiLanguageCode and writes title into content language layer", async () => {
+  it.each(["en", "de"])("keeps RU UI and writes title only into %s content layer", async (editingLang) => {
     const updateMenuItemTitle = vi.fn().mockResolvedValue(undefined);
     const i18nT = vi.fn().mockImplementation((lang: string, key: string) => `${lang}:${key}`);
     const reply = vi.fn().mockResolvedValue(undefined);
@@ -15,7 +15,7 @@ describe("rename-button.scene locale split", () => {
         state: {
           itemId: "btn1",
           fromPageId: "root",
-          languageCode: "en",
+          languageCode: editingLang,
           uiLanguageCode: "ru"
         }
       },
@@ -37,11 +37,11 @@ describe("rename-button.scene locale split", () => {
     await step2(ctx);
 
     expect(updateMenuItemTitle).toHaveBeenCalledTimes(1);
-    expect(updateMenuItemTitle).toHaveBeenCalledWith("btn1", "en", "New title", "u1");
+    expect(updateMenuItemTitle).toHaveBeenCalledWith("btn1", editingLang, "New title", "u1");
 
     // Success UI message should still use ru locale.
     expect(i18nT).toHaveBeenCalledWith("ru", "button_renamed");
-    expect(i18nT).not.toHaveBeenCalledWith("en", "button_renamed");
+    expect(i18nT).not.toHaveBeenCalledWith(editingLang, "button_renamed");
   });
 });
 
