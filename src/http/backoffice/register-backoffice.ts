@@ -5754,7 +5754,9 @@ export async function registerBackofficeRoutes(
     const expectedNormalized = "RESETOWNERNET";
     if (confirmTextNormalized !== expectedNormalized) {
       return reply.redirect(
-        `/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Bad confirmation: expected RESET_OWNER_NET")}`
+        `/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent(
+          `Bad confirmation: expected RESET_OWNER_NET, got ${confirmTextNormalized || "(empty)"}`
+        )}`
       );
     }
 
