@@ -5061,10 +5061,12 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           await ctx.answerCbQuery?.();
           const existingLangCodes = await services.menu.getActiveTemplateLanguageCodes();
           const text = [
-            `Языки`,
+            services.i18n.t(adminLocale, "lang_manage_title"),
             ``,
-            `🌐 Добавить язык — переведём тексты на AI`,
-            existingLangCodes.length > 0 ? `📋 Уже добавлены: ${existingLangCodes.join(", ")}` : `📋 Пока нет добавленных языков`
+            services.i18n.t(adminLocale, "lang_manage_add_hint"),
+            existingLangCodes.length > 0
+              ? services.i18n.t(adminLocale, "lang_manage_added_list").replace("{{list}}", existingLangCodes.join(", "))
+              : services.i18n.t(adminLocale, "lang_manage_added_empty")
           ].join("\n");
           await services.navigation.replaceScreen(
             user,
@@ -5073,7 +5075,7 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             { text },
             Markup.inlineKeyboard([
               [Markup.button.callback(services.i18n.t(adminLocale, "admin_add_language_version"), makeCallbackData("admin", "add_lang"))],
-              [Markup.button.callback("📋 Существующие языковые версии", makeCallbackData("admin", "list_langs"))],
+              [Markup.button.callback(services.i18n.t(adminLocale, "lang_manage_existing_btn"), makeCallbackData("admin", "list_langs"))],
               [Markup.button.callback(services.i18n.t(adminLocale, "back"), makeCallbackData("admin", "open"))],
               [Markup.button.callback(services.i18n.t(adminLocale, "to_main_menu"), NAV_ROOT_DATA)]
             ])
@@ -5085,8 +5087,8 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
           const existingLangCodes = await services.menu.getActiveTemplateLanguageCodes();
           const labelFor = (code: string) => services.i18n.availableLanguages().find((l) => l.code === code)?.label ?? code;
           const text = existingLangCodes.length
-            ? ["📋 Существующие языковые версии", "", ...existingLangCodes.map((c) => `• ${labelFor(c)}`)].join("\n")
-            : "Пока нет добавленных языков.";
+            ? [services.i18n.t(adminLocale, "lang_manage_existing_title"), "", ...existingLangCodes.map((c) => `• ${labelFor(c)}`)].join("\n")
+            : services.i18n.t(adminLocale, "lang_manage_added_empty_plain");
 
           const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
           for (const c of existingLangCodes) {
@@ -5114,12 +5116,12 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
             user,
             ctx.telegram,
             ctx.chat?.id ?? user.telegramUserId,
-            { text: `Языковая версия ${label}` },
+            { text: services.i18n.t(adminLocale, "lang_manage_version_title").replace("{{lang}}", label) },
             Markup.inlineKeyboard([
-              [Markup.button.callback(`👁 Открыть ${label}`, makeCallbackData("admin", "open_lang_version", targetLanguageCode))],
-              [Markup.button.callback(`🛠 Редактировать ${label}`, makeCallbackData("admin", "edit_lang_version", targetLanguageCode))],
-              [Markup.button.callback(`🔄 Перегенерировать AI-перевод`, makeCallbackData("admin", "regen_lang_prompt", targetLanguageCode))],
-              [Markup.button.callback(`🗑 Удалить ${label}`, makeCallbackData("admin", "lang_delete_prompt", targetLanguageCode))],
+              [Markup.button.callback(services.i18n.t(adminLocale, "lang_manage_open_btn").replace("{{lang}}", label), makeCallbackData("admin", "open_lang_version", targetLanguageCode))],
+              [Markup.button.callback(services.i18n.t(adminLocale, "lang_manage_edit_btn").replace("{{lang}}", label), makeCallbackData("admin", "edit_lang_version", targetLanguageCode))],
+              [Markup.button.callback(services.i18n.t(adminLocale, "lang_manage_regen_btn"), makeCallbackData("admin", "regen_lang_prompt", targetLanguageCode))],
+              [Markup.button.callback(services.i18n.t(adminLocale, "lang_manage_delete_btn").replace("{{lang}}", label), makeCallbackData("admin", "lang_delete_prompt", targetLanguageCode))],
               [Markup.button.callback(services.i18n.t(adminLocale, "back"), makeCallbackData("admin", "list_langs"))],
               [Markup.button.callback(services.i18n.t(adminLocale, "to_main_menu"), NAV_ROOT_DATA)]
             ])

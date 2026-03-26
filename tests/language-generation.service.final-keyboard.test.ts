@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LanguageGenerationService } from "../src/modules/ai/language-generation.service";
 
 describe("LanguageGenerationService final keyboard labels", () => {
-  it("does not duplicate emoji in open/edit version buttons", async () => {
+  it("does not duplicate emoji and renders translated counters", async () => {
     const replaceScreen = vi.fn().mockResolvedValue(undefined);
 
     const prisma: any = {
@@ -76,7 +76,7 @@ describe("LanguageGenerationService final keyboard labels", () => {
         if (key === "back") return "↩️ Назад";
         if (key === "to_main_menu") return "🗂 В главное меню";
         if (key === "language_generation_done_title") return "Языковая версия готова";
-        if (key === "language_generation_done_translated") return "Переведено: {{count}}";
+        if (key === "language_generation_done_translated") return "Переведено: {{done}} из {{total}}";
         if (key === "language_generation_done_draft") return "Статус: черновик";
         if (key === "language_generation_done_next") return "Следующий шаг:";
         return key;
@@ -92,11 +92,13 @@ describe("LanguageGenerationService final keyboard labels", () => {
     await service.processTask("task-1");
 
     expect(replaceScreen).toHaveBeenCalled();
+    const textArg = replaceScreen.mock.calls.at(-1)?.[3]?.text ?? "";
     const keyboardArg = replaceScreen.mock.calls.at(-1)?.[4];
     const rows = keyboardArg?.reply_markup?.inline_keyboard ?? [];
     const firstText = rows[0]?.[0]?.text ?? "";
     const secondText = rows[1]?.[0]?.text ?? "";
 
+    expect(textArg).toContain("Переведено: 1 из 1");
     expect(firstText).toBe("👁 Открыть версию");
     expect(secondText).toBe("🛠 Редактировать версию");
     expect(firstText.includes("👁 👁")).toBe(false);

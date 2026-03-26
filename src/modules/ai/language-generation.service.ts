@@ -737,7 +737,10 @@ export class LanguageGenerationService {
 
     const finalText = [
       `✅ ${this.deps.i18n.t(uiLocale, "language_generation_done_title").replace("{{lang}}", targetLanguageLabel)}`,
-      this.deps.i18n.t(uiLocale, "language_generation_done_translated").replace("{{count}}", String(completedItems)),
+      this.deps.i18n
+        .t(uiLocale, "language_generation_done_translated")
+        .replace("{{done}}", String(completedItems))
+        .replace("{{total}}", String(totalItems)),
       ...(fallbackLine ? [fallbackLine] : []),
       ...(providerUsedLine ? [providerUsedLine] : []),
       this.deps.i18n.t(uiLocale, "language_generation_done_draft"),
