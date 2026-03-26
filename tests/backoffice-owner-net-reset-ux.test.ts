@@ -20,8 +20,8 @@ describe("Backoffice owner net reset UX & safety", () => {
   it("blocks execution on wrong confirmation", () => {
     const src = readFileSync(FILE, "utf8");
 
-    expect(src).toContain('if (confirmText !== "RESET_OWNER_NET")');
-    expect(src).toContain("Bad confirmation");
+    expect(src).toContain('expectedNormalized = "RESETOWNERNET"');
+    expect(src).toContain('Bad confirmation: expected RESET_OWNER_NET');
   });
 });
 

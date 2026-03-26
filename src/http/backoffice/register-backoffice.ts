@@ -5743,12 +5743,18 @@ export async function registerBackofficeRoutes(
 
     const body = req.body as any;
     const confirmTextRaw = String(body?.confirmText ?? "");
-    const confirmText = confirmTextRaw.trim().toUpperCase();
+    // Allow human input variations: case, spaces, accidental punctuation.
+    // Normalize to alnum-only upper-case, then compare against RESET_OWNER_NET -> RESETOWNERNET.
+    const confirmTextNormalized = confirmTextRaw
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "");
     const note = String(body?.note ?? "").trim() || null;
 
-    if (confirmText !== "RESET_OWNER_NET") {
+    const expectedNormalized = "RESETOWNERNET";
+    if (confirmTextNormalized !== expectedNormalized) {
       return reply.redirect(
-        `/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Bad confirmation")}`
+        `/backoffice/bots/${encodeURIComponent(bot.id)}/paid?error=${encodeURIComponent("Bad confirmation: expected RESET_OWNER_NET")}`
       );
     }
 
