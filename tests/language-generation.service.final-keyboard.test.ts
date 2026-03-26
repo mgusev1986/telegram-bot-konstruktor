@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { LanguageGenerationService } from "../src/modules/ai/language-generation.service";
 
 describe("LanguageGenerationService final keyboard labels", () => {
-  it("does not duplicate emoji and renders translated counters", async () => {
+  it("hides open-version button and renders translated counters", async () => {
     const replaceScreen = vi.fn().mockResolvedValue(undefined);
 
     const prisma: any = {
@@ -96,12 +96,11 @@ describe("LanguageGenerationService final keyboard labels", () => {
     const keyboardArg = replaceScreen.mock.calls.at(-1)?.[4];
     const rows = keyboardArg?.reply_markup?.inline_keyboard ?? [];
     const firstText = rows[0]?.[0]?.text ?? "";
-    const secondText = rows[1]?.[0]?.text ?? "";
+    const allTexts = rows.flatMap((r: Array<{ text: string }>) => r.map((b) => b.text));
 
     expect(textArg).toContain("Переведено: 1 из 1");
-    expect(firstText).toBe("👁 Открыть версию");
-    expect(secondText).toBe("🛠 Редактировать версию");
-    expect(firstText.includes("👁 👁")).toBe(false);
-    expect(secondText.includes("🛠 🛠")).toBe(false);
+    expect(allTexts).not.toContain("👁 Открыть версию");
+    expect(firstText).toBe("🛠 Редактировать версию");
+    expect(firstText.includes("🛠 🛠")).toBe(false);
   });
 });

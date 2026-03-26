@@ -752,12 +752,6 @@ export class LanguageGenerationService {
     const kb = Markup.inlineKeyboard([
       [
         Markup.button.callback(
-          this.deps.i18n.t(uiLocale, "language_version_open_btn").replace("{{lang}}", targetLanguageLabel),
-          makeCallbackData("admin", "open_lang_version", task.targetLanguageCode)
-        )
-      ],
-      [
-        Markup.button.callback(
           this.deps.i18n.t(uiLocale, "language_version_edit_btn").replace("{{lang}}", targetLanguageLabel),
           makeCallbackData("admin", "edit_lang_version", task.targetLanguageCode)
         )
