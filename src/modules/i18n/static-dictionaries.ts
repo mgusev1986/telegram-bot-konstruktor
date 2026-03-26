@@ -372,7 +372,7 @@ export const dictionaries = {
     usermgmt_deleted_prompt:
       "Пользователь удалён. Он сможет заново зарегистрироваться по реферальной ссылке.\n\nВведите @username или Telegram ID пользователя:",
     usermgmt_delete_confirm: "Удалить? Пользователь сможет заново зарегистрироваться.",
-    admin_system_buttons: "🧩 Системные кнопки",
+    admin_system_buttons: "Системные кнопки",
     sys_buttons_title: "Системные кнопки главного меню",
     sys_buttons_hint: "ALPHA_OWNER может скрывать системные кнопки. Когда кнопка скрыта, её не видят пользователи.",
     sys_btn_partner_register: "🚀 Зарегистрироваться / Стать партнёром",
@@ -1075,7 +1075,7 @@ export const dictionaries = {
     usermgmt_deleted: "User deleted. They can re-register via referral link.",
     usermgmt_deleted_prompt: "User deleted. They can re-register via referral link.\n\nEnter @username or Telegram ID:",
     usermgmt_delete_confirm: "Delete? User can re-register.",
-    admin_system_buttons: "🧩 System buttons",
+    admin_system_buttons: "System buttons",
     sys_buttons_title: "System buttons on the main menu",
     sys_buttons_hint: "ALPHA_OWNER can hide system buttons. When a button is hidden, users won't see it.",
     sys_btn_partner_register: "🚀 Register / Become a partner",

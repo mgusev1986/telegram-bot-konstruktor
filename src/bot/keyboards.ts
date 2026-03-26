@@ -452,7 +452,7 @@ export const buildPageEditorKeyboard = (
     [Markup.button.callback("🔗 " + i18n.t(languageCode, "page_add_button"), makeCallbackData(PAGE_EDIT_PREFIX, "add_btn", pageId))],
     [Markup.button.callback("🧩 " + i18n.t(languageCode, "page_manage_buttons"), makeCallbackData(PAGE_EDIT_PREFIX, "manage_buttons", pageId))],
     ...(pageId === "root" && opts?.canManageSystemButtons
-      ? [[Markup.button.callback("🧩 " + i18n.t(languageCode, "admin_system_buttons"), makeCallbackData("admin", "system_buttons"))]]
+      ? [[Markup.button.callback("⚙️ " + i18n.t(languageCode, "admin_system_buttons"), makeCallbackData("admin", "system_buttons"))]]
       : []),
     [Markup.button.callback(i18n.t(languageCode, "reminders_hub_title"), makeCallbackData(PAGE_EDIT_PREFIX, "open_reminders", pageId))],
   ];
