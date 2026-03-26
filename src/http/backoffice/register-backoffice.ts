@@ -109,7 +109,62 @@ function verifyBackofficeSessionToken(token: string): string | null {
   return payload.sub;
 }
 
-function renderPage(title: string, body: string): string {
+type BackofficeSection = "dashboard" | "audience" | "database" | "bots" | "payments" | "auth";
+
+function detectBackofficeSection(title: string): BackofficeSection {
+  if (title.includes("Вход")) return "auth";
+  if (title.includes("Аудитория") || title === "Пользователь") return "audience";
+  if (title.includes("База данных")) return "database";
+  if (title.includes("Платный доступ") || title.includes("Платежи (ручное подтверждение)")) return "payments";
+  if (title.includes("Настройки бота") || title.includes("Клонирование бота") || title.includes("Клон создан") || title.includes("Роли")) return "bots";
+  return "dashboard";
+}
+
+function extractBotIdFromMarkup(body: string): string | null {
+  const match = body.match(/\/backoffice\/bots\/([^\/"'?#]+)\//);
+  return match ? decodeURIComponent(match[1] ?? "") : null;
+}
+
+function renderShellIcon(kind: "dashboard" | "audience" | "database" | "settings" | "payments"): string {
+  const common = `viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"`;
+  if (kind === "dashboard") {
+    return `<svg ${common}><path d="M4 13.5h4.5V20H4z"/><path d="M9.75 4h4.5v16h-4.5z"/><path d="M15.5 9h4.5v11h-4.5z"/></svg>`;
+  }
+  if (kind === "audience") {
+    return `<svg ${common}><path d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="3"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 4.13a4 4 0 0 1 0 7.75"/></svg>`;
+  }
+  if (kind === "database") {
+    return `<svg ${common}><ellipse cx="12" cy="5" rx="7.5" ry="3"/><path d="M4.5 5v7c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3V5"/><path d="M4.5 12v7c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-7"/></svg>`;
+  }
+  if (kind === "payments") {
+    return `<svg ${common}><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/><path d="M7 15h3"/></svg>`;
+  }
+  return `<svg ${common}><path d="M12 3.5l1.9 1.1 2.2-.3.8 2 2 1-.3 2.2L20.5 12l-1.1 1.9.3 2.2-2 .8-1 2-2.2-.3L12 20.5l-1.9-1.1-2.2.3-.8-2-2-1 .3-2.2L3.5 12l1.1-1.9-.3-2.2 2-.8 1-2 2.2.3z"/><circle cx="12" cy="12" r="2.6"/></svg>`;
+}
+
+function renderPage(title: string, body: string, opts?: { minimal?: boolean; section?: BackofficeSection }): string {
+  const section = opts?.section ?? detectBackofficeSection(title);
+  const minimal = opts?.minimal ?? section === "auth";
+  const botId = !minimal ? extractBotIdFromMarkup(body) : null;
+  const sectionLabel =
+    section === "audience"
+      ? "Аудитория"
+      : section === "database"
+        ? "База данных"
+        : section === "payments"
+          ? "Оплаты и доступ"
+          : section === "bots"
+            ? "Боты и настройки"
+            : section === "auth"
+              ? "Вход"
+              : "Панель управления";
+  const navItems = !minimal
+    ? [
+        { href: "/backoffice", label: "Экземпляры ботов", key: "dashboard" as const, icon: "dashboard" as const, active: section === "dashboard" || section === "bots" },
+        { href: "/backoffice/audience", label: "Аудитория", key: "audience" as const, icon: "audience" as const, active: section === "audience" },
+        { href: "/backoffice/database", label: "База данных", key: "database" as const, icon: "database" as const, active: section === "database" }
+      ]
+    : [];
   return `<!doctype html>
 <html>
   <head>
@@ -119,40 +174,41 @@ function renderPage(title: string, body: string): string {
     <style>
       :root {
         color-scheme: dark;
-        --bg: #0b1119;
-        --bg-deep: #101827;
-        --shell: #182130;
-        --surface: #202a3a;
-        --surface-raised: #283549;
-        --surface-utility: #1c2737;
-        --surface-diagnostic: #152031;
-        --surface-table: #141e2c;
-        --surface-soft: rgba(255,255,255,0.03);
-        --surface-inline: rgba(255,255,255,0.055);
-        --border: rgba(226,232,240,0.11);
-        --border-soft: rgba(226,232,240,0.075);
-        --border-strong: rgba(226,232,240,0.18);
-        --text: #f6f8fc;
-        --text-soft: #e7edf6;
-        --muted: #a0b0c5;
-        --muted-strong: #d2dceb;
-        --link: #d3e0ff;
-        --accent: #d5bfa0;
-        --accent-strong: #eddec2;
-        --accent-ink: #11161d;
-        --success: #9fcab0;
-        --warning: #ddc183;
-        --danger: #f0a5a5;
-        --danger-soft: rgba(240,165,165,0.1);
-        --info: #adc5ff;
-        --shadow-lg: 0 24px 56px rgba(3,7,14,0.28);
-        --shadow-md: 0 12px 28px rgba(5,10,18,0.18);
-        --shadow-sm: 0 8px 18px rgba(5,10,18,0.12);
-        --radius-xl: 28px;
-        --radius-lg: 22px;
-        --radius-md: 18px;
-        --radius-sm: 14px;
-        --radius-xs: 10px;
+        --bg: #070d16;
+        --bg-deep: #0b1320;
+        --shell: rgba(9,15,26,0.84);
+        --surface: rgba(15,25,41,0.86);
+        --surface-raised: rgba(18,31,50,0.92);
+        --surface-utility: rgba(13,22,36,0.88);
+        --surface-diagnostic: rgba(11,18,31,0.92);
+        --surface-table: rgba(10,19,32,0.94);
+        --surface-soft: rgba(255,255,255,0.028);
+        --surface-inline: rgba(255,255,255,0.05);
+        --border: rgba(118,152,186,0.22);
+        --border-soft: rgba(118,152,186,0.14);
+        --border-strong: rgba(0,229,255,0.28);
+        --text: #f3f8ff;
+        --text-soft: #dce7f5;
+        --muted: #90a3bd;
+        --muted-strong: #c4d2e4;
+        --link: #b5f7ff;
+        --accent: #00e5ff;
+        --accent-strong: #7ef7ff;
+        --accent-soft: rgba(0,229,255,0.16);
+        --accent-ink: #03141b;
+        --success: #34d399;
+        --warning: #fbbf24;
+        --danger: #fb7185;
+        --danger-soft: rgba(251,113,133,0.14);
+        --info: #7dd3fc;
+        --shadow-lg: 0 26px 64px rgba(2,8,18,0.42);
+        --shadow-md: 0 18px 40px rgba(4,10,20,0.28);
+        --shadow-sm: 0 10px 24px rgba(4,10,20,0.2);
+        --radius-xl: 30px;
+        --radius-lg: 24px;
+        --radius-md: 20px;
+        --radius-sm: 16px;
+        --radius-xs: 12px;
       }
       * { box-sizing: border-box; }
       html { scroll-behavior: smooth; }
@@ -160,11 +216,12 @@ function renderPage(title: string, body: string): string {
       body {
         margin: 0;
         min-height: 100vh;
-        font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+        font-family: "Inter", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
         background:
-          radial-gradient(circle at top left, rgba(173,197,255,0.11), transparent 38%),
-          radial-gradient(circle at top right, rgba(216,195,162,0.08), transparent 30%),
-          linear-gradient(180deg, #0a1119 0%, var(--bg) 24%, var(--bg-deep) 100%);
+          radial-gradient(circle at top left, rgba(0,229,255,0.12), transparent 32%),
+          radial-gradient(circle at top right, rgba(125,211,252,0.09), transparent 28%),
+          radial-gradient(circle at bottom left, rgba(52,211,153,0.05), transparent 24%),
+          linear-gradient(180deg, #060b13 0%, var(--bg) 26%, var(--bg-deep) 100%);
         color: var(--text);
         letter-spacing: 0.01em;
       }
@@ -182,13 +239,221 @@ function renderPage(title: string, body: string): string {
       }
       a { color: var(--link); text-decoration: none; }
       a:hover { color: #ffffff; }
-      .wrap {
-        width: 100%;
-        max-width: 1540px;
-        margin: 0 auto;
-        padding: 24px 20px 56px;
+      .bo-shell {
+        min-height: 100vh;
         position: relative;
         z-index: 1;
+      }
+      .bo-sidebar {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: 288px;
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        background: linear-gradient(180deg, rgba(8,14,23,0.94), rgba(8,14,23,0.84));
+        border-right: 1px solid var(--border);
+        box-shadow: 16px 0 48px rgba(2,8,18,0.18);
+        backdrop-filter: blur(26px);
+      }
+      .bo-sidebar__brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 14px 16px;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(118,152,186,0.18);
+        background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+      }
+      .bo-brand-mark {
+        width: 44px;
+        height: 44px;
+        border-radius: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, var(--accent), #7dd3fc);
+        color: var(--accent-ink);
+        font-size: 22px;
+        font-weight: 800;
+        box-shadow: 0 16px 32px rgba(0,229,255,0.22);
+      }
+      .bo-brand-title {
+        margin: 0;
+        font-size: 19px;
+        line-height: 1.05;
+        letter-spacing: -0.05em;
+      }
+      .bo-brand-copy {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .bo-sidebar__meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.035);
+        border: 1px solid var(--border-soft);
+        color: var(--muted-strong);
+        font-size: 12px;
+      }
+      .bo-sidebar__meta::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 0 5px rgba(0,229,255,0.12);
+      }
+      .bo-sidebar__nav {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .bo-side-link {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 13px 14px;
+        border-radius: 20px;
+        border: 1px solid transparent;
+        color: var(--muted-strong);
+        transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      }
+      .bo-side-link:hover {
+        transform: translateX(4px);
+        background: rgba(18,29,46,0.88);
+        border-color: rgba(118,152,186,0.14);
+      }
+      .bo-side-link.is-active {
+        background: linear-gradient(180deg, rgba(14,26,42,0.94), rgba(10,21,34,0.94));
+        border-color: rgba(0,229,255,0.26);
+        box-shadow: inset 0 0 0 1px rgba(0,229,255,0.08), 0 18px 36px rgba(0,229,255,0.1);
+        color: #ffffff;
+      }
+      .bo-side-link__icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255,255,255,0.04);
+        border: 1px solid var(--border-soft);
+        color: var(--muted-strong);
+        flex: 0 0 auto;
+      }
+      .bo-side-link.is-active .bo-side-link__icon {
+        background: rgba(0,229,255,0.12);
+        border-color: rgba(0,229,255,0.24);
+        color: var(--accent-strong);
+      }
+      .bo-side-link__icon svg {
+        width: 18px;
+        height: 18px;
+      }
+      .bo-side-link__label {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+      }
+      .bo-side-link__title {
+        font-size: 14px;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+      .bo-side-link__copy {
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      .bo-sidebar__context {
+        margin-top: auto;
+        padding: 16px;
+        border-radius: var(--radius-lg);
+        border: 1px solid rgba(118,152,186,0.16);
+        background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+      }
+      .bo-sidebar__context-label {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .bo-sidebar__context-title {
+        margin-top: 10px;
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.04em;
+      }
+      .bo-sidebar__context-copy {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .bo-main {
+        margin-left: 288px;
+        min-width: 0;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      .bo-topbar {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 28px;
+        background: linear-gradient(180deg, rgba(9,16,28,0.92), rgba(9,16,28,0.76));
+        border-bottom: 1px solid var(--border);
+        backdrop-filter: blur(24px);
+      }
+      .bo-topbar__meta {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        min-width: 0;
+      }
+      .bo-topbar__eyebrow {
+        color: var(--muted);
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+      .bo-topbar__title {
+        font-size: 16px;
+        font-weight: 700;
+        line-height: 1.2;
+        letter-spacing: -0.03em;
+      }
+      .bo-topbar__crumbs {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .bo-topbar__actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .wrap {
+        width: 100%;
+        max-width: 1580px;
+        margin: 0 auto;
+        padding: 28px 28px 56px;
+        position: relative;
       }
       .card, .bo-panel, .bo-hero {
         position: relative;
@@ -196,17 +461,17 @@ function renderPage(title: string, body: string): string {
         border-radius: var(--radius-xl);
         border: 1px solid var(--border);
         background:
-          linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.012)),
-          linear-gradient(180deg, rgba(27,37,53,0.98), rgba(20,29,42,0.98));
+          linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.01)),
+          linear-gradient(180deg, rgba(14,25,42,0.94), rgba(9,18,31,0.92));
         box-shadow: var(--shadow-md);
-        backdrop-filter: blur(18px);
+        backdrop-filter: blur(22px);
       }
       .card {
         padding: 22px;
         overflow: visible;
         background:
-          linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.01)),
-          linear-gradient(180deg, rgba(28,39,57,0.98), rgba(21,30,43,0.98));
+          linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)),
+          linear-gradient(180deg, rgba(11,21,34,0.92), rgba(8,16,28,0.9));
         box-shadow: var(--shadow-lg);
       }
       .bo-panel { padding: 20px; }
@@ -235,20 +500,20 @@ function renderPage(title: string, body: string): string {
       }
       .bo-stage--primary {
         background:
-          linear-gradient(180deg, rgba(255,255,255,0.022), rgba(255,255,255,0.008)),
-          rgba(20,29,42,0.78);
-        border-color: rgba(226,232,240,0.11);
+          linear-gradient(180deg, rgba(0,229,255,0.035), rgba(255,255,255,0.008)),
+          rgba(10,19,32,0.82);
+        border-color: rgba(118,152,186,0.2);
       }
       .bo-stage--utility {
         background:
-          linear-gradient(180deg, rgba(255,255,255,0.016), rgba(255,255,255,0.006)),
-          rgba(16,24,36,0.66);
+          linear-gradient(180deg, rgba(125,211,252,0.03), rgba(255,255,255,0.006)),
+          rgba(9,17,29,0.74);
       }
       .bo-stage--diagnostic {
         background:
-          linear-gradient(180deg, rgba(173,197,255,0.035), rgba(255,255,255,0.004)),
-          rgba(14,21,33,0.76);
-        border-color: rgba(173,197,255,0.12);
+          linear-gradient(180deg, rgba(251,113,133,0.04), rgba(255,255,255,0.004)),
+          rgba(9,15,25,0.82);
+        border-color: rgba(125,211,252,0.12);
       }
       .bo-stage-head {
         display: flex;
@@ -342,7 +607,7 @@ function renderPage(title: string, body: string): string {
       .bo-hero {
         padding: 18px 22px;
         background:
-          linear-gradient(180deg, rgba(40,54,75,0.96), rgba(26,37,53,0.98));
+          linear-gradient(135deg, rgba(10,20,35,0.98), rgba(12,29,47,0.94));
       }
       .bo-page-header {
         display: grid;
@@ -373,7 +638,7 @@ function renderPage(title: string, body: string): string {
       }
       .bo-page-title {
         margin: 0;
-        font-family: "Avenir Next", "SF Pro Display", "Segoe UI", sans-serif;
+        font-family: "Inter", "SF Pro Display", "Segoe UI", sans-serif;
         font-size: clamp(26px, 2.35vw, 36px);
         line-height: 1.05;
         letter-spacing: -0.04em;
@@ -434,8 +699,8 @@ function renderPage(title: string, body: string): string {
       }
       input::placeholder, textarea::placeholder { color: #6f7f98; }
       input:focus, textarea:focus, select:focus {
-        border-color: rgba(216,195,162,0.46);
-        box-shadow: 0 0 0 3px rgba(216,195,162,0.12);
+        border-color: rgba(0,229,255,0.42);
+        box-shadow: 0 0 0 3px rgba(0,229,255,0.14);
         background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.025));
       }
       textarea {
@@ -454,14 +719,15 @@ function renderPage(title: string, body: string): string {
         gap: 8px;
         padding: 11px 16px;
         border-radius: var(--radius-sm);
-        border: 1px solid rgba(255,255,255,0.1);
-        background: linear-gradient(180deg, rgba(226,232,240,0.94), rgba(196,204,216,0.88));
+        border: 1px solid rgba(0,229,255,0.24);
+        background: linear-gradient(180deg, rgba(126,247,255,0.98), rgba(0,229,255,0.9));
         color: var(--accent-ink);
         cursor: pointer;
         font-weight: 700;
         letter-spacing: 0.01em;
         transition: transform 0.18s ease, border-color 0.18s ease, filter 0.18s ease, background 0.18s ease;
         text-decoration: none;
+        box-shadow: 0 16px 30px rgba(0,229,255,0.16);
       }
       button:hover,
       a.bo-btn:hover,
@@ -476,9 +742,10 @@ function renderPage(title: string, body: string): string {
       .bo-link-btn--secondary,
       .paid-nav a,
       .top-nav a {
-        background: rgba(255,255,255,0.05);
+        background: rgba(15,24,38,0.88);
         color: var(--text-soft);
-        border-color: rgba(255,255,255,0.1);
+        border-color: rgba(118,152,186,0.16);
+        box-shadow: none;
       }
       button.error,
       a.bo-btn--danger,
@@ -490,9 +757,10 @@ function renderPage(title: string, body: string): string {
       button.ghost,
       a.bo-btn--ghost,
       .bo-link-btn--ghost {
-        background: transparent;
+        background: rgba(255,255,255,0.015);
         color: var(--muted-strong);
-        border-color: rgba(255,255,255,0.08);
+        border-color: rgba(118,152,186,0.12);
+        box-shadow: none;
       }
       button:disabled {
         opacity: 0.7;
@@ -570,6 +838,17 @@ function renderPage(title: string, body: string): string {
         display: flex;
         flex-direction: column;
         min-height: 124px;
+        backdrop-filter: blur(18px);
+      }
+      .bo-kpi-card::before,
+      .overview-card::before,
+      .bo-form-cluster::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto 0;
+        height: 3px;
+        background: linear-gradient(90deg, rgba(0,229,255,0.78), rgba(0,229,255,0));
+        opacity: 0.9;
       }
       .bo-kpi-label {
         color: var(--muted);
@@ -619,14 +898,14 @@ function renderPage(title: string, body: string): string {
         background: rgba(255,255,255,0.018);
       }
       .bo-subsection--raised {
-        background: linear-gradient(180deg, rgba(37,50,69,0.95), rgba(27,37,53,0.96));
+        background: linear-gradient(180deg, rgba(14,27,43,0.96), rgba(11,21,34,0.94));
       }
       .bo-subsection--utility {
-        background: linear-gradient(180deg, rgba(31,42,58,0.95), rgba(23,32,45,0.96));
+        background: linear-gradient(180deg, rgba(11,20,33,0.96), rgba(9,17,29,0.94));
       }
       .bo-subsection--diagnostic {
-        background: linear-gradient(180deg, rgba(24,34,49,0.96), rgba(18,27,40,0.96));
-        border-color: rgba(173,197,255,0.12);
+        background: linear-gradient(180deg, rgba(13,19,31,0.96), rgba(9,15,25,0.96));
+        border-color: rgba(125,211,252,0.12);
       }
       .bo-subsection-title {
         margin: 0;
@@ -704,7 +983,7 @@ function renderPage(title: string, body: string): string {
         padding: 13px 14px;
         border-radius: var(--radius-md);
         border: 1px solid var(--border-soft);
-        background: var(--surface-inline);
+        background: rgba(255,255,255,0.032);
       }
       .bo-meta-label {
         color: var(--muted);
@@ -728,10 +1007,10 @@ function renderPage(title: string, body: string): string {
         padding: 14px;
         border-radius: var(--radius-md);
         border: 1px solid var(--border-soft);
-        background: var(--surface-soft);
+        background: rgba(255,255,255,0.024);
       }
       .bo-action-group--muted {
-        background: rgba(255,255,255,0.018);
+        background: rgba(255,255,255,0.014);
       }
       .bo-action-label {
         margin-bottom: 10px;
@@ -752,12 +1031,12 @@ function renderPage(title: string, body: string): string {
         border: 1px solid rgba(255,255,255,0.1);
       }
       .status-live { background: rgba(159,202,176,0.12); color: #d8f1e1; border-color: rgba(159,202,176,0.26); }
-      .status-test { background: rgba(221,193,131,0.12); color: #f4e3b7; border-color: rgba(221,193,131,0.28); }
-      .status-active { background: rgba(173,197,255,0.12); color: #dbe7ff; border-color: rgba(173,197,255,0.28); }
-      .status-pending { background: rgba(221,193,131,0.12); color: #f4e3b7; border-color: rgba(221,193,131,0.28); }
+      .status-test { background: rgba(0,229,255,0.14); color: #d8fbff; border-color: rgba(0,229,255,0.3); }
+      .status-active { background: rgba(0,229,255,0.14); color: #dcfbff; border-color: rgba(0,229,255,0.3); }
+      .status-pending { background: rgba(251,191,36,0.12); color: #f9e9b0; border-color: rgba(251,191,36,0.26); }
       .status-expiring { background: rgba(237,154,106,0.12); color: #ffd7bb; border-color: rgba(237,154,106,0.28); }
-      .status-expired { background: rgba(240,165,165,0.1); color: #ffd2d2; border-color: rgba(240,165,165,0.24); }
-      .status-failed { background: rgba(240,165,165,0.12); color: #ffd5d5; border-color: rgba(240,165,165,0.3); }
+      .status-expired { background: rgba(251,113,133,0.12); color: #ffd6df; border-color: rgba(251,113,133,0.24); }
+      .status-failed { background: rgba(251,113,133,0.12); color: #ffd8df; border-color: rgba(251,113,133,0.3); }
       .status-muted { background: rgba(148,163,184,0.1); color: #d3dbe7; border-color: rgba(148,163,184,0.2); }
       .form-row {
         display: flex;
@@ -773,12 +1052,14 @@ function renderPage(title: string, body: string): string {
       }
       .form-row select.field { width: auto; min-width: 140px; max-width: 280px; }
       .bo-form-cluster {
+        position: relative;
         min-width: 0;
         max-width: 100%;
         padding: 16px;
         border-radius: var(--radius-lg);
         border: 1px solid var(--border-soft);
         background: rgba(255,255,255,0.022);
+        overflow: hidden;
       }
       .bo-form-cluster-head {
         display: flex;
@@ -862,7 +1143,7 @@ function renderPage(title: string, body: string): string {
         flex: 0 0 auto;
         padding: 0;
         margin: 0;
-        accent-color: #d8c3a2;
+        accent-color: var(--accent);
       }
       .mini-btn {
         padding: 8px 10px;
@@ -919,7 +1200,7 @@ function renderPage(title: string, body: string): string {
         padding: 18px;
         border-radius: var(--radius-lg);
         border: 1px solid var(--border-soft);
-        background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02));
+        background: linear-gradient(180deg, rgba(11,20,33,0.96), rgba(9,17,29,0.94));
       }
       .bo-toolbar-main {
         display: grid;
@@ -951,7 +1232,7 @@ function renderPage(title: string, body: string): string {
         overflow: auto;
         border-radius: var(--radius-lg);
         border: 1px solid var(--border-soft);
-        background: linear-gradient(180deg, rgba(26,36,51,0.96), rgba(20,29,43,0.98));
+        background: linear-gradient(180deg, rgba(10,20,33,0.96), rgba(8,16,28,0.98));
       }
       .bo-table-shell { padding: 0; }
       .events-scroll { max-height: 460px; }
@@ -971,7 +1252,7 @@ function renderPage(title: string, body: string): string {
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: 0.12em;
-        background: rgba(255,255,255,0.05);
+        background: rgba(12,23,37,0.94);
         border-bottom: 1px solid var(--border-soft);
         position: sticky;
         top: 0;
@@ -994,11 +1275,11 @@ function renderPage(title: string, body: string): string {
       .paid-table td.table-nowrap { white-space: nowrap; }
       table tbody tr:hover,
       .paid-table tbody tr:hover {
-        background: rgba(255,255,255,0.03);
+        background: rgba(0,229,255,0.05);
       }
       table tbody tr:nth-child(even),
       .paid-table tbody tr:nth-child(even) {
-        background: rgba(255,255,255,0.018);
+        background: rgba(255,255,255,0.014);
       }
       table tbody tr:last-child td,
       .paid-table tr:last-child td {
@@ -1062,6 +1343,22 @@ function renderPage(title: string, body: string): string {
         font-size: 12px;
         font-weight: 600;
       }
+      .paid-nav a::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: rgba(0,229,255,0.22);
+        box-shadow: 0 0 0 4px rgba(0,229,255,0.06);
+      }
+      .paid-nav a[aria-current="true"] {
+        background: linear-gradient(180deg, rgba(0,229,255,0.18), rgba(0,229,255,0.08));
+        color: #f7fbff;
+        border-color: rgba(0,229,255,0.22);
+      }
+      .paid-nav a[aria-current="true"]::before {
+        background: var(--accent);
+      }
       .flow-list {
         margin: 0;
         padding-left: 18px;
@@ -1079,7 +1376,7 @@ function renderPage(title: string, body: string): string {
       details {
         border-radius: var(--radius-lg);
         border: 1px solid var(--border-soft);
-        background: rgba(255,255,255,0.02);
+        background: rgba(10,18,30,0.9);
         padding: 0 16px 16px;
       }
       details > summary {
@@ -1089,6 +1386,25 @@ function renderPage(title: string, body: string): string {
       }
       details > summary::-webkit-details-marker { display: none; }
       @media (max-width: 1080px) {
+        .bo-shell {
+          display: flex;
+          flex-direction: column;
+        }
+        .bo-sidebar {
+          position: sticky;
+          inset: 0 0 auto;
+          width: auto;
+          height: auto;
+          border-right: none;
+          border-bottom: 1px solid var(--border);
+          box-shadow: none;
+        }
+        .bo-main {
+          margin-left: 0;
+        }
+        .bo-topbar {
+          padding: 16px 18px;
+        }
         .grid,
         .subgrid,
         .bo-grid-3,
@@ -1108,6 +1424,14 @@ function renderPage(title: string, body: string): string {
         .wrap { padding: 16px 12px 36px; }
         .card,
         .bo-hero { padding: 18px; }
+        .bo-topbar {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+        .bo-topbar__actions {
+          width: 100%;
+          justify-content: flex-start;
+        }
         .top-nav { align-items: flex-start; }
         .top-nav__actions { width: 100%; }
         .bo-page-header,
@@ -1131,6 +1455,15 @@ function renderPage(title: string, body: string): string {
         }
       }
       @media (max-width: 640px) {
+        .bo-side-link {
+          padding: 12px;
+        }
+        .bo-side-link__copy {
+          display: none;
+        }
+        .bo-topbar__actions > * {
+          flex: 1 1 auto;
+        }
         .top-nav { flex-direction: column; align-items: stretch; }
         .top-nav__actions { justify-content: stretch; }
         .top-nav__actions > * { flex: 1 1 auto; }
@@ -1144,20 +1477,82 @@ function renderPage(title: string, body: string): string {
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <div class="top-nav">
-        <div class="top-nav__meta">Telegram Bot Konstruktor · Backoffice</div>
-        <div class="top-nav__actions">
-          <button class="secondary" type="button" onclick="history.back()">← Назад</button>
-          <a href="/backoffice" class="bo-btn bo-btn--secondary">Главная backoffice</a>
-        </div>
-      </div>
-      <div class="card">
-        <div class="bo-page">
-          ${body}
-        </div>
-      </div>
-    </div>
+    ${
+      minimal
+        ? `<div class="bo-shell" style="display:block">
+            <div class="wrap" style="max-width:780px; padding-top:48px">
+              <div class="card">
+                <div class="bo-page">${body}</div>
+              </div>
+            </div>
+          </div>`
+        : `<div class="bo-shell">
+            <aside class="bo-sidebar">
+              <div class="bo-sidebar__brand">
+                <div class="bo-brand-mark">T</div>
+                <div>
+                  <h1 class="bo-brand-title">Telegram Bot</h1>
+                  <div class="bo-brand-copy">Konstruktor</div>
+                </div>
+              </div>
+              <div class="bo-sidebar__meta">Production backoffice</div>
+              <nav class="bo-sidebar__nav">
+                ${navItems
+                  .map(
+                    (item) => `<a href="${item.href}" class="bo-side-link${item.active ? " is-active" : ""}">
+                        <span class="bo-side-link__icon">${renderShellIcon(item.icon)}</span>
+                        <span class="bo-side-link__label">
+                          <span class="bo-side-link__title">${item.label}</span>
+                          <span class="bo-side-link__copy">${item.key === "dashboard" ? "Список ботов и запуск" : item.key === "audience" ? "Каталог и экспорт" : "Платформенная аналитика"}</span>
+                        </span>
+                      </a>`
+                  )
+                  .join("")}
+                ${
+                  botId
+                    ? `<a href="/backoffice/bots/${encodeURIComponent(botId)}/settings" class="bo-side-link${section === "bots" ? " is-active" : ""}">
+                        <span class="bo-side-link__icon">${renderShellIcon("settings")}</span>
+                        <span class="bo-side-link__label">
+                          <span class="bo-side-link__title">Настройки бота</span>
+                          <span class="bo-side-link__copy">Конфиг, lifecycle и роли</span>
+                        </span>
+                      </a>
+                      <a href="/backoffice/bots/${encodeURIComponent(botId)}/paid" class="bo-side-link${section === "payments" ? " is-active" : ""}">
+                        <span class="bo-side-link__icon">${renderShellIcon("payments")}</span>
+                        <span class="bo-side-link__label">
+                          <span class="bo-side-link__title">Оплаты и доступ</span>
+                          <span class="bo-side-link__copy">LIVE, TEST, финансы и аудит</span>
+                        </span>
+                      </a>`
+                    : ""
+                }
+              </nav>
+              <div class="bo-sidebar__context">
+                <div class="bo-sidebar__context-label">Текущий раздел</div>
+                <div class="bo-sidebar__context-title">${escapeHtml(sectionLabel)}</div>
+                <div class="bo-sidebar__context-copy">${botId ? `Бот <code>${escapeHtml(botId)}</code>` : "Единая операционная оболочка для dashboard, каталогов и финансовых контуров."}</div>
+              </div>
+            </aside>
+            <div class="bo-main">
+              <header class="bo-topbar">
+                <div class="bo-topbar__meta">
+                  <div class="bo-topbar__eyebrow">Telegram Bot Konstruktor</div>
+                  <div class="bo-topbar__title">${escapeHtml(title)}</div>
+                  <div class="bo-topbar__crumbs">Backoffice · ${escapeHtml(sectionLabel)}${botId ? ` · ${escapeHtml(botId)}` : ""}</div>
+                </div>
+                <div class="bo-topbar__actions">
+                  <button class="secondary" type="button" onclick="history.back()">← Назад</button>
+                  <a href="/backoffice" class="bo-btn bo-btn--secondary">Главная backoffice</a>
+                </div>
+              </header>
+              <main class="wrap">
+                <div class="bo-page">
+                  ${body}
+                </div>
+              </main>
+            </div>
+          </div>`
+    }
     <script>
       (function () {
         function __extractIdFromPostLink(value) {
@@ -1210,6 +1605,25 @@ function renderPage(title: string, body: string): string {
           },
           false
         );
+
+        var paidNavLinks = Array.prototype.slice.call(document.querySelectorAll(".paid-nav a[href^='#']"));
+        if (paidNavLinks.length) {
+          var syncPaidNav = function () {
+            var current = window.location.hash || paidNavLinks[0].getAttribute("href");
+            paidNavLinks.forEach(function (link) {
+              var isActive = link.getAttribute("href") === current;
+              if (isActive) link.setAttribute("aria-current", "true");
+              else link.removeAttribute("aria-current");
+            });
+          };
+          syncPaidNav();
+          window.addEventListener("hashchange", syncPaidNav);
+          paidNavLinks.forEach(function (link) {
+            link.addEventListener("click", function () {
+              window.requestAnimationFrame(syncPaidNav);
+            });
+          });
+        }
       })();
     </script>
   </body>
@@ -2368,27 +2782,51 @@ export async function registerBackofficeRoutes(
           <button type="submit" class="error">Полностью удалить из базы</button>
         </form>`;
 
-    const body = `
-        <div class="row" style="justify-content:space-between; align-items:center; margin-bottom:16px">
-          <a href="${backLink}" style="text-decoration:none"><button class="secondary" type="button">← К списку</button></a>
-        </div>
-        ${successMsg}
-        <div class="bot-card" style="max-width:600px">
-          <h3 style="margin-top:0">Пользователь</h3>
-          <p><strong>ID:</strong> ${escapeHtml(user.id)}</p>
-          <p><strong>Telegram ID:</strong> ${escapeHtml(String(user.telegramUserId))}</p>
-          <p><strong>Логин:</strong> ${user.username ? `<a href="https://t.me/${escapeHtml(user.username)}" target="_blank">@${escapeHtml(user.username)}</a>` : "—"}</p>
-          <p><strong>Имя:</strong> ${escapeHtml(user.fullName || user.firstName || "—")}</p>
-          <p><strong>Бот:</strong> ${user.botInstance ? escapeHtml(user.botInstance.name) : "—"}</p>
-          <p><strong>Регистрация:</strong> ${escapeHtml(user.createdAt.toISOString().slice(0, 19))}</p>
-          <p><strong>Платный доступ:</strong> ${hasPaidAccess ? `✅ ${escapeHtml(productLabels)}` : "—"}</p>
-          <hr style="border:none; border-top:1px solid rgba(255,255,255,0.16); margin:16px 0" />
-          <h4 style="margin-top:0">Действия</h4>
-          <div class="row" style="gap:8px; flex-wrap:wrap; align-items:center">
-            ${revokeForm}
-            ${deleteForm}
-          </div>
-        </div>`;
+    const body = `${renderPageHeader({
+      eyebrow: "Профиль пользователя",
+      title: "Пользователь",
+      subtitle:
+        "Карточка пользователя внутри глобального каталога. Сохраняет текущие destructive-операции и revoke paid access, но оформлена как полноценный operator view.",
+      context: [
+        `<span>ID: <code>${escapeHtml(user.id)}</code></span>`,
+        `<span>Telegram ID: <code>${escapeHtml(String(user.telegramUserId))}</code></span>`,
+        `<span>Бот: <strong>${escapeHtml(user.botInstance?.name ?? "—")}</strong></span>`
+      ],
+      actions: renderActionLink("← К списку", backLink, "secondary")
+    })}
+    ${successMsg}
+    ${renderStageBlock({
+      eyebrow: "Профиль",
+      title: "Данные и действия",
+      subtitle:
+        "Идентификаторы, контекст бота и платный доступ остаются полностью явными. Revoke и delete по-прежнему доступны как отдельные управляемые действия.",
+      body: `<div class="bo-stage-grid-rail">
+          ${renderSubsection({
+            title: "Пользователь",
+            subtitle: "Идентификаторы и регистрационные данные без изменения текущих источников данных.",
+            body: `<div class="bo-stack bo-stack--dense">
+                <div class="small"><strong>ID:</strong> <code>${escapeHtml(user.id)}</code></div>
+                <div class="small"><strong>Telegram ID:</strong> <code>${escapeHtml(String(user.telegramUserId))}</code></div>
+                <div class="small"><strong>Логин:</strong> ${user.username ? `<a href="https://t.me/${escapeHtml(user.username)}" target="_blank" rel="noopener noreferrer">@${escapeHtml(user.username)}</a>` : "—"}</div>
+                <div class="small"><strong>Имя:</strong> ${escapeHtml(user.fullName || user.firstName || "—")}</div>
+                <div class="small"><strong>Бот:</strong> ${user.botInstance ? escapeHtml(user.botInstance.name) : "—"}</div>
+                <div class="small"><strong>Регистрация:</strong> ${escapeHtml(user.createdAt.toISOString().slice(0, 19))}</div>
+                <div class="small"><strong>Платный доступ:</strong> ${hasPaidAccess ? escapeHtml(productLabels) : "—"}</div>
+              </div>`,
+            tone: "raised"
+          })}
+          ${renderSubsection({
+            title: "Управляющие действия",
+            subtitle: "Существующие POST-маршруты для revoke-access и полного удаления пользователя сохранены без изменений.",
+            body: `<div class="bo-actions" style="justify-content:flex-start">
+                ${revokeForm}
+                ${deleteForm}
+              </div>`,
+            tone: "diagnostic"
+          })}
+        </div>`,
+      tone: "utility"
+    })}`;
     return reply.type("text/html").send(renderPage("Пользователь", body));
   });
 
@@ -2820,116 +3258,150 @@ export async function registerBackofficeRoutes(
     const canPauseResume = canPerform(role, "bot_lifecycle:pause_resume");
     const canArchiveDelete = canPerform(role, "bot_lifecycle:archive_delete");
     const lang = getBackofficeLang(req);
-
-    return reply.type("text/html").send(
-      renderPage(
-        "Настройки бота",
-        `<h2 style="margin-top:0">Настройки бота</h2>
-         <div class="small">ID экземпляра бота: <code>${escapeHtml(bot.id)}</code></div>
-         <div style="margin-top:8px" class="small">Статус: <code>${escapeHtml(bot.status)}</code> · в архиве: <code>${bot.isArchived ? "да" : "нет"}</code></div>
-         <div class="small" style="margin-top:2px">Создан: ${bot.createdAt.toISOString()} · обновлён: ${bot.updatedAt.toISOString()}</div>
-         <div class="small" style="margin-top:2px">Платный доступ: <code>${bot.paidAccessEnabled ? "вкл" : "выкл"}</code></div>
-         
-         <div style="margin-top:16px" class="card">
-           <h3 style="margin-top:0">Техническая информация шаблона</h3>
-           <div class="small">Активный шаблон:</div>
-           <div class="small" style="margin-top:6px">
-             ${activeTemplate ? `ID: <code>${escapeHtml(activeTemplate.id)}</code> · язык: <code>${escapeHtml(activeTemplate.baseLanguageCode)}</code> · название: ${escapeHtml(activeTemplate.title)}` : "—"}
-           </div>
-         </div>
-
-         <div style="margin-top:16px" class="card">
-           <h3 style="margin-top:0">Основные параметры</h3>
-           ${
-             canWrite
-               ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/settings/basic" style="margin-top:12px">
-                    <div style="margin-bottom:10px">
+    const statusTone = bot.isArchived ? "failed" : bot.status === "ACTIVE" ? "active" : bot.status === "DISABLED" ? "pending" : "muted";
+    const settingsBody = `${renderPageHeader({
+      eyebrow: "Экземпляр бота",
+      title: "Настройки бота",
+      subtitle:
+        "Реальный production-контур управления экземпляром: базовые параметры, токен, lifecycle, роли и переход в платный доступ сохранены без изменения логики.",
+      context: [
+        `<span>Bot ID: <code>${escapeHtml(bot.id)}</code></span>`,
+        `<span>Статус: ${renderStatusBadge(bot.status, statusTone)}</span>`,
+        `<span>Платный доступ: <strong>${bot.paidAccessEnabled ? "включён" : "выключен"}</strong></span>`
+      ],
+      actions: [
+        renderActionLink("Оплаты и доступ", `/backoffice/bots/${escapeHtml(bot.id)}/paid`, "secondary"),
+        renderActionLink("Назад к списку", "/backoffice", "ghost")
+      ].join("")
+    })}
+    <div class="bo-kpi-grid">
+      ${renderMetricCard("Статус", escapeHtml(bot.status), `${renderStatusBadge(bot.isArchived ? "Архивирован" : "Рабочий контур", bot.isArchived ? "failed" : "active")}`)}
+      ${renderMetricCard("Платный доступ", bot.paidAccessEnabled ? "Вкл" : "Выкл", bot.paidAccessEnabled ? `${renderStatusBadge("Контур активен", "active")}` : `${renderStatusBadge("Не активирован", "pending")}`)}
+      ${renderMetricCard("Базовый язык", escapeHtml(activeTemplate?.baseLanguageCode ?? "—"), activeTemplate ? `Активный шаблон: <strong>${escapeHtml(activeTemplate.title)}</strong>` : "Активный шаблон не найден")}
+      ${renderMetricCard("Архив", bot.isArchived ? "Да" : "Нет", bot.isArchived ? `${renderStatusBadge("Требуется восстановление", "failed")}` : `${renderStatusBadge("Рабочий", "active")}`)}
+    </div>
+    ${renderStageBlock({
+      eyebrow: "Контекст",
+      title: "Экземпляр и активный шаблон",
+      subtitle:
+        "Техническая информация и базовая конфигурация сведены в один рабочий контур, чтобы состояние бота и редактируемые параметры читались рядом.",
+      body: `<div class="bo-stage-grid-rail">
+          ${renderSubsection({
+            title: "Техническая информация",
+            subtitle: "ID, даты и активный template оставлены полностью явными, но оформлены как контекстная панель, а не сырой список.",
+            body: `<div class="bo-stack bo-stack--dense">
+                <div class="bo-context-list" style="margin-top:0">
+                  <span class="bo-context-chip">${renderStatusBadge(bot.status, statusTone)}</span>
+                  <span class="bo-context-chip">${bot.isArchived ? "Архивирован" : "Не архивирован"}</span>
+                  <span class="bo-context-chip">${bot.paidAccessEnabled ? "Paid access on" : "Paid access off"}</span>
+                </div>
+                <div class="small">Создан: <code>${escapeHtml(bot.createdAt.toISOString())}</code></div>
+                <div class="small">Обновлён: <code>${escapeHtml(bot.updatedAt.toISOString())}</code></div>
+                <div class="small">Username: <code>${escapeHtml(bot.telegramBotUsername ?? "—")}</code></div>
+                <div class="small">Активный шаблон: ${activeTemplate ? `ID <code>${escapeHtml(activeTemplate.id)}</code> · язык <code>${escapeHtml(activeTemplate.baseLanguageCode)}</code> · ${escapeHtml(activeTemplate.title)}` : "—"}</div>
+              </div>`,
+            tone: "utility"
+          })}
+          ${renderSubsection({
+            title: "Основные параметры",
+            subtitle: "Название, username и базовый язык используют существующие поля и POST-маршрут без изменения semantics.",
+            body: canWrite
+              ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/settings/basic" class="bo-stack">
+                  <div class="bo-grid-2">
+                    <div class="field-wrap">
                       <label>Название бота</label>
                       <input name="name" type="text" value="${escapeHtml(bot.name)}" required />
                     </div>
-                    <div style="margin-bottom:10px">
+                    <div class="field-wrap">
                       <label>Telegram Username (опционально)</label>
                       <input name="telegramBotUsername" type="text" value="${escapeHtml(bot.telegramBotUsername ?? "")}" placeholder="my_bot" />
                     </div>
-                    <div style="margin-bottom:10px">
-                      <label>Базовый язык</label>
-                      <select name="baseLanguageCode">
-                        ${i18n.availableLanguages().map((l) => `<option value="${escapeHtml(l.code)}" ${activeTemplate?.baseLanguageCode === l.code ? "selected" : ""}>${escapeHtml(l.label)}</option>`).join("\n")}
-                      </select>
-                    </div>
-                    <button type="submit">Сохранить</button>
-                  </form>`
-               : `<div class="error">Недостаточно прав для изменения настроек.</div>`
-           }
+                  </div>
+                  <div class="field-wrap">
+                    <label>Базовый язык</label>
+                    <select name="baseLanguageCode">
+                      ${i18n.availableLanguages().map((l) => `<option value="${escapeHtml(l.code)}" ${activeTemplate?.baseLanguageCode === l.code ? "selected" : ""}>${escapeHtml(l.label)}</option>`).join("\n")}
+                    </select>
+                  </div>
+                  <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Сохранить параметры</button></div>
+                </form>`
+              : renderNote("danger", "Недостаточно прав для изменения настроек."),
+            tone: "raised"
+          })}
+        </div>`,
+      tone: "utility"
+    })}
+    ${renderStageBlock({
+      eyebrow: "Сопровождение",
+      title: "Токен, жизненный цикл и роли",
+      subtitle:
+        "Операции сопровождения отделены от базовой конфигурации: обновление токена, pause/resume, архивирование, удаление и переход в роли не спорят за внимание.",
+      body: `<div class="bo-grid-2">
+          ${renderSubsection({
+            title: "Обновление токена",
+            subtitle: "Текущий валидатор через getMe и логика restart для активного бота не меняются.",
+            body: canWrite
+              ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/settings/token" class="bo-stack">
+                  <div class="field-wrap">
+                    <label>Новый Telegram Bot Token</label>
+                    <input name="telegramBotToken" type="text" required />
+                  </div>
+                  <div class="field-wrap">
+                    <label>Telegram Username (опционально)</label>
+                    <input name="telegramBotUsername" type="text" value="${escapeHtml(bot.telegramBotUsername ?? "")}" placeholder="my_bot" />
+                  </div>
+                  <div class="small">Токен не отображается после сохранения. Если bot активен, runtime будет перезапущен как и раньше.</div>
+                  <div class="bo-actions" style="justify-content:flex-start"><button type="submit">Обновить токен</button></div>
+                </form>`
+              : renderNote("danger", "Недостаточно прав для обновления токена."),
+            tone: "raised"
+          })}
+          ${renderSubsection({
+            title: "Жизненный цикл",
+            subtitle: "Pause / resume и destructive-операции сохранены как отдельный контур с явным подтверждением.",
+            body: `${canPauseResume
+              ? `<div class="bo-actions" style="justify-content:flex-start; margin-bottom:12px">
+                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/pause" style="margin:0"><button type="submit">Пауза</button></form>
+                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/resume" style="margin:0"><button type="submit" class="secondary">Запустить</button></form>
+                </div>`
+              : renderNote("danger", "Недостаточно прав для управления статусом.")}
+              ${canArchiveDelete
+                ? `<div class="bo-stack">
+                    <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/archive" class="bo-stack bo-stack--dense">
+                      <div class="field-wrap">
+                        <label>Подтвердите архивирование (введите ARCHIVE)</label>
+                        <input name="confirmText" type="text" required />
+                      </div>
+                      <div class="bo-actions" style="justify-content:flex-start"><button type="submit" class="secondary" style="background:rgba(251,113,133,0.12);border-color:rgba(251,113,133,0.34);color:#ffd6de;">Архивировать</button></div>
+                    </form>
+                    <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/delete" class="bo-stack bo-stack--dense">
+                      <div class="field-wrap">
+                        <label>Подтвердите удаление (введите DELETE)</label>
+                        <input name="confirmText" type="text" required />
+                      </div>
+                      <div class="bo-actions" style="justify-content:flex-start"><button type="submit" class="secondary" style="background:rgba(251,113,133,0.12);border-color:rgba(251,113,133,0.34);color:#ffd6de;">Удалить</button></div>
+                    </form>
+                  </div>`
+                : ""}`,
+            tone: "diagnostic"
+          })}
+        </div>
+        ${renderSubsection({
+          title: "Роли и смежные рабочие зоны",
+          subtitle: "Управление ролями и переход в платный доступ вынесены в отдельный модуль, чтобы сопровождение бота читалось как законченная рабочая карта.",
+          body: `<div class="bo-actions" style="justify-content:flex-start">
+              ${canManageRoles ? renderActionLink(i18n.t(lang, "bo_roles_btn"), `/backoffice/bots/${escapeHtml(bot.id)}/roles`, "primary") : ""}
+              ${renderActionLink("Оплаты и доступ", `/backoffice/bots/${escapeHtml(bot.id)}/paid`, "secondary")}
+              ${renderActionLink("К списку ботов", "/backoffice", "ghost")}
+            </div>
+            <div class="small" style="margin-top:10px">${canManageRoles ? escapeHtml(i18n.t(lang, "bo_roles_manage_hint")) : escapeHtml(i18n.t(lang, "bo_roles_manage_denied"))}</div>`,
+          tone: "utility"
+        })}`,
+      tone: "primary"
+    })}`;
 
-           ${
-             canWrite
-               ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/settings/token" style="margin-top:16px">
-                    <div style="margin-bottom:10px">
-                      <label>Новый Telegram Bot Token</label>
-                      <input name="telegramBotToken" type="text" required />
-                    </div>
-                    <div style="margin-bottom:10px">
-                      <label>Telegram Username (опционально)</label>
-                      <input name="telegramBotUsername" type="text" value="${escapeHtml(bot.telegramBotUsername ?? "")}" placeholder="my_bot" />
-                    </div>
-                    <button type="submit">Обновить токен</button>
-                  </form>`
-               : ""
-           }
-         </div>
-
-         <div style="margin-top:16px" class="card">
-           <h3 style="margin-top:0">Жизненный цикл</h3>
-           ${
-             canPauseResume
-               ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/pause" style="margin-top:12px">
-                    <button type="submit">Пауза (остановить бота)</button>
-                  </form>
-                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/resume" style="margin-top:12px">
-                    <button type="submit">Запустить (включить)</button>
-                  </form>`
-               : `<div class="error">Недостаточно прав для управления статусом.</div>`
-           }
-
-           ${
-             canArchiveDelete
-               ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/archive" style="margin-top:12px">
-                    <div style="margin-bottom:10px">
-                      <label>Подтвердите архивирование (введите ARCHIVE)</label>
-                      <input name="confirmText" type="text" required />
-                    </div>
-                    <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Архивировать</button>
-                  </form>
-                  <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/lifecycle/delete" style="margin-top:12px">
-                    <div style="margin-bottom:10px">
-                      <label>Подтвердите удаление (введите DELETE)</label>
-                      <input name="confirmText" type="text" required />
-                    </div>
-                    <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">Удалить</button>
-                  </form>`
-               : ""
-           }
-           
-          ${
-            canManageRoles
-              ? `<div style="margin-top:16px" class="small">
-                   ${escapeHtml(i18n.t(lang, "bo_roles_manage_hint"))}
-                   <a href="/backoffice/bots/${escapeHtml(bot.id)}/roles">/backoffice/bots/${escapeHtml(bot.id)}/roles</a>
-                 </div>`
-              : `<div style="margin-top:10px" class="error">${escapeHtml(i18n.t(lang, "bo_roles_manage_denied"))}</div>`
-          }
-           
-           <div style="margin-top:16px" class="small">
-             Платный доступ и блокировки контента настраиваются в разделе:
-             <a href="/backoffice/bots/${escapeHtml(bot.id)}/paid">/backoffice/bots/${escapeHtml(bot.id)}/paid</a>
-           </div>
-         </div>
-         
-         <div style="margin-top:16px" class="row">
-           <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">Назад</button></a>
-         </div>`
-      )
+    return reply.type("text/html").send(
+      renderPage("Настройки бота", settingsBody)
     );
   });
 
@@ -3188,37 +3660,60 @@ export async function registerBackofficeRoutes(
     return reply.type("text/html").send(
       renderPage(
         "Клонирование бота",
-        `<h2 style="margin-top:0">Клонировать шаблон</h2>
-         <div class="small">Источник: ID бота <code>${escapeHtml(sourceBot.id)}</code></div>
-         <div class="small" style="margin-top:4px">Базовый язык шаблона: <code>${escapeHtml(activeTemplate?.baseLanguageCode ?? "ru")}</code></div>
-         <form method="POST" action="/backoffice/api/bots/${escapeHtml(sourceBot.id)}/clone" style="margin-top:16px">
-           <div style="margin-bottom:10px">
-             <label>Название нового бота</label>
-             <input name="name" type="text" required />
-           </div>
-           <div style="margin-bottom:10px">
-             <label>Telegram Bot Token</label>
-             <input name="telegramBotToken" type="text" required />
-           </div>
-           <div style="margin-bottom:10px">
-             <label>Telegram Username (опционально)</label>
-             <input name="telegramBotUsername" type="text" placeholder="my_bot" />
-           </div>
-           <div style="margin-bottom:10px">
-             <label>Платный доступ включён</label>
-             <select name="paidAccessEnabled">
-               <option value="true" ${sourceBot.paidAccessEnabled ? "selected" : ""}>Да</option>
-               <option value="false" ${!sourceBot.paidAccessEnabled ? "selected" : ""}>Нет</option>
-             </select>
-           </div>
-           <button type="submit">Создать клон</button>
-         </form>
-         <div class="small" style="margin-top:10px">
-           Токен не отображается после сохранения. Валидатор использует <code>getMe</code>.
-         </div>
-         <div style="margin-top:16px" class="row">
-           <a href="/backoffice/bots/${escapeHtml(sourceBot.id)}/settings" style="text-decoration:none"><button class="secondary" type="button">Назад</button></a>
-         </div>`
+        `${renderPageHeader({
+          eyebrow: "Клонирование",
+          title: "Клонировать шаблон",
+          subtitle:
+            "Новый экземпляр создаётся из реального source-бота. Клонируется production-структура, а в форме остаются только безопасные входные параметры нового контура.",
+          context: [
+            `<span>Источник: <code>${escapeHtml(sourceBot.id)}</code></span>`,
+            `<span>Базовый язык: <strong>${escapeHtml(activeTemplate?.baseLanguageCode ?? "ru")}</strong></span>`,
+            `<span>Paid access по умолчанию: <strong>${sourceBot.paidAccessEnabled ? "да" : "нет"}</strong></span>`
+          ],
+          actions: renderActionLink("Назад к настройкам", `/backoffice/bots/${escapeHtml(sourceBot.id)}/settings`, "secondary")
+        })}
+        ${renderStageBlock({
+          eyebrow: "Новый контур",
+          title: "Параметры нового бота",
+          subtitle:
+            "Маршрут клонирования и валидатор getMe остаются прежними. Визуально форма приведена к той же production-системе, что и остальные backoffice-модули.",
+          body: `${renderSubsection({
+            title: "Форма клонирования",
+            subtitle: "Название, новый токен, username и флаг paid access остаются теми же полями и тем же POST-экшеном.",
+            body: `<form method="POST" action="/backoffice/api/bots/${escapeHtml(sourceBot.id)}/clone" class="bo-stack">
+                <div class="bo-grid-2">
+                  <div class="field-wrap">
+                    <label>Название нового бота</label>
+                    <input name="name" type="text" required />
+                  </div>
+                  <div class="field-wrap">
+                    <label>Telegram Bot Token</label>
+                    <input name="telegramBotToken" type="text" required />
+                  </div>
+                </div>
+                <div class="bo-grid-2">
+                  <div class="field-wrap">
+                    <label>Telegram Username (опционально)</label>
+                    <input name="telegramBotUsername" type="text" placeholder="my_bot" />
+                  </div>
+                  <div class="field-wrap">
+                    <label>Платный доступ включён</label>
+                    <select name="paidAccessEnabled">
+                      <option value="true" ${sourceBot.paidAccessEnabled ? "selected" : ""}>Да</option>
+                      <option value="false" ${!sourceBot.paidAccessEnabled ? "selected" : ""}>Нет</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="small">Токен не отображается после сохранения. Валидатор использует <code>getMe</code>, а source-template не меняется.</div>
+                <div class="bo-actions" style="justify-content:flex-start">
+                  <button type="submit">Создать клон</button>
+                  ${renderActionLink("Отмена", `/backoffice/bots/${escapeHtml(sourceBot.id)}/settings`, "ghost")}
+                </div>
+              </form>`,
+            tone: "raised"
+          })}`,
+          tone: "primary"
+        })}`
       )
     );
   });
@@ -3297,13 +3792,34 @@ export async function registerBackofficeRoutes(
     return reply.type("text/html").send(
       renderPage(
         "Бот склонирован",
-        `<h2 style="margin-top:0">Клон создан</h2>
-         <div class="small">Новый экземпляр бота: <code>${escapeHtml(cloned.newBotInstanceId)}</code></div>
-         <div class="small" style="margin-top:10px">Дальше настройте структуру в Telegram через конструктор.</div>
-         <div style="margin-top:14px" class="row">
-           <a href="${openUrl}" target="_blank" style="text-decoration:none"><button type="button">Открыть в Telegram</button></a>
-           <a href="/backoffice" style="text-decoration:none"><button class="secondary" type="button">К списку ботов</button></a>
-         </div>`
+        `${renderPageHeader({
+          eyebrow: "Клонирование завершено",
+          title: "Клон создан",
+          subtitle: "Новый экземпляр сохранён и запущен. Следующий рабочий шаг — открыть бота в Telegram и продолжить настройку конструктора.",
+          context: [`<span>Новый bot ID: <code>${escapeHtml(cloned.newBotInstanceId)}</code></span>`],
+          actions: [
+            renderActionLink("Открыть в Telegram", openUrl, "primary", `target="_blank" rel="noopener noreferrer"`),
+            renderActionLink("К списку ботов", "/backoffice", "secondary")
+          ].join("")
+        })}
+        ${renderStageBlock({
+          eyebrow: "Следующий шаг",
+          title: "Экземпляр готов к дальнейшей настройке",
+          subtitle: "Business-flow не менялся: бот уже создан, а структура и меню продолжают настраиваться через реальный конструктор Telegram Bot Konstruktor.",
+          body: `${renderSubsection({
+            title: "Что дальше",
+            subtitle: "Быстрые действия после успешного клонирования.",
+            body: `<div class="bo-stack bo-stack--dense">
+                <div class="small">Откройте нового бота в Telegram, затем переходите в backoffice для ролей, paid-access и прочих production-настроек.</div>
+                <div class="bo-actions" style="justify-content:flex-start">
+                  ${renderActionLink("Открыть в Telegram", openUrl, "primary", `target="_blank" rel="noopener noreferrer"`)}
+                  ${renderActionLink("К списку ботов", "/backoffice", "secondary")}
+                </div>
+              </div>`,
+            tone: "raised"
+          })}`,
+          tone: "utility"
+        })}`
       )
     );
   });
@@ -5635,135 +6151,156 @@ export async function registerBackofficeRoutes(
 
     const lang = getBackofficeLang(req);
     const t = (k: Parameters<typeof i18n.t>[1]) => i18n.t(lang, k);
+    const assignmentCards = assignments.length
+      ? assignments
+          .map((a) => {
+            const usernameLabel = `@${a.telegramUsernameNormalized}`;
+            const userIdLabel = a.userId ? a.userId : "—";
+            return `<div class="bo-form-cluster" style="margin-top:14px">
+              <div class="bo-form-cluster-head">
+                <div>
+                  <div class="bo-form-cluster-title">${escapeHtml(usernameLabel)}</div>
+                  <div class="bo-form-cluster-copy">Роль <code>${escapeHtml(a.role)}</code> · статус <code>${escapeHtml(a.status)}</code> · userId <code>${escapeHtml(userIdLabel)}</code></div>
+                </div>
+                <div class="small"><code>${escapeHtml(a.updatedAt.toISOString())}</code></div>
+              </div>
+
+              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/role" class="form-row">
+                <div class="field-wrap">
+                  <label class="small">${escapeHtml(t("bo_roles_change_role"))}</label>
+                  <select name="newRole" required>
+                    <option value="OWNER" ${a.role === "OWNER" ? "selected" : ""}>${escapeHtml(t("bo_roles_role_owner"))}</option>
+                    <option value="ADMIN" ${a.role === "ADMIN" ? "selected" : ""}>${escapeHtml(t("bo_roles_role_admin"))}</option>
+                  </select>
+                </div>
+                <div class="bo-actions" style="justify-content:flex-start">
+                  <button type="submit" class="secondary">${escapeHtml(t("bo_roles_change_btn"))}</button>
+                </div>
+              </form>
+
+              <div class="bo-actions" style="justify-content:flex-start; margin-top:12px">
+                ${
+                  a.status === "PENDING"
+                    ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/recheck" style="margin:0">
+                        <button type="submit" class="secondary">${escapeHtml(t("bo_roles_recheck_btn"))}</button>
+                      </form>`
+                    : ""
+                }
+              </div>
+
+              ${
+                a.status === "PENDING"
+                  ? `<div class="bo-grid-2" style="margin-top:12px">
+                      <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/activate-by-username" class="bo-stack bo-stack--dense">
+                        <div class="field-wrap">
+                          <label class="small">Активировать по username</label>
+                          <input name="telegramUsername" type="text" placeholder="@username" required />
+                        </div>
+                        <div class="bo-actions" style="justify-content:flex-start"><button type="submit" class="secondary">Активировать по username</button></div>
+                      </form>
+                      <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/activate-by-telegram-id" class="bo-stack bo-stack--dense">
+                        <div class="field-wrap">
+                          <label class="small">Активировать по Telegram ID</label>
+                          <input name="telegramUserId" type="text" placeholder="Telegram ID" />
+                        </div>
+                        <div class="bo-actions" style="justify-content:flex-start"><button type="submit" class="secondary">Активировать по ID</button></div>
+                      </form>
+                    </div>
+                    <div class="small" style="margin-top:8px; color:#94a3b8">Если «Сверить» не сработало — введите @username или Telegram ID. Пользователь должен написать боту <code>/start</code>.</div>`
+                  : ""
+              }
+
+              <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/revoke" class="bo-stack bo-stack--dense" style="margin-top:14px">
+                <div class="field-wrap">
+                  <label class="small">${escapeHtml(t("bo_roles_confirm_revoke"))}</label>
+                  <input name="confirmText" type="text" required />
+                </div>
+                <div class="bo-actions" style="justify-content:flex-start"><button type="submit" class="secondary" style="background:rgba(251,113,133,0.12);border-color:rgba(251,113,133,0.34);color:#ffd6de;">${escapeHtml(t("bo_roles_revoke_btn"))}</button></div>
+              </form>
+            </div>`;
+          })
+          .join("")
+      : `<div class="small">${escapeHtml(t("bo_roles_no_assignments"))}</div>`;
 
     return reply.type("text/html").send(
       renderPage(
         t("bo_roles_title"),
-        `<h2 style="margin-top:0">${escapeHtml(t("bo_roles_title"))}</h2>
-         <div class="small">Бот: <code>${escapeHtml(bot.id)}</code></div>
-         ${errorMsg ? `<div class="error" role="alert" style="margin-top:12px">${escapeHtml(errorMsg)}</div>` : ""}
-
-         <div class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">${escapeHtml(t("bo_roles_assign_title"))}</h3>
-           <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/assign">
-             <div style="margin-bottom:10px">
-               <label>${escapeHtml(t("bo_roles_telegram_username_label"))}</label>
-               <input name="telegramUsername" type="text" required placeholder="${escapeHtml(t("bo_roles_search_placeholder"))}" />
-             </div>
-             <div style="margin-bottom:10px">
-               <label>${escapeHtml(t("bo_roles_role_label"))}</label>
-               <select name="role" required>
-                 <option value="OWNER">${escapeHtml(t("bo_roles_role_owner"))}</option>
-                 <option value="ADMIN">${escapeHtml(t("bo_roles_role_admin"))}</option>
-               </select>
-             </div>
-             <button type="submit">${escapeHtml(t("bo_roles_save"))}</button>
-           </form>
-           <div class="small" style="margin-top:10px">
-             ${escapeHtml(t("bo_roles_pending_hint"))}
-           </div>
-         </div>
-
-         <div class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">${escapeHtml(t("bo_roles_filters_title"))}</h3>
-           <form method="GET" action="/backoffice/bots/${escapeHtml(bot.id)}/roles">
-             <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px">
-               <div>
-                 <label class="small">${escapeHtml(t("bo_roles_search_label"))}</label>
-                 <input name="q" type="text" value="${escapeHtml(q)}" placeholder="${escapeHtml(t("bo_roles_search_placeholder"))}" />
-               </div>
-               <div>
-                 <label class="small">${escapeHtml(t("bo_roles_role_label"))}</label>
-                 <select name="role">
-                   <option value="" ${!role ? "selected" : ""}>${escapeHtml(t("bo_roles_filter_all"))}</option>
-                   <option value="OWNER" ${role === "OWNER" ? "selected" : ""}>${escapeHtml(t("bo_roles_role_owner"))}</option>
-                   <option value="ADMIN" ${role === "ADMIN" ? "selected" : ""}>${escapeHtml(t("bo_roles_role_admin"))}</option>
-                 </select>
-               </div>
-               <div>
-                 <label class="small">${escapeHtml(t("bo_roles_status_label"))}</label>
-                 <select name="status">
-                   <option value="" ${!status ? "selected" : ""}>${escapeHtml(t("bo_roles_filter_all"))}</option>
-                   <option value="PENDING" ${status === "PENDING" ? "selected" : ""}>${escapeHtml(t("bo_roles_status_pending"))}</option>
-                   <option value="ACTIVE" ${status === "ACTIVE" ? "selected" : ""}>${escapeHtml(t("bo_roles_status_active"))}</option>
-                   <option value="REVOKED" ${status === "REVOKED" ? "selected" : ""}>${escapeHtml(t("bo_roles_status_revoked"))}</option>
-                 </select>
-               </div>
-             </div>
-             <button type="submit" style="margin-top:10px">${escapeHtml(t("bo_roles_apply"))}</button>
-           </form>
-         </div>
-
-         <div class="card" style="margin-top:16px">
-           <h3 style="margin-top:0">${escapeHtml(t("bo_roles_current_title"))}</h3>
-           ${
-             assignments.length
-               ? assignments
-                   .map((a) => {
-                     const usernameLabel = `@${a.telegramUsernameNormalized}`;
-                     const userIdLabel = a.userId ? a.userId : "—";
-                     return `<div style="margin-top:12px; padding:12px; border:1px solid rgba(255,255,255,0.12); border-radius:12px; background:rgba(255,255,255,0.04)">
-                       <div><b>${escapeHtml(usernameLabel)}</b></div>
-                       <div class="small" style="margin-top:6px">Роль: <code>${escapeHtml(a.role)}</code> · статус: <code>${escapeHtml(a.status)}</code></div>
-                       <div class="small" style="margin-top:4px">userId: <code>${escapeHtml(userIdLabel)}</code></div>
-                       <div class="small" style="margin-top:4px">updatedAt: <code>${escapeHtml(a.updatedAt.toISOString())}</code></div>
-
-                       <div style="margin-top:10px">
-                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/role" style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
-                           <div style="flex: 1 1 220px">
-                             <label class="small">${escapeHtml(t("bo_roles_change_role"))}</label>
-                             <select name="newRole" required>
-                               <option value="OWNER" ${a.role === "OWNER" ? "selected" : ""}>${escapeHtml(t("bo_roles_role_owner"))}</option>
-                               <option value="ADMIN" ${a.role === "ADMIN" ? "selected" : ""}>${escapeHtml(t("bo_roles_role_admin"))}</option>
-                             </select>
-                           </div>
-                           <button type="submit" class="secondary" style="height:44px; margin-bottom:2px">${escapeHtml(t("bo_roles_change_btn"))}</button>
-                         </form>
-                       </div>
-
-                       <div style="margin-top:10px">
-                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/recheck" style="display:inline">
-                           ${
-                             a.status === "PENDING"
-                               ? `<button type="submit" class="secondary">${escapeHtml(t("bo_roles_recheck_btn"))}</button>`
-                               : ""
-                           }
-                          </form>
-                         ${
-                           a.status === "PENDING"
-                             ? `
-                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/activate-by-username" style="display:inline; margin-left:8px">
-                           <input name="telegramUsername" type="text" placeholder="@username" required style="width:140px; padding:8px" />
-                           <button type="submit" class="secondary" style="margin-left:4px">Активировать по username</button>
-                         </form>
-                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/activate-by-telegram-id" style="display:inline; margin-left:8px">
-                           <input name="telegramUserId" type="text" placeholder="Telegram ID" style="width:120px; padding:8px" />
-                           <button type="submit" class="secondary" style="margin-left:4px">По ID</button>
-                         </form>
-                         <div class="small" style="margin-top:4px; color:#94a3b8">Если «Сверить» не сработало — введите @username или Telegram ID (из @userinfobot). Пользователь должен написать боту /start.</div>`
-                             : ""
-                         }
-                       </div>
-
-                       <div style="margin-top:10px">
-                         <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/${escapeHtml(a.id)}/revoke">
-                           <div style="margin-bottom:8px">
-                             <label class="small">${escapeHtml(t("bo_roles_confirm_revoke"))}</label>
-                             <input name="confirmText" type="text" required />
-                           </div>
-                           <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45);">${escapeHtml(t("bo_roles_revoke_btn"))}</button>
-                         </form>
-                       </div>
-                     </div>`;
-                   })
-                   .join("")
-               : `<div class="small">${escapeHtml(t("bo_roles_no_assignments"))}</div>`
-           }
-         </div>
-
-         <div style="margin-top:16px" class="row">
-           <a href="/backoffice/bots/${escapeHtml(bot.id)}/settings" style="text-decoration:none"><button class="secondary" type="button">${escapeHtml(t("bo_roles_back"))}</button></a>
-         </div>`
+        `${renderPageHeader({
+          eyebrow: "Роли и доступ",
+          title: t("bo_roles_title"),
+          subtitle:
+            "Панель назначения и сопровождения OWNER / ADMIN для конкретного бота. Все activation и revoke-маршруты сохранены, но перегруппированы в более читаемое рабочее пространство.",
+          context: [`<span>Бот: <code>${escapeHtml(bot.id)}</code></span>`, `<span>Назначений: <strong>${assignments.length}</strong></span>`],
+          actions: renderActionLink(t("bo_roles_back"), `/backoffice/bots/${escapeHtml(bot.id)}/settings`, "secondary")
+        })}
+        ${errorMsg ? `<div class="error" role="alert">${escapeHtml(errorMsg)}</div>` : ""}
+        ${renderStageBlock({
+          eyebrow: "Назначение",
+          title: t("bo_roles_assign_title"),
+          subtitle:
+            "Создание новых role-assignment и фильтрация текущих записей вынесены в верхний рабочий слой, чтобы поиск и назначение читались как единый операторский контур.",
+          body: `<div class="bo-stage-grid-rail">
+              ${renderSubsection({
+                title: t("bo_roles_assign_title"),
+                subtitle: t("bo_roles_pending_hint"),
+                body: `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/roles/assign" class="bo-stack">
+                    <div class="field-wrap">
+                      <label>${escapeHtml(t("bo_roles_telegram_username_label"))}</label>
+                      <input name="telegramUsername" type="text" required placeholder="${escapeHtml(t("bo_roles_search_placeholder"))}" />
+                    </div>
+                    <div class="field-wrap">
+                      <label>${escapeHtml(t("bo_roles_role_label"))}</label>
+                      <select name="role" required>
+                        <option value="OWNER">${escapeHtml(t("bo_roles_role_owner"))}</option>
+                        <option value="ADMIN">${escapeHtml(t("bo_roles_role_admin"))}</option>
+                      </select>
+                    </div>
+                    <div class="bo-actions" style="justify-content:flex-start"><button type="submit">${escapeHtml(t("bo_roles_save"))}</button></div>
+                  </form>`,
+                tone: "raised"
+              })}
+              ${renderSubsection({
+                title: t("bo_roles_filters_title"),
+                subtitle: "Фильтр по поиску, роли и статусу без изменения query-параметров страницы.",
+                body: `<form method="GET" action="/backoffice/bots/${escapeHtml(bot.id)}/roles" class="bo-stack">
+                    <div class="bo-grid-3">
+                      <div class="field-wrap">
+                        <label class="small">${escapeHtml(t("bo_roles_search_label"))}</label>
+                        <input name="q" type="text" value="${escapeHtml(q)}" placeholder="${escapeHtml(t("bo_roles_search_placeholder"))}" />
+                      </div>
+                      <div class="field-wrap">
+                        <label class="small">${escapeHtml(t("bo_roles_role_label"))}</label>
+                        <select name="role">
+                          <option value="" ${!role ? "selected" : ""}>${escapeHtml(t("bo_roles_filter_all"))}</option>
+                          <option value="OWNER" ${role === "OWNER" ? "selected" : ""}>${escapeHtml(t("bo_roles_role_owner"))}</option>
+                          <option value="ADMIN" ${role === "ADMIN" ? "selected" : ""}>${escapeHtml(t("bo_roles_role_admin"))}</option>
+                        </select>
+                      </div>
+                      <div class="field-wrap">
+                        <label class="small">${escapeHtml(t("bo_roles_status_label"))}</label>
+                        <select name="status">
+                          <option value="" ${!status ? "selected" : ""}>${escapeHtml(t("bo_roles_filter_all"))}</option>
+                          <option value="PENDING" ${status === "PENDING" ? "selected" : ""}>${escapeHtml(t("bo_roles_status_pending"))}</option>
+                          <option value="ACTIVE" ${status === "ACTIVE" ? "selected" : ""}>${escapeHtml(t("bo_roles_status_active"))}</option>
+                          <option value="REVOKED" ${status === "REVOKED" ? "selected" : ""}>${escapeHtml(t("bo_roles_status_revoked"))}</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="bo-actions" style="justify-content:flex-start"><button type="submit">${escapeHtml(t("bo_roles_apply"))}</button></div>
+                  </form>`,
+                tone: "utility"
+              })}
+            </div>`,
+          tone: "utility"
+        })}
+        ${renderStageBlock({
+          eyebrow: "Текущие назначения",
+          title: t("bo_roles_current_title"),
+          subtitle:
+            "Изменение роли, recheck, ручная активация и revoke остаются полностью доступными для каждой записи, но больше не выглядят как хаотичный список технических блоков.",
+          body: assignmentCards,
+          tone: "primary"
+        })}`
       )
     );
   });
@@ -6053,41 +6590,58 @@ export async function registerBackofficeRoutes(
         product: { select: { id: true, code: true, price: true, currency: true } }
       }
     });
+    const paymentCards = payments.length
+      ? payments
+          .map((p) => {
+            const statusTone = p.status === "PENDING" ? "pending" : "failed";
+            return `<div class="bo-form-cluster" style="margin-top:14px">
+              <div class="bo-form-cluster-head">
+                <div>
+                  <div class="bo-form-cluster-title">Платёж <code>${escapeHtml(p.id)}</code></div>
+                  <div class="bo-form-cluster-copy">Пользователь <code>${escapeHtml(String(p.user.telegramUserId))}</code> · продукт <code>${escapeHtml(p.product.code)}</code> · референс <code>${escapeHtml(p.referenceCode)}</code></div>
+                </div>
+                <div>${renderStatusBadge(p.status, statusTone)}</div>
+              </div>
+              <div class="bo-grid-2">
+                <div class="small">Сумма: <strong>${escapeHtml(String(p.product.price))}</strong> ${escapeHtml(p.product.currency)}</div>
+                <div class="small">Язык пользователя: <strong>${escapeHtml(p.user.selectedLanguage)}</strong></div>
+              </div>
+              <div class="bo-actions" style="justify-content:flex-start; margin-top:12px">
+                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/payments/${escapeHtml(p.id)}/confirm" style="margin:0">
+                  <button type="submit">Подтвердить</button>
+                </form>
+                <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/payments/${escapeHtml(p.id)}/reject" class="form-row" style="margin:0">
+                  <div class="field-wrap">
+                    <label class="small">Причина отклонения</label>
+                    <input name="reason" type="text" placeholder="Причина (опционально)" />
+                  </div>
+                  <div class="bo-actions" style="justify-content:flex-start"><button type="submit" class="secondary" style="background:rgba(251,113,133,0.12);border-color:rgba(251,113,133,0.34);color:#ffd6de;">Отклонить</button></div>
+                </form>
+              </div>
+            </div>`;
+          })
+          .join("")
+      : `<div class="small">Нет ожидающих платежей.</div>`;
 
     return reply.type("text/html").send(
       renderPage(
         "Платежи (ручное подтверждение)",
-        `<h2 style="margin-top:0">Платежи (ручное подтверждение)</h2>
-         <div class="small">Бот: <code>${escapeHtml(bot.id)}</code></div>
-         <div class="small" style="margin-top:6px">Ожидают подтверждения: ${payments.length}</div>
-
-         ${
-           payments.length
-             ? payments
-                 .map((p) => {
-                   return `<div style="margin-top:12px; padding:10px; border:1px solid rgba(255,255,255,0.12); border-radius:12px; background:rgba(255,255,255,0.04)">
-                     <div><b>Платёж</b> <code>${escapeHtml(p.id)}</code> · статус <code>${escapeHtml(p.status)}</code></div>
-                     <div class="small" style="margin-top:4px">Telegram ID пользователя: <code>${escapeHtml(String(p.user.telegramUserId))}</code></div>
-                     <div class="small" style="margin-top:4px">Продукт: <code>${escapeHtml(p.product.code)}</code> · сумма: <code>${escapeHtml(String(p.product.price))}</code> ${escapeHtml(p.product.currency)}</div>
-                     <div class="small" style="margin-top:4px">Референс: <code>${escapeHtml(p.referenceCode)}</code></div>
-                     <div style="margin-top:10px" class="row">
-                       <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/payments/${escapeHtml(p.id)}/confirm" style="margin:0">
-                         <button type="submit">Подтвердить</button>
-                       </form>
-                       <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/payments/${escapeHtml(p.id)}/reject" style="margin:0">
-                         <input name="reason" type="text" placeholder="Причина (опционально)" />
-                         <button type="submit" class="secondary" style="background:rgba(239,68,68,0.15);border-color:rgba(239,68,68,0.45); margin-top:8px">Отклонить</button>
-                       </form>
-                     </div>
-                   </div>`;
-                 })
-                 .join("")
-             : `<div class="small" style="margin-top:10px">Нет ожидающих платежей.</div>`
-         }
-
-         <div style="margin-top:16px" class="row">
-           <a href="/backoffice/bots/${escapeHtml(bot.id)}/paid" style="text-decoration:none"><button class="secondary" type="button">Назад</button></a>
-         </div>`
+        `${renderPageHeader({
+          eyebrow: "Финансовое сопровождение",
+          title: "Платежи (ручное подтверждение)",
+          subtitle:
+            "Ручной confirm/reject для ожидающих платежей текущего бота. Маршруты и business-логика не меняются, но сама страница теперь выглядит как часть единого финансового контура.",
+          context: [`<span>Бот: <code>${escapeHtml(bot.id)}</code></span>`, `<span>Ожидают подтверждения: <strong>${payments.length}</strong></span>`],
+          actions: renderActionLink("Назад к оплатам и доступу", `/backoffice/bots/${escapeHtml(bot.id)}/paid`, "secondary")
+        })}
+        ${renderStageBlock({
+          eyebrow: "Ручная обработка",
+          title: "Ожидающие платежи",
+          subtitle:
+            "Каждый pending-платёж остаётся отдельной операционной единицей: видно пользователя, продукт, referenceCode и доступные confirm / reject действия.",
+          body: paymentCards,
+          tone: "primary"
+        })}`
       )
     );
   });
