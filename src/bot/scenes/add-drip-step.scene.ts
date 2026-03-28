@@ -39,8 +39,9 @@ export const addDripStepScene = new Scenes.WizardScene<any>(
       await ctx.reply(ctx.services.i18n.t(locale, "error_generic"));
       return ctx.scene.leave();
     }
-    const state: State = { campaignId, phase: "delay" };
-    ctx.wizard.state = state;
+    const s = ctx.scene.state as State;
+    s.campaignId = campaignId;
+    s.phase = "delay";
 
     await ctx.reply(
       "Шаг 1. Выберите задержку для нового шага:",

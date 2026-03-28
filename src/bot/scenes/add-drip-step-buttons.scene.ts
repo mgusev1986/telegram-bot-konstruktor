@@ -80,16 +80,17 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
     const buttons: DripStepButton[] = Array.isArray(loc?.buttonsJson)
       ? (loc.buttonsJson as DripStepButton[])
       : [];
-    const state: State = {
-      stepId,
-      campaignId,
-      languageCode: languageCode ?? loc?.languageCode ?? locale,
-      buttons,
-      phase: "menu"
-    };
-    ctx.wizard.state = state;
+    // WizardContextWizard.state must stay the same object as ctx.scene.state so Telegraf
+    // persists fields in session. Assigning ctx.wizard.state = { ...new } breaks the link
+    // and drops `buttons`, causing state.buttons.push to throw on the next message.
+    const persisted = ctx.scene.state as Partial<State>;
+    persisted.stepId = stepId;
+    persisted.campaignId = campaignId;
+    persisted.languageCode = languageCode ?? loc?.languageCode ?? locale;
+    persisted.buttons = buttons;
+    persisted.phase = buttons.length === 0 ? "choose_type" : "menu";
+    const state = persisted as State;
     if (state.buttons.length === 0) {
-      state.phase = "choose_type";
       await ctx.reply(
         "Выберите куда ведёт кнопка (системные кнопки сохраняют сетевую логику — каждый пользователь попадает к своему партнёру/наставнику):",
         kb(ctx.services.i18n, locale, [
@@ -105,6 +106,7 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
   },
   async (ctx) => {
     const state = ctx.wizard.state as State;
+    if (!Array.isArray(state.buttons)) state.buttons = [];
     const locale = ctx.services.i18n.resolveLanguage(ctx.currentUser?.selectedLanguage);
     const i18n = ctx.services.i18n;
 

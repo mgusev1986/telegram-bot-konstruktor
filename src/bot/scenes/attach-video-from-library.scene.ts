@@ -41,8 +41,11 @@ export const attachVideoFromLibraryScene = new Scenes.WizardScene<any>(
       await ctx.reply(ctx.services.i18n.t(locale, "error_generic"));
       return ctx.scene.leave();
     }
-    const state: State = { pageId, languageCode, uiLanguageCode, phase: "choose" };
-    ctx.wizard.state = state;
+    const s = ctx.scene.state as State;
+    s.pageId = pageId;
+    s.languageCode = languageCode;
+    s.uiLanguageCode = uiLanguageCode;
+    s.phase = "choose";
 
     await ctx.reply(
       ctx.services.i18n.t(uiLanguageCode, "attach_video_choose_mode"),
