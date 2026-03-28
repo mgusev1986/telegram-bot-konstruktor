@@ -79,7 +79,7 @@ export class DripService {
         }
 
         if (kind === "partner_register" && this.cabinet) {
-          const url = await this.cabinet.getPartnerRegisterLinkForUser(user);
+          const url = await this.cabinet.resolvePartnerRegisterActionUrlForUser(user);
           if (url) rows.push([Markup.button.url(label, url)]);
           continue;
         }

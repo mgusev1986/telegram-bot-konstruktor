@@ -28,17 +28,39 @@ echo "  $SSH_TARGET"
 echo "=========================================="
 echo ""
 
-# 1. Git: commit и push при наличии изменений
+# 1. Git: commit и push при наличии изменений + проверка что код на GitHub = локальный HEAD
 if [ -n "$(git status --porcelain)" ]; then
   echo "Шаг 1: Коммит и push..."
   git add -A
   git commit -m "$COMMIT_MSG"
-  git push origin main
+  if ! GIT_TERMINAL_PROMPT=0 git push origin main; then
+    echo ""
+    echo "Ошибка: git push не удался (часто из‑за HTTPS без credentials)."
+    echo "  Переведите origin на SSH:"
+    echo "    git remote -v"
+    echo "    git remote set-url origin git@github.com:ВЛАДЕЛЕЦ/РЕПО.git"
+    echo "    ssh -T git@github.com"
+    echo "    git push origin main"
+    exit 1
+  fi
   echo "✓ Изменения запушены"
 else
-  echo "Шаг 1: Нет локальных изменений, пропуск git push"
-  # Всё равно обновим сервер (на случай если push был раньше)
+  echo "Шаг 1: Нет незакоммиченных файлов"
 fi
+
+echo "Шаг 1b: Проверка что origin/main содержит текущий коммит..."
+git fetch origin main 2>/dev/null || { echo "Предупреждение: git fetch не выполнен (сеть/offline)."; }
+UPSTREAM="$(git rev-parse origin/main 2>/dev/null || true)"
+HEAD_SHA="$(git rev-parse HEAD)"
+if [ -n "$UPSTREAM" ] && [ "$UPSTREAM" != "$HEAD_SHA" ]; then
+  echo ""
+  echo "Ошибка: локальный HEAD не совпадает с origin/main — на сервере будет старый код."
+  echo "  Локально: $HEAD_SHA"
+  echo "  origin/main: $UPSTREAM"
+  echo "  Выполните: git push origin main   (из каталога проекта)"
+  exit 1
+fi
+echo "✓ Ветка синхронизирована с origin/main"
 echo ""
 
 # 2. Бэкап БД перед деплоем (страховка)
@@ -47,7 +69,14 @@ PRE_BACKUP_CMD="cd $HETZNER_APP_DIR && (bash scripts/server-backup-rotating.sh 2
 # 3. Выполнение команд на сервере
 # Важно: миграции запускаем ДО старта бота (через run --rm), чтобы при сбое миграции
 # бот не уходил в рестарт-луп, а мы видели ошибку в выводе деплоя
-RUN_CMD="cd $HETZNER_APP_DIR && git pull && docker compose -f docker-compose.prod.yml build --no-cache bot && docker compose -f docker-compose.prod.yml up -d postgres redis && docker compose -f docker-compose.prod.yml run --rm bot npx prisma migrate deploy && docker compose -f docker-compose.prod.yml up -d --force-recreate bot"
+RUN_CMD="cd $HETZNER_APP_DIR && \
+  test -f .env || { echo \"Ошибка: нет файла .env (создайте из .env.production.example)\"; exit 1; } && \
+  grep -qE '^[[:space:]]*REDIS_URL=' .env || { echo \"Ошибка: в .env нет REDIS_URL. Для docker-compose.prod: REDIS_URL=redis://redis:6379\"; exit 1; } && \
+  git pull && \
+  docker compose -f docker-compose.prod.yml build --no-cache bot && \
+  docker compose -f docker-compose.prod.yml up -d postgres redis && \
+  docker compose -f docker-compose.prod.yml run --rm bot npx prisma migrate deploy && \
+  docker compose -f docker-compose.prod.yml up -d --force-recreate bot"
 
 echo "Шаг 2: Бэкап БД перед деплоем..."
 if ssh -o BatchMode=yes -o ConnectTimeout=5 "$SSH_TARGET" "echo ok" 2>/dev/null | grep -q "ok"; then

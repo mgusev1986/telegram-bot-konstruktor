@@ -222,8 +222,7 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
         state.buttons.push({ type: "system", label, systemKind: state.pendingSystemKind });
         state.pendingSystemKind = undefined;
         state.phase = "menu";
-        await ctx.reply("✅ Системная кнопка добавлена.", kb(i18n, locale, []));
-        await showButtonsMenu(ctx, state);
+        await showButtonsMenu(ctx, state, { preface: "✅ Системная кнопка добавлена." });
         return;
       }
       if (state.phase === "add_section_label" && state.pendingTargetMenuItemId) {
@@ -237,8 +236,7 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
         state.pendingTargetMenuItemId = undefined;
         state.pendingSectionTitle = undefined;
         state.phase = "menu";
-        await ctx.reply("✅ Кнопка «Переход в раздел» добавлена.", kb(i18n, locale, []));
-        await showButtonsMenu(ctx, state);
+        await showButtonsMenu(ctx, state, { preface: "✅ Кнопка «Переход в раздел» добавлена." });
         return;
       }
       if (state.phase === "add_label") {
@@ -253,8 +251,7 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
           if (label && urlPart && isValidUrl(urlPart)) {
             state.buttons.push({ type: "url", label, url: urlPart });
             state.phase = "menu";
-            await ctx.reply("✅ Кнопка добавлена.", kb(i18n, locale, []));
-            await showButtonsMenu(ctx, state);
+            await showButtonsMenu(ctx, state, { preface: "✅ Кнопка добавлена." });
             return;
           }
         }
@@ -271,8 +268,7 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
         state.buttons.push({ type: "url", label: state.pendingLabel, url: text.trim() });
         state.pendingLabel = undefined;
         state.phase = "menu";
-        await ctx.reply("✅ Кнопка добавлена.", kb(i18n, locale, []));
-        await showButtonsMenu(ctx, state);
+        await showButtonsMenu(ctx, state, { preface: "✅ Кнопка добавлена." });
         return;
       }
     }
@@ -281,11 +277,12 @@ export const addDripStepButtonsScene = new Scenes.WizardScene<any>(
   }
 );
 
-async function showButtonsMenu(ctx: BotContext, state: State) {
+async function showButtonsMenu(ctx: BotContext, state: State, opts?: { preface?: string }) {
   const locale = ctx.services.i18n.resolveLanguage(ctx.currentUser?.selectedLanguage);
   const i18n = ctx.services.i18n;
   const list = formatButtonsList(state.buttons);
   const msg = [
+    opts?.preface ? `${opts.preface}\n` : "",
     "🔗 Кнопки к письму",
     "",
     "Системные кнопки (Стать партнёром, Связь с наставником) ведут каждого пользователя к своему партнёру/наставнику — реферальная логика сохраняется.",

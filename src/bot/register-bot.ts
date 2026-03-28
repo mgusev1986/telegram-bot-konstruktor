@@ -1,4 +1,7 @@
 import { Markup, Scenes, Telegraf, session } from "telegraf";
+
+import { redis } from "../infrastructure/redis";
+import { createRedisSessionStore } from "./telegraf-redis-session";
 import type { PaymentNetwork } from "@prisma/client";
 
 import { makeCallbackData, splitCallbackData, toShortId } from "../common/callback-data";
@@ -96,7 +99,10 @@ const formatMoney = (value: number): string => {
   return Number.isInteger(normalized) ? String(normalized) : normalized.toFixed(2);
 };
 
-export const registerBot = (services: AppServices, opts: { botToken: string }): Telegraf<BotContext> => {
+export const registerBot = (
+  services: AppServices,
+  opts: { botToken: string; /** Isolates Telegraf session in Redis per bot instance */ sessionScope?: string }
+): Telegraf<BotContext> => {
   const bot = new Telegraf<BotContext>(opts.botToken);
   const stage = new Scenes.Stage<any>([
     createMenuItemScene,
@@ -174,7 +180,18 @@ export const registerBot = (services: AppServices, opts: { botToken: string }): 
     return next();
   });
 
-  bot.use(session());
+  const sessionKeyPrefix = `tg_sess:${opts.sessionScope ?? "default"}:`;
+  bot.use(
+    session({
+      store: createRedisSessionStore(redis, sessionKeyPrefix),
+      getSessionKey: (ctx) => {
+        const fromId = ctx.from?.id;
+        const chatId = ctx.chat?.id;
+        if (fromId == null || chatId == null) return undefined;
+        return `${fromId}:${chatId}`;
+      }
+    })
+  );
 
   const ingestMediaAsset = async (post: any) => {
     if (!post || !post.chat || !post.message_id) return;

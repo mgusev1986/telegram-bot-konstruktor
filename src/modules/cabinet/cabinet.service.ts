@@ -86,6 +86,27 @@ export class CabinetService {
     return this.getExternalReferralLink(user);
   }
 
+  /**
+   * URL for «Стать партнёром» in drip/messages: external https link if set, otherwise deep link
+   * to the bot with inviter (or self) so the button always works for recipients.
+   */
+  public async resolvePartnerRegisterActionUrlForUser(user: User): Promise<string | null> {
+    const external = await this.getPartnerRegisterLinkForUser(user);
+    if (external) return external;
+    const username = (this.botUsername || "").replace(/^@/, "").trim();
+    if (!username) return null;
+    if (user.invitedByUserId) {
+      const inviter = await this.prisma.user.findUnique({
+        where: { id: user.invitedByUserId },
+        select: { telegramUserId: true }
+      });
+      if (inviter) {
+        return `https://t.me/${username}?start=${inviter.telegramUserId}`;
+      }
+    }
+    return this.getReferralLink(user);
+  }
+
   private normalizeExternalReferralLink(raw: string | null | undefined): string | null {
     const trimmed = raw?.trim();
     if (!trimmed) return null;

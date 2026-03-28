@@ -49,7 +49,7 @@ export class BotRuntimeManager {
       onDepositCredited
     });
 
-    const bot = registerBot(services, { botToken });
+    const bot = registerBot(services, { botToken, sessionScope: botInstance.id });
 
     // Telegram-specific integrations (e.g. notifications / drips / broadcasts).
     services.notifications.setTelegram(bot.telegram);
