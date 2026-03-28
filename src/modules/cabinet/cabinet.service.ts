@@ -70,19 +70,56 @@ export class CabinetService {
     return this.normalizeExternalReferralLink(raw);
   }
 
+  private async findExternalReferralLinkUpChain(
+    startUserId: string | null | undefined,
+    relationKey: "invitedByUserId" | "mentorUserId"
+  ): Promise<string | null> {
+    const visited = new Set<string>();
+    let currentUserId = startUserId?.trim() || null;
+
+    while (currentUserId && !visited.has(currentUserId)) {
+      visited.add(currentUserId);
+      const current = await this.prisma.user.findUnique({
+        where: { id: currentUserId },
+        select: {
+          externalReferralLink: true,
+          invitedByUserId: true,
+          mentorUserId: true
+        }
+      });
+      if (!current) return null;
+
+      const external = this.normalizeExternalReferralLink(current.externalReferralLink);
+      if (external) return external;
+
+      currentUserId = current[relationKey]?.trim() || null;
+    }
+
+    return null;
+  }
+
   /**
    * Ссылка «Зарегистрироваться / Стать партнёром» для меню пользователя.
-   * У приглашённых: берётся от пригласившего. Если пригласивший не указал ссылку — кнопка не показывается.
+   * У приглашённых: берётся от ближайшего вышестоящего в invitedBy-цепочке с валидной внешней ссылкой.
+   * Если по invitedBy ссылка не найдена, проверяем mentor-цепочку как fallback.
+   * Если у вышестоящих ссылки нет — кнопка не показывается.
    * У пользователей без пригласившего (владелец/верхние): своя ссылка.
    */
   public async getPartnerRegisterLinkForUser(user: User): Promise<string | null> {
-    if (user.invitedByUserId) {
-      const inviter = await this.prisma.user.findUnique({
-        where: { id: user.invitedByUserId },
-        select: { externalReferralLink: true }
-      });
-      return inviter ? this.normalizeExternalReferralLink(inviter.externalReferralLink) : null;
+    if (user.invitedByUserId || user.mentorUserId) {
+      const inviterChainLink = await this.findExternalReferralLinkUpChain(user.invitedByUserId, "invitedByUserId");
+      if (inviterChainLink) return inviterChainLink;
+
+      const mentorChainStart =
+        user.mentorUserId && user.mentorUserId !== user.invitedByUserId ? user.mentorUserId : null;
+      if (mentorChainStart) {
+        const mentorChainLink = await this.findExternalReferralLinkUpChain(mentorChainStart, "mentorUserId");
+        if (mentorChainLink) return mentorChainLink;
+      }
+
+      return null;
     }
+
     return this.getExternalReferralLink(user);
   }
 
