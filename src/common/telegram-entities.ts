@@ -31,7 +31,8 @@ type Edge = { pos: number; kind: "open" | "close"; openTag: string; closeTag: st
 /**
  * Converts text + entities to Telegram-safe HTML.
  * - Uses UTF-16 indices (JS string indices match Telegram offset/length).
- * - Unsupported entities (custom_emoji, mention, etc.): preserve plain text.
+ * - custom_emoji is preserved via Telegram HTML <tg-emoji emoji-id="...">…</tg-emoji>.
+ * - Unsupported entities (mention, etc.): preserve plain text.
  * - text_link: uses entity.url for href.
  */
 export function telegramEntitiesToHtml(text: string, entities?: MessageEntity[] | null): string {
@@ -56,6 +57,22 @@ export function telegramEntitiesToHtml(text: string, entities?: MessageEntity[] 
         closeTag: "</a>"
       });
       edges.push({ pos: end, kind: "close", openTag: "", closeTag: "</a>" });
+      continue;
+    }
+
+    if (
+      entity.type === "custom_emoji" &&
+      "custom_emoji_id" in entity &&
+      typeof entity.custom_emoji_id === "string"
+    ) {
+      const emojiId = escapeAttr(entity.custom_emoji_id);
+      edges.push({
+        pos: offset,
+        kind: "open",
+        openTag: `<tg-emoji emoji-id="${emojiId}">`,
+        closeTag: "</tg-emoji>"
+      });
+      edges.push({ pos: end, kind: "close", openTag: "", closeTag: "</tg-emoji>" });
       continue;
     }
 

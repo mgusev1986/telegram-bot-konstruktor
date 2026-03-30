@@ -64,7 +64,7 @@ export function maybeFormatForTelegram(text: string): string {
   if (!text || typeof text !== "string") return "";
   const hasAuthoringFormat =
     /\[b\]|\[\/b\]|\*\*[^*]+\*\*|^>/m.test(text) ||
-    !/<\/?(b|strong|i|em|u|s|strike|del|code|pre|a|blockquote)\b/i.test(text);
+    !/<\/?(b|strong|i|em|u|s|strike|del|code|pre|a|blockquote|tg-spoiler|tg-emoji)\b/i.test(text);
   if (hasAuthoringFormat) {
     return formatPageContentForTelegram(text);
   }

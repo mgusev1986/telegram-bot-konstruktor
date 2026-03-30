@@ -65,6 +65,27 @@ describe("sendRichMessage formatting", () => {
     expect(calls[0].extra.parse_mode).toBe("HTML");
   });
 
+  it("sends tg-emoji markup with parse_mode=HTML", async () => {
+    const calls: any[] = [];
+    const telegram: any = {
+      sendMessage: async (_chatId: any, _text: any, extra: any) => {
+        calls.push({ extra });
+        return { message_id: 1 };
+      },
+    };
+
+    await sendRichMessage(
+      telegram,
+      1,
+      { text: '<tg-emoji emoji-id="5368324170671202286">🚀</tg-emoji> Старт' },
+      {}
+    );
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].extra.parse_mode).toBe("HTML");
+    expect("entities" in calls[0].extra).toBe(false);
+  });
+
   it("keeps legacy media plus caption as a single Telegram message", async () => {
     const calls: any[] = [];
     const telegram: any = {

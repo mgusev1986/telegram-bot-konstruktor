@@ -265,6 +265,71 @@ describe("DripService", () => {
     });
   });
 
+  it("processProgress keeps custom emoji HTML in an auto-series step", async () => {
+    const prisma = {
+      userDripProgress: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "p-emoji",
+          status: "ACTIVE",
+          currentStep: 1,
+          user: {
+            telegramUserId: 777,
+            selectedLanguage: "ru",
+            firstName: "Ivan",
+            lastName: null,
+            username: "ivan",
+            fullName: "Ivan"
+          },
+          campaign: {
+            steps: [
+              {
+                stepOrder: 1,
+                delayValue: 1,
+                delayUnit: "MINUTES",
+                localizations: [
+                  {
+                    languageCode: "ru",
+                    text: '<tg-emoji emoji-id="5368324170671202286">🚀</tg-emoji> Старт автосерии',
+                    followUpText: "",
+                    mediaType: "NONE",
+                    mediaFileId: null,
+                    externalUrl: null,
+                    buttonsJson: null
+                  }
+                ]
+              }
+            ]
+          }
+        }),
+        update: vi.fn()
+      }
+    } as any;
+
+    const scheduler = {
+      schedule: vi.fn()
+    } as any;
+
+    const i18n = {
+      pickLocalized: vi.fn().mockImplementation((locs: any[]) => locs[0] ?? null)
+    } as any;
+
+    const audit = { log: vi.fn() } as any;
+    const service = new DripService(prisma, scheduler, i18n, audit);
+
+    const telegram = {
+      sendMessage: vi.fn().mockResolvedValue({ message_id: 1 })
+    } as any;
+    service.setTelegram(telegram);
+
+    await service.processProgress("p-emoji");
+
+    expect(telegram.sendMessage).toHaveBeenCalledWith(
+      777,
+      '<tg-emoji emoji-id="5368324170671202286">🚀</tg-emoji> Старт автосерии',
+      expect.objectContaining({ parse_mode: "HTML" })
+    );
+  });
+
   it("does not advance drip progress when follow-up text fails after media succeeds", async () => {
     const prisma = {
       userDripProgress: {

@@ -78,7 +78,7 @@ const sendSingleRichMessage = async (
   const normalizedChatId = typeof chatId === "bigint" ? Number(chatId) : chatId;
   const rawText = message.text?.trim() || "";
   const CAPTION_LIMIT = 1024;
-  const looksLikeHtml = /<\/?(b|strong|i|em|u|s|strike|del|code|pre|a|blockquote)\b/i.test(rawText);
+  const looksLikeHtml = /<\/?(b|strong|i|em|u|s|strike|del|code|pre|a|blockquote|tg-spoiler|tg-emoji)\b/i.test(rawText);
   const { text, entities } = looksLikeHtml ? { text: rawText, entities: [] } : renderBoldMarkers(rawText);
   const mergedExtra: Record<string, unknown> = { ...(extra as Record<string, unknown>) };
   if (looksLikeHtml) {

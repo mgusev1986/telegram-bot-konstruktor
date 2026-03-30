@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
+import type { MessageEntity } from "telegraf/types";
 
 import { telegramEntitiesToHtml } from "../src/common/telegram-entities";
-import type { MessageEntity } from "telegraf/types";
 
 describe("telegramEntitiesToHtml", () => {
   it("converts bold entities to <b> tags", () => {
@@ -25,13 +25,26 @@ describe("telegramEntitiesToHtml", () => {
   it("converts text_link entities with url", () => {
     const text = "Click here";
     const entities: MessageEntity[] = [
-      { type: "text_link", offset: 0, length: 10, url: "https://example.com" }
+      { type: "text_link", offset: 0, length: 10, url: "https://example.com" } as MessageEntity
     ];
     const result = telegramEntitiesToHtml(text, entities);
     expect(result).toContain("<a href=");
     expect(result).toContain("https://example.com");
     expect(result).toContain("Click here");
     expect(result).toContain("</a>");
+  });
+
+  it("preserves Telegram custom emoji as tg-emoji HTML", () => {
+    const html = telegramEntitiesToHtml("🚀 старт", [
+      {
+        type: "custom_emoji",
+        offset: 0,
+        length: 2,
+        custom_emoji_id: "5368324170671202286"
+      } as MessageEntity
+    ]);
+
+    expect(html).toBe('<tg-emoji emoji-id="5368324170671202286">🚀</tg-emoji> старт');
   });
 
   it("preserves plain text when no entities", () => {
