@@ -80,5 +80,89 @@ describe("Broadcast: recipient system buttons", () => {
     expect(btnMentor.callback_data).toBe(makeCallbackData("mentor", "open"));
     expect(btnMain.callback_data).toBe(NAV_ROOT_DATA);
   });
-});
 
+  it("uses configured broadcast buttons with custom labels instead of the default fallback", async () => {
+    const prisma: any = {
+      broadcast: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "b2",
+          audienceType: "ALL_USERS",
+          segmentQuery: {},
+          createdByUserId: "admin1",
+          localizations: [
+            {
+              languageCode: "ru",
+              text: "Hello",
+              mediaType: MediaType.NONE,
+              mediaFileId: null,
+              externalUrl: null,
+              buttonsJson: [
+                { type: "system", label: "Моя регистрация", systemKind: "partner_register" },
+                { type: "system", label: "Мой наставник", systemKind: "mentor_contact" },
+                { type: "section", label: "Открыть раздел", targetMenuItemId: "section-42" }
+              ]
+            }
+          ]
+        }),
+        update: vi.fn().mockResolvedValue({})
+      },
+      broadcastRecipient: {
+        upsert: vi.fn().mockResolvedValue({}),
+        update: vi.fn().mockResolvedValue({})
+      },
+      user: {
+        findMany: vi.fn().mockResolvedValue([{ id: "mentor-1", username: "mentor_user" }]),
+        findUnique: vi.fn().mockResolvedValue({ username: "mentor_user" })
+      }
+    };
+
+    const segments: any = {
+      resolveAudience: vi.fn().mockResolvedValue([
+        {
+          id: "u2",
+          telegramUserId: 321,
+          selectedLanguage: "ru",
+          firstName: "Пётр",
+          lastName: null,
+          username: "user2",
+          fullName: null,
+          mentorUserId: "mentor-1"
+        }
+      ])
+    };
+
+    const telegram: any = {
+      sendMessage: vi.fn().mockResolvedValue({ message_id: 1 }),
+      sendPhoto: vi.fn(),
+      sendVideo: vi.fn(),
+      sendDocument: vi.fn(),
+      sendVoice: vi.fn(),
+      sendVideoNote: vi.fn(),
+      sendAudio: vi.fn()
+    };
+
+    const cabinet = {
+      resolvePartnerRegisterActionUrlForUser: vi.fn().mockResolvedValue("https://example.com/register")
+    } as any;
+
+    const service = new BroadcastService(
+      prisma,
+      segments,
+      {} as any,
+      createMockI18n(),
+      {} as any,
+      undefined,
+      cabinet
+    );
+    service.setTelegram(telegram);
+
+    await service.dispatchBroadcast("b2");
+
+    const extra = telegram.sendMessage.mock.calls[0][2];
+    expect(extra?.reply_markup?.inline_keyboard).toEqual([
+      [expect.objectContaining({ text: "Моя регистрация", url: "https://example.com/register" })],
+      [expect.objectContaining({ text: "Мой наставник", url: "https://t.me/mentor_user" })],
+      [expect.objectContaining({ text: "Открыть раздел", callback_data: makeCallbackData("menu", "open", "section-42") })]
+    ]);
+  });
+});

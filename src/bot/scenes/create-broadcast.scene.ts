@@ -11,6 +11,7 @@ import {
   SCENE_CANCEL_DATA
 } from "../keyboards";
 import { makeCallbackData } from "../../common/callback-data";
+import { MESSAGE_SYSTEM_KINDS, type MessageActionButton, type MessageSystemKind } from "../../common/message-buttons";
 import { env } from "../../config/env";
 import { addDaysToZonedDateParts, getZonedDateParts, isValidTimeZone, zonedTimeToUtcMs } from "../../common/timezone";
 import { logger } from "../../common/logger";
@@ -72,6 +73,17 @@ const parseHm = (raw: string): { hour: number; minute: number } | null => {
   return { hour, minute };
 };
 
+const isValidUrl = (raw: string): boolean => {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("http://") && !trimmed.startsWith("https://")) return false;
+  try {
+    const url = new URL(trimmed);
+    return Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+};
+
 const formatDateLabel = (draft: import("../context").CreateBroadcastDraft) => {
   if (draft.deliveryDateMode === "TODAY") return "Сегодня";
   if (draft.deliveryDateMode === "TOMORROW") return "Завтра";
@@ -130,11 +142,17 @@ const buildAudienceLanguageKeyboard = (locale: string, i18n: BotContext["service
   ]);
 
 type BroadcastDeliveryMode = "single" | "follow_up";
+type BroadcastButtonInputPhase = "system_label" | "section_label" | "url";
 
 const FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "AUDIO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
 const BROADCAST_CONTENT_PROMPT = "Отправьте текст, фото, видео, аудио, документ, голосовое или кружок для рассылки.";
 const BROADCAST_CONTENT_RETRY_PROMPT = "Отправьте текст, фото, видео, аудио, документ, голосовое или кружок заново для рассылки.";
 const BROADCAST_CONTENT_ERROR_PROMPT = "Не получилось распознать контент. Отправьте текст, фото, видео, аудио, документ, голосовое или кружок.";
+const BROADCAST_SYSTEM_TARGETS: { kind: MessageSystemKind; labelRu: string }[] = [
+  { kind: "partner_register", labelRu: "Зарегистрироваться / Стать партнёром" },
+  { kind: "mentor_contact", labelRu: "Связаться с наставником" },
+  { kind: "main_menu", labelRu: "В главное меню" }
+];
 
 const canUseFollowUpDelivery = (content: MessageContent | undefined): boolean =>
   Boolean(content?.mediaType && FOLLOW_UP_MEDIA_TYPES.has(content.mediaType as any));
@@ -145,13 +163,62 @@ const clearPreparedBroadcastState = (
     preparedFollowUpText?: string;
     awaitingFollowUpTextInput?: boolean;
     preparedDeliveryMode?: BroadcastDeliveryMode;
+    preparedButtons?: MessageActionButton[];
+    awaitingButtonInput?: BroadcastButtonInputPhase;
+    pendingSystemKind?: MessageSystemKind;
+    pendingTargetMenuItemId?: string;
+    pendingSectionTitle?: string;
   }
 ) => {
   state.preparedContent = undefined;
   state.preparedFollowUpText = undefined;
   state.awaitingFollowUpTextInput = false;
   state.preparedDeliveryMode = undefined;
+  state.preparedButtons = undefined;
+  state.awaitingButtonInput = undefined;
+  state.pendingSystemKind = undefined;
+  state.pendingTargetMenuItemId = undefined;
+  state.pendingSectionTitle = undefined;
 };
+
+const formatBroadcastButtonDest = (button: MessageActionButton): string => {
+  if (button.type === "url") return button.url;
+  if (button.type === "system") {
+    const target = BROADCAST_SYSTEM_TARGETS.find((item) => item.kind === button.systemKind);
+    return target ? `[${target.labelRu}]` : `[${button.systemKind}]`;
+  }
+  return "[Раздел]";
+};
+
+const formatBroadcastButtonsList = (buttons: MessageActionButton[]): string => {
+  if (buttons.length === 0) return "по умолчанию: связь с наставником + главное меню";
+  return buttons.map((button, index) => `${index + 1}. ${button.label} -> ${formatBroadcastButtonDest(button)}`).join("\n");
+};
+
+const buildBroadcastButtonsTypeKeyboard = (locale: string, i18n: BotContext["services"]["i18n"]) =>
+  Markup.inlineKeyboard([
+    ...BROADCAST_SYSTEM_TARGETS.map((target) => [
+      Markup.button.callback(`🔗 ${target.labelRu}`, makeCallbackData(BROADCAST_PREFIX, "btn_sys", target.kind))
+    ]),
+    [Markup.button.callback("📂 Переход в раздел", makeCallbackData(BROADCAST_PREFIX, "btn_section"))],
+    [Markup.button.callback("📎 Своя ссылка (URL)", makeCallbackData(BROADCAST_PREFIX, "btn_url"))],
+    [Markup.button.callback("⬅️ Назад", makeCallbackData(BROADCAST_PREFIX, "btn_back"))],
+    [Markup.button.callback(i18n.t(locale, "cancel_btn"), SCENE_CANCEL_DATA)],
+    ...buildNavigationRow(i18n, locale, { toMain: true }).map((btn) => [btn])
+  ]);
+
+const buildBroadcastButtonsMenuKeyboard = (
+  locale: string,
+  i18n: BotContext["services"]["i18n"],
+  hasButtons: boolean
+) =>
+  Markup.inlineKeyboard([
+    [Markup.button.callback("➕ Добавить кнопку", makeCallbackData(BROADCAST_PREFIX, "btn_add"))],
+    ...(hasButtons ? [[Markup.button.callback("🗑 Удалить последнюю", makeCallbackData(BROADCAST_PREFIX, "btn_remove"))]] : []),
+    [Markup.button.callback("✅ Готово", makeCallbackData(BROADCAST_PREFIX, "btn_done"))],
+    [Markup.button.callback(i18n.t(locale, "cancel_btn"), SCENE_CANCEL_DATA)],
+    ...buildNavigationRow(i18n, locale, { toMain: true }).map((btn) => [btn])
+  ]);
 
 const buildBroadcastContentModeKeyboard = (locale: string, i18n: BotContext["services"]["i18n"]) =>
   Markup.inlineKeyboard([
@@ -438,6 +505,11 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         preparedFollowUpText?: string;
         awaitingFollowUpTextInput?: boolean;
         preparedDeliveryMode?: BroadcastDeliveryMode;
+        preparedButtons?: MessageActionButton[];
+        awaitingButtonInput?: BroadcastButtonInputPhase;
+        pendingSystemKind?: MessageSystemKind;
+        pendingTargetMenuItemId?: string;
+        pendingSectionTitle?: string;
       };
 
       if (mode === "scheduled") {
@@ -465,14 +537,25 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
 
       // instant mode: confirm-before-send
       const confirmSend = makeCallbackData(BROADCAST_PREFIX, "confirm", "send");
+      const confirmButtons = makeCallbackData(BROADCAST_PREFIX, "confirm", "buttons");
       const confirmEdit = makeCallbackData(BROADCAST_PREFIX, "confirm", "edit");
       const confirmCancel = makeCallbackData(BROADCAST_PREFIX, "confirm", "cancel");
+      const showButtonsEditor = async (preface?: string) => {
+        const buttons = state.preparedButtons ?? [];
+        const parts = [preface, `Кнопки рассылки:\n${formatBroadcastButtonsList(buttons)}`].filter(Boolean);
+        await ctx.reply(
+          parts.join("\n\n"),
+          buildBroadcastButtonsMenuKeyboard(locale, ctx.services.i18n, buttons.length > 0)
+        );
+      };
       const showPreparedConfirmation = async () => {
         const formatLabel = formatBroadcastDeliveryModeLabel(state.preparedContent, state.preparedFollowUpText);
+        const buttonsLabel = formatBroadcastButtonsList(state.preparedButtons ?? []);
         await ctx.reply(
-          `Готово. Подтвердите отправку рассылки:\nФормат: ${formatLabel}`,
+          `Готово. Подтвердите отправку рассылки:\nФормат: ${formatLabel}\nКнопки:\n${buttonsLabel}`,
           Markup.inlineKeyboard([
             [Markup.button.callback("✅ Отправить", confirmSend)],
+            [Markup.button.callback("🔗 Кнопки", confirmButtons)],
             [Markup.button.callback("✏️ Редактировать", confirmEdit)],
             [Markup.button.callback("❌ Отменить", confirmCancel)]
           ])
@@ -536,6 +619,95 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           }
         }
 
+        if (parts[0] === BROADCAST_PREFIX && parts[1].startsWith("btn")) {
+          try {
+            await ctx.answerCbQuery();
+          } catch {
+            // ignore
+          }
+          state.preparedButtons ??= [];
+
+          if (parts[1] === "btn_add") {
+            await ctx.reply(
+              "Выберите куда ведёт кнопка. Системные кнопки сохраняют персональную логику для каждого получателя.",
+              buildBroadcastButtonsTypeKeyboard(locale, ctx.services.i18n)
+            );
+            return;
+          }
+
+          if (parts[1] === "btn_back") {
+            state.awaitingButtonInput = undefined;
+            await showButtonsEditor();
+            return;
+          }
+
+          if (parts[1] === "btn_remove") {
+            state.preparedButtons.pop();
+            await showButtonsEditor("🗑 Последняя кнопка удалена.");
+            return;
+          }
+
+          if (parts[1] === "btn_done") {
+            state.awaitingButtonInput = undefined;
+            await showPreparedConfirmation();
+            return;
+          }
+
+          if (parts[1] === "btn_sys" && parts[2] && MESSAGE_SYSTEM_KINDS.includes(parts[2] as MessageSystemKind)) {
+            state.pendingSystemKind = parts[2] as MessageSystemKind;
+            state.awaitingButtonInput = "system_label";
+            const defLabel = BROADCAST_SYSTEM_TARGETS.find((item) => item.kind === state.pendingSystemKind)?.labelRu ?? state.pendingSystemKind;
+            await ctx.reply(`Введите текст кнопки или "." для "${defLabel}":`, buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+
+          if (parts[1] === "btn_section") {
+            const pickerLanguage = draft.languageCode === CONTENT_LANG_ALL ? LANG_CODES[0] : (draft.languageCode ?? locale);
+            const sections = await ctx.services.menu.getContentSectionsForPicker(pickerLanguage);
+            if (sections.length === 0) {
+              await ctx.reply("Нет доступных разделов. Сначала создайте разделы в меню.", buildCancelKeyboard(ctx.services.i18n, locale));
+              await showButtonsEditor();
+              return;
+            }
+            await ctx.reply(
+              "Выберите раздел, в который ведёт кнопка:",
+              Markup.inlineKeyboard([
+                ...sections.map((section: { id: string; title: string }) => [
+                  Markup.button.callback(`📂 ${section.title}`, makeCallbackData(BROADCAST_PREFIX, "btn_sec_pick", section.id))
+                ]),
+                [Markup.button.callback("⬅️ Назад", makeCallbackData(BROADCAST_PREFIX, "btn_back"))],
+                [Markup.button.callback(ctx.services.i18n.t(locale, "cancel_btn"), SCENE_CANCEL_DATA)],
+                ...buildNavigationRow(ctx.services.i18n, locale, { toMain: true }).map((btn) => [btn])
+              ])
+            );
+            return;
+          }
+
+          if (parts[1] === "btn_sec_pick" && parts[2]) {
+            const pickerLanguage = draft.languageCode === CONTENT_LANG_ALL ? LANG_CODES[0] : (draft.languageCode ?? locale);
+            const sections = await ctx.services.menu.getContentSectionsForPicker(pickerLanguage);
+            const section = sections.find((item: { id: string; title: string }) => item.id === parts[2]);
+            if (!section) {
+              await showButtonsEditor();
+              return;
+            }
+            state.pendingTargetMenuItemId = section.id;
+            state.pendingSectionTitle = section.title;
+            state.awaitingButtonInput = "section_label";
+            await ctx.reply(`Введите текст кнопки или "." для "${section.title}":`, buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+
+          if (parts[1] === "btn_url") {
+            state.awaitingButtonInput = "url";
+            await ctx.reply(
+              "Введите текст кнопки и URL через | (например: Стать партнёром | https://example.com):",
+              buildCancelKeyboard(ctx.services.i18n, locale)
+            );
+            return;
+          }
+        }
+
         if (data === confirmEdit) {
           try {
             await ctx.answerCbQuery();
@@ -547,6 +719,16 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
             BROADCAST_CONTENT_RETRY_PROMPT,
             buildCancelKeyboard(ctx.services.i18n, locale)
           );
+          return;
+        }
+
+        if (data === confirmButtons) {
+          try {
+            await ctx.answerCbQuery();
+          } catch {
+            // ignore
+          }
+          await showButtonsEditor();
           return;
         }
 
@@ -589,7 +771,8 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
             followUpText: state.preparedFollowUpText ?? "",
             mediaType: content.mediaType,
             mediaFileId: content.mediaFileId,
-            externalUrl: content.externalUrl
+            externalUrl: content.externalUrl,
+            buttons: state.preparedButtons ?? []
           });
 
           const chatId = ctx.chat?.id ?? ctx.currentUser?.telegramUserId;
@@ -651,6 +834,57 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         }
       }
 
+      if (state.awaitingButtonInput) {
+        const rawInput = readTextMessage(ctx).trim();
+        state.preparedButtons ??= [];
+
+        if (state.awaitingButtonInput === "system_label" && state.pendingSystemKind) {
+          const defaultLabel = BROADCAST_SYSTEM_TARGETS.find((item) => item.kind === state.pendingSystemKind)?.labelRu ?? state.pendingSystemKind;
+          const label = rawInput === "." || !rawInput ? defaultLabel : rawInput;
+          if (label.length > 64) {
+            await ctx.reply("Текст кнопки: до 64 символов.", buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+          state.preparedButtons.push({ type: "system", label, systemKind: state.pendingSystemKind });
+          state.awaitingButtonInput = undefined;
+          state.pendingSystemKind = undefined;
+          await showButtonsEditor("✅ Системная кнопка добавлена.");
+          return;
+        }
+
+        if (state.awaitingButtonInput === "section_label" && state.pendingTargetMenuItemId) {
+          const defaultLabel = state.pendingSectionTitle ?? "Раздел";
+          const label = rawInput === "." || !rawInput ? defaultLabel : rawInput;
+          if (label.length > 64) {
+            await ctx.reply("Текст кнопки: до 64 символов.", buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+          state.preparedButtons.push({ type: "section", label, targetMenuItemId: state.pendingTargetMenuItemId });
+          state.awaitingButtonInput = undefined;
+          state.pendingTargetMenuItemId = undefined;
+          state.pendingSectionTitle = undefined;
+          await showButtonsEditor("✅ Кнопка перехода в раздел добавлена.");
+          return;
+        }
+
+        if (state.awaitingButtonInput === "url") {
+          const separatorIndex = rawInput.indexOf("|");
+          const label = separatorIndex >= 0 ? rawInput.slice(0, separatorIndex).trim() : "";
+          const url = separatorIndex >= 0 ? rawInput.slice(separatorIndex + 1).trim() : "";
+          if (!label || label.length > 64 || !isValidUrl(url)) {
+            await ctx.reply(
+              "Введите данные в формате: Текст кнопки | https://example.com",
+              buildCancelKeyboard(ctx.services.i18n, locale)
+            );
+            return;
+          }
+          state.preparedButtons.push({ type: "url", label, url });
+          state.awaitingButtonInput = undefined;
+          await showButtonsEditor("✅ Кнопка со ссылкой добавлена.");
+          return;
+        }
+      }
+
       if (state.awaitingFollowUpTextInput) {
         const followUpContent = extractMessageContent(ctx);
         const followUpText = extractFormattedContentText(followUpContent as MessageContent & { entities?: any[] }).trim();
@@ -674,6 +908,11 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       state.preparedFollowUpText = undefined;
       state.awaitingFollowUpTextInput = false;
       state.preparedDeliveryMode = "single";
+      state.preparedButtons = [];
+      state.awaitingButtonInput = undefined;
+      state.pendingSystemKind = undefined;
+      state.pendingTargetMenuItemId = undefined;
+      state.pendingSectionTitle = undefined;
 
       if (canUseFollowUpDelivery(content)) {
         await ctx.reply(
@@ -693,6 +932,11 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         preparedFollowUpText?: string;
         awaitingFollowUpTextInput?: boolean;
         preparedDeliveryMode?: BroadcastDeliveryMode;
+        preparedButtons?: MessageActionButton[];
+        awaitingButtonInput?: BroadcastButtonInputPhase;
+        pendingSystemKind?: MessageSystemKind;
+        pendingTargetMenuItemId?: string;
+        pendingSectionTitle?: string;
         scheduledPrepared?: boolean;
         editBroadcastId?: string;
         editScheduleToken?: string;
@@ -700,23 +944,35 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const locale = ctx.services.i18n.resolveLanguage(ctx.currentUser?.selectedLanguage);
 
       const confirmSend = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "send");
+      const confirmButtons = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "buttons");
       const confirmEdit = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "edit");
       const confirmCancel = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "cancel");
+      const showButtonsEditor = async (preface?: string) => {
+        const buttons = state.preparedButtons ?? [];
+        const parts = [preface, `Кнопки рассылки:\n${formatBroadcastButtonsList(buttons)}`].filter(Boolean);
+        await ctx.reply(
+          parts.join("\n\n"),
+          buildBroadcastButtonsMenuKeyboard(locale, ctx.services.i18n, buttons.length > 0)
+        );
+      };
       const showScheduledConfirmation = async () => {
         const dateLabel = formatDateLabel(draft);
         const timeLabel = draft.deliveryTime ?? "—";
         const formatLabel = formatBroadcastDeliveryModeLabel(state.preparedContent, state.preparedFollowUpText);
+        const buttonsLabel = formatBroadcastButtonsList(state.preparedButtons ?? []);
 
         await ctx.reply(
           `Подтвердите отложенную рассылку:\n` +
             `Аудитория: ${formatAudienceLabel(draft)}\n` +
             `Язык контента: ${formatContentLanguageLabel(draft)}\n` +
             `Формат: ${formatLabel}\n` +
+            `Кнопки:\n${buttonsLabel}\n` +
             `Дата: ${dateLabel}\n` +
             `Время: ${timeLabel}\n\n` +
             `Важно: отправка будет выполнена в это локальное время каждого пользователя.`,
           Markup.inlineKeyboard([
             [Markup.button.callback("✅ Подтвердить", confirmSend)],
+            [Markup.button.callback("🔗 Кнопки", confirmButtons)],
             [Markup.button.callback("✏️ Изменить", confirmEdit)],
             [Markup.button.callback("❌ Отменить", confirmCancel)]
           ])
@@ -780,6 +1036,95 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           }
         }
 
+        if (parts[0] === BROADCAST_PREFIX && parts[1].startsWith("btn")) {
+          try {
+            await ctx.answerCbQuery();
+          } catch {
+            // ignore
+          }
+          state.preparedButtons ??= [];
+
+          if (parts[1] === "btn_add") {
+            await ctx.reply(
+              "Выберите куда ведёт кнопка. Системные кнопки сохраняют персональную логику для каждого получателя.",
+              buildBroadcastButtonsTypeKeyboard(locale, ctx.services.i18n)
+            );
+            return;
+          }
+
+          if (parts[1] === "btn_back") {
+            state.awaitingButtonInput = undefined;
+            await showButtonsEditor();
+            return;
+          }
+
+          if (parts[1] === "btn_remove") {
+            state.preparedButtons.pop();
+            await showButtonsEditor("🗑 Последняя кнопка удалена.");
+            return;
+          }
+
+          if (parts[1] === "btn_done") {
+            state.awaitingButtonInput = undefined;
+            await showScheduledConfirmation();
+            return;
+          }
+
+          if (parts[1] === "btn_sys" && parts[2] && MESSAGE_SYSTEM_KINDS.includes(parts[2] as MessageSystemKind)) {
+            state.pendingSystemKind = parts[2] as MessageSystemKind;
+            state.awaitingButtonInput = "system_label";
+            const defLabel = BROADCAST_SYSTEM_TARGETS.find((item) => item.kind === state.pendingSystemKind)?.labelRu ?? state.pendingSystemKind;
+            await ctx.reply(`Введите текст кнопки или "." для "${defLabel}":`, buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+
+          if (parts[1] === "btn_section") {
+            const pickerLanguage = draft.languageCode === CONTENT_LANG_ALL ? LANG_CODES[0] : (draft.languageCode ?? locale);
+            const sections = await ctx.services.menu.getContentSectionsForPicker(pickerLanguage);
+            if (sections.length === 0) {
+              await ctx.reply("Нет доступных разделов. Сначала создайте разделы в меню.", buildCancelKeyboard(ctx.services.i18n, locale));
+              await showButtonsEditor();
+              return;
+            }
+            await ctx.reply(
+              "Выберите раздел, в который ведёт кнопка:",
+              Markup.inlineKeyboard([
+                ...sections.map((section: { id: string; title: string }) => [
+                  Markup.button.callback(`📂 ${section.title}`, makeCallbackData(BROADCAST_PREFIX, "btn_sec_pick", section.id))
+                ]),
+                [Markup.button.callback("⬅️ Назад", makeCallbackData(BROADCAST_PREFIX, "btn_back"))],
+                [Markup.button.callback(ctx.services.i18n.t(locale, "cancel_btn"), SCENE_CANCEL_DATA)],
+                ...buildNavigationRow(ctx.services.i18n, locale, { toMain: true }).map((btn) => [btn])
+              ])
+            );
+            return;
+          }
+
+          if (parts[1] === "btn_sec_pick" && parts[2]) {
+            const pickerLanguage = draft.languageCode === CONTENT_LANG_ALL ? LANG_CODES[0] : (draft.languageCode ?? locale);
+            const sections = await ctx.services.menu.getContentSectionsForPicker(pickerLanguage);
+            const section = sections.find((item: { id: string; title: string }) => item.id === parts[2]);
+            if (!section) {
+              await showButtonsEditor();
+              return;
+            }
+            state.pendingTargetMenuItemId = section.id;
+            state.pendingSectionTitle = section.title;
+            state.awaitingButtonInput = "section_label";
+            await ctx.reply(`Введите текст кнопки или "." для "${section.title}":`, buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+
+          if (parts[1] === "btn_url") {
+            state.awaitingButtonInput = "url";
+            await ctx.reply(
+              "Введите текст кнопки и URL через | (например: Стать партнёром | https://example.com):",
+              buildCancelKeyboard(ctx.services.i18n, locale)
+            );
+            return;
+          }
+        }
+
         if (data === confirmEdit) {
           try {
             await ctx.answerCbQuery();
@@ -791,6 +1136,16 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
             BROADCAST_CONTENT_RETRY_PROMPT,
             buildCancelKeyboard(ctx.services.i18n, locale)
           );
+          return;
+        }
+
+        if (data === confirmButtons) {
+          try {
+            await ctx.answerCbQuery();
+          } catch {
+            // ignore
+          }
+          await showButtonsEditor();
           return;
         }
 
@@ -925,6 +1280,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
               mediaType: content.mediaType,
               mediaFileId: content.mediaFileId,
               externalUrl: content.externalUrl,
+              buttons: state.preparedButtons ?? [],
               sendAt: earliestRunAt
             });
 
@@ -975,6 +1331,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
               mediaType: content.mediaType,
               mediaFileId: content.mediaFileId,
               externalUrl: content.externalUrl,
+              buttons: state.preparedButtons ?? [],
               sendAt: earliestRunAt,
               skipScheduler: true
             });
@@ -1019,6 +1376,57 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         }
       }
 
+      if (state.awaitingButtonInput) {
+        const rawInput = readTextMessage(ctx).trim();
+        state.preparedButtons ??= [];
+
+        if (state.awaitingButtonInput === "system_label" && state.pendingSystemKind) {
+          const defaultLabel = BROADCAST_SYSTEM_TARGETS.find((item) => item.kind === state.pendingSystemKind)?.labelRu ?? state.pendingSystemKind;
+          const label = rawInput === "." || !rawInput ? defaultLabel : rawInput;
+          if (label.length > 64) {
+            await ctx.reply("Текст кнопки: до 64 символов.", buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+          state.preparedButtons.push({ type: "system", label, systemKind: state.pendingSystemKind });
+          state.awaitingButtonInput = undefined;
+          state.pendingSystemKind = undefined;
+          await showButtonsEditor("✅ Системная кнопка добавлена.");
+          return;
+        }
+
+        if (state.awaitingButtonInput === "section_label" && state.pendingTargetMenuItemId) {
+          const defaultLabel = state.pendingSectionTitle ?? "Раздел";
+          const label = rawInput === "." || !rawInput ? defaultLabel : rawInput;
+          if (label.length > 64) {
+            await ctx.reply("Текст кнопки: до 64 символов.", buildCancelKeyboard(ctx.services.i18n, locale));
+            return;
+          }
+          state.preparedButtons.push({ type: "section", label, targetMenuItemId: state.pendingTargetMenuItemId });
+          state.awaitingButtonInput = undefined;
+          state.pendingTargetMenuItemId = undefined;
+          state.pendingSectionTitle = undefined;
+          await showButtonsEditor("✅ Кнопка перехода в раздел добавлена.");
+          return;
+        }
+
+        if (state.awaitingButtonInput === "url") {
+          const separatorIndex = rawInput.indexOf("|");
+          const label = separatorIndex >= 0 ? rawInput.slice(0, separatorIndex).trim() : "";
+          const url = separatorIndex >= 0 ? rawInput.slice(separatorIndex + 1).trim() : "";
+          if (!label || label.length > 64 || !isValidUrl(url)) {
+            await ctx.reply(
+              "Введите данные в формате: Текст кнопки | https://example.com",
+              buildCancelKeyboard(ctx.services.i18n, locale)
+            );
+            return;
+          }
+          state.preparedButtons.push({ type: "url", label, url });
+          state.awaitingButtonInput = undefined;
+          await showButtonsEditor("✅ Кнопка со ссылкой добавлена.");
+          return;
+        }
+      }
+
       if (state.awaitingFollowUpTextInput) {
         const followUpContent = extractMessageContent(ctx);
         const followUpText = extractFormattedContentText(followUpContent as MessageContent & { entities?: any[] }).trim();
@@ -1042,6 +1450,11 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       state.preparedFollowUpText = undefined;
       state.awaitingFollowUpTextInput = false;
       state.preparedDeliveryMode = "single";
+      state.preparedButtons = [];
+      state.awaitingButtonInput = undefined;
+      state.pendingSystemKind = undefined;
+      state.pendingTargetMenuItemId = undefined;
+      state.pendingSectionTitle = undefined;
 
       if (canUseFollowUpDelivery(content)) {
         await ctx.reply(

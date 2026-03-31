@@ -231,6 +231,40 @@ describe("sendRichMessage formatting", () => {
     ]);
   });
 
+  it("keeps buttons only under the lower text message when long media text is moved to follow-up", async () => {
+    const calls: any[] = [];
+    const telegram: any = {
+      sendAudio: async (chatId: any, fileId: any, extra: any) => {
+        calls.push(["sendAudio", chatId, fileId, extra]);
+        return { message_id: 1 };
+      },
+      sendMessage: async (chatId: any, text: any, extra: any) => {
+        calls.push(["sendMessage", chatId, text, extra]);
+        return { message_id: 2 };
+      }
+    };
+
+    const longText = "Очень длинный текст ".repeat(80).trim();
+
+    await sendRichMessage(
+      telegram,
+      780,
+      {
+        mediaType: MediaType.AUDIO,
+        mediaFileId: "audio-overflow",
+        text: longText
+      },
+      {
+        reply_markup: { inline_keyboard: [[{ text: "CTA", callback_data: "cta" }]] }
+      }
+    );
+
+    expect(calls[0]).toEqual(["sendAudio", 780, "audio-overflow", { caption: undefined }]);
+    expect(calls[1][0]).toBe("sendMessage");
+    expect(calls[1][2]).toBe(longText);
+    expect(calls[1][3].reply_markup).toEqual({ inline_keyboard: [[{ text: "CTA", callback_data: "cta" }]] });
+  });
+
   it("preserves legacy hidden video note behavior and keeps reply_markup only on the second message", async () => {
     const calls: any[] = [];
     const telegram: any = {

@@ -69,6 +69,15 @@ export interface RichMessage {
   resolvePlaceholders?: boolean;
 }
 
+const TELEGRAM_CAPTION_LIMIT = 1024;
+const CAPTION_MEDIA_TYPES = new Set<MediaType>([
+  MediaType.PHOTO,
+  MediaType.VIDEO,
+  MediaType.AUDIO,
+  MediaType.DOCUMENT,
+  MediaType.VOICE
+]);
+
 const sendSingleRichMessage = async (
   telegram: Telegram,
   chatId: string | number | bigint,
@@ -77,7 +86,6 @@ const sendSingleRichMessage = async (
 ): Promise<Message> => {
   const normalizedChatId = typeof chatId === "bigint" ? Number(chatId) : chatId;
   const rawText = message.text?.trim() || "";
-  const CAPTION_LIMIT = 1024;
   const looksLikeHtml = /<\/?(b|strong|i|em|u|s|strike|del|code|pre|a|blockquote|tg-spoiler|tg-emoji)\b/i.test(rawText);
   const { text, entities } = looksLikeHtml ? { text: rawText, entities: [] } : renderBoldMarkers(rawText);
   const mergedExtra: Record<string, unknown> = { ...(extra as Record<string, unknown>) };
@@ -93,8 +101,8 @@ const sendSingleRichMessage = async (
     switch (message.mediaType) {
       case MediaType.PHOTO:
         if (message.mediaFileId) {
-          // If text can't fit into caption, prefer single text message over split media+overflow.
-          if (text.length > CAPTION_LIMIT) {
+          // Internal safeguard if caption overflow preprocessing was skipped upstream.
+          if (text.length > TELEGRAM_CAPTION_LIMIT) {
             return telegram.sendMessage(normalizedChatId, text || message.externalUrl || "Сообщение без контента", {
               ...(mergedExtra as object),
               ...(looksLikeHtml ? {} : { entities })
@@ -111,7 +119,7 @@ const sendSingleRichMessage = async (
         break;
       case MediaType.VIDEO:
         if (message.mediaFileId) {
-          if (text.length > CAPTION_LIMIT) {
+          if (text.length > TELEGRAM_CAPTION_LIMIT) {
             return telegram.sendMessage(normalizedChatId, text || message.externalUrl || "Сообщение без контента", {
               ...(mergedExtra as object),
               ...(looksLikeHtml ? {} : { entities })
@@ -128,7 +136,7 @@ const sendSingleRichMessage = async (
         break;
       case MediaType.AUDIO:
         if (message.mediaFileId) {
-          if (text.length > CAPTION_LIMIT) {
+          if (text.length > TELEGRAM_CAPTION_LIMIT) {
             return telegram.sendMessage(normalizedChatId, text || message.externalUrl || "Сообщение без контента", {
               ...(mergedExtra as object),
               ...(looksLikeHtml ? {} : { entities })
@@ -145,7 +153,7 @@ const sendSingleRichMessage = async (
         break;
       case MediaType.DOCUMENT:
         if (message.mediaFileId) {
-          if (text.length > CAPTION_LIMIT) {
+          if (text.length > TELEGRAM_CAPTION_LIMIT) {
             return telegram.sendMessage(normalizedChatId, text || message.externalUrl || "Сообщение без контента", {
               ...(mergedExtra as object),
               ...(looksLikeHtml ? {} : { entities })
@@ -162,7 +170,7 @@ const sendSingleRichMessage = async (
         break;
       case MediaType.VOICE:
         if (message.mediaFileId) {
-          if (text.length > CAPTION_LIMIT) {
+          if (text.length > TELEGRAM_CAPTION_LIMIT) {
             return telegram.sendMessage(normalizedChatId, text || message.externalUrl || "Сообщение без контента", {
               ...(mergedExtra as object),
               ...(looksLikeHtml ? {} : { entities })
@@ -244,21 +252,30 @@ export const sendRichMessage = async (
   message: RichMessage,
   extra: object = {}
 ): Promise<Message> => {
+  const primaryText = message.text?.trim() ?? "";
   const explicitFollowUpText = message.followUpText?.trim() ?? "";
+  const shouldMovePrimaryTextToFollowUp =
+    Boolean(message.mediaType && CAPTION_MEDIA_TYPES.has(message.mediaType) && primaryText.length > TELEGRAM_CAPTION_LIMIT);
+  const normalizedFollowUpText = shouldMovePrimaryTextToFollowUp
+    ? [primaryText, explicitFollowUpText].filter(Boolean).join("\n\n")
+    : explicitFollowUpText;
   const legacyVideoNoteFollowUpText =
-    message.mediaType === MediaType.VIDEO_NOTE && !explicitFollowUpText
-      ? message.text?.trim() ?? ""
+    message.mediaType === MediaType.VIDEO_NOTE && !normalizedFollowUpText
+      ? primaryText
       : "";
-  const followUpText = explicitFollowUpText || legacyVideoNoteFollowUpText;
+  const followUpText = normalizedFollowUpText || legacyVideoNoteFollowUpText;
   const finalExtra = extra;
   const nonFinalExtra = stripReplyMarkup(extra);
+  const primaryMessagePayload = shouldMovePrimaryTextToFollowUp
+    ? { ...message, text: undefined, followUpText: undefined }
+    : message;
 
   if (message.mediaType === MediaType.VIDEO_NOTE) {
     const primaryMessage = await sendSingleRichMessage(
       telegram,
       chatId,
       {
-        ...message,
+        ...primaryMessagePayload,
         text: undefined,
         followUpText: undefined
       },
@@ -283,12 +300,12 @@ export const sendRichMessage = async (
     return primaryMessage;
   }
 
-  if (explicitFollowUpText) {
+  if (followUpText) {
     const primaryMessage = await sendSingleRichMessage(
       telegram,
       chatId,
       {
-        ...message,
+        ...primaryMessagePayload,
         followUpText: undefined
       },
       nonFinalExtra
@@ -298,7 +315,7 @@ export const sendRichMessage = async (
       await sendSingleRichMessage(
         telegram,
         chatId,
-        { text: explicitFollowUpText },
+        { text: followUpText },
         finalExtra
       );
     } catch (error) {
@@ -310,5 +327,5 @@ export const sendRichMessage = async (
     return primaryMessage;
   }
 
-  return sendSingleRichMessage(telegram, chatId, message, extra);
+  return sendSingleRichMessage(telegram, chatId, primaryMessagePayload, extra);
 };

@@ -2,16 +2,20 @@ import type { AudienceType, Broadcast, BroadcastStatus, MediaType, PrismaClient,
 import { Markup, type Telegram } from "telegraf";
 
 import { toJsonValue } from "../../common/json";
+import { buildInlineButtonsReplyMarkup, type MessageActionButton } from "../../common/message-buttons";
 import { sendRichMessage } from "../../common/media";
 import { renderPageContent } from "../../common/page-content-render";
 import { makeCallbackData } from "../../common/callback-data";
 import type { AuditService } from "../audit/audit.service";
+import type { CabinetService } from "../cabinet/cabinet.service";
 import type { I18nService } from "../i18n/i18n.service";
 import type { SchedulerService } from "../jobs/scheduler.service";
 import type { SegmentService } from "../segmentation/segment.service";
 import { NAV_ROOT_DATA } from "../../bot/keyboards";
 import { logger } from "../../common/logger";
 import { isValidTimeZone } from "../../common/timezone";
+
+export type BroadcastButton = MessageActionButton;
 
 export interface BroadcastInput {
   actorUserId: string;
@@ -28,6 +32,7 @@ export interface BroadcastInput {
   mediaType?: MediaType;
   mediaFileId?: string | null;
   externalUrl?: string | null;
+  buttons?: BroadcastButton[];
   sendAt?: Date | null;
   skipScheduler?: boolean;
 }
@@ -76,6 +81,7 @@ export interface ScheduledBroadcastEditInput {
   mediaType?: MediaType;
   mediaFileId?: string | null;
   externalUrl?: string | null;
+  buttons?: BroadcastButton[];
   sendAt: Date;
 }
 
@@ -88,7 +94,8 @@ export class BroadcastService {
     private readonly scheduler: SchedulerService,
     private readonly i18n: I18nService,
     private readonly audit: AuditService,
-    private readonly botInstanceId?: string
+    private readonly botInstanceId?: string,
+    private readonly cabinet?: CabinetService
   ) {}
 
   public setTelegram(telegram: Telegram): void {
@@ -114,7 +121,8 @@ export class BroadcastService {
             followUpText: input.followUpText ?? "",
             mediaType: input.mediaType ?? "NONE",
             mediaFileId: input.mediaFileId ?? undefined,
-            externalUrl: input.externalUrl ?? undefined
+            externalUrl: input.externalUrl ?? undefined,
+            buttonsJson: input.buttons && input.buttons.length > 0 ? (input.buttons as object) : undefined
           }))
         }
       }
@@ -265,7 +273,8 @@ export class BroadcastService {
         followUpText: input.followUpText ?? "",
         mediaType: input.mediaType ?? "NONE",
         mediaFileId: input.mediaFileId ?? undefined,
-        externalUrl: input.externalUrl ?? undefined
+        externalUrl: input.externalUrl ?? undefined,
+        buttonsJson: input.buttons && input.buttons.length > 0 ? (input.buttons as object) : undefined
       }))
     });
   }
@@ -499,7 +508,15 @@ export class BroadcastService {
         this.i18n.pickLocalized(broadcast.localizations, recipient.selectedLanguage) ??
         broadcast.localizations[0];
 
+      const customButtons = await buildInlineButtonsReplyMarkup(
+        (localization as any)?.buttonsJson,
+        recipient as User,
+        this.prisma,
+        this.cabinet
+      );
+
       // Always attach recipient system buttons to broadcast messages (UX requirement).
+      // If a broadcast has custom buttons configured, use them instead of the default fallback.
       // If mentor username exists, use URL deep link to open chat directly.
       const mentorUsername = recipient.mentorUserId ? mentorUsernameById.get(recipient.mentorUserId) ?? null : null;
       const mentorBtn = mentorUsername
@@ -521,6 +538,7 @@ export class BroadcastService {
           )
         ]
       ]);
+      const replyMarkup = "reply_markup" in customButtons ? customButtons : systemButtons;
 
       const recipientRow = await this.prisma.broadcastRecipient.upsert({
         where: {
@@ -585,7 +603,7 @@ export class BroadcastService {
             mediaFileId: localization.mediaFileId,
             externalUrl: localization.externalUrl
           },
-          systemButtons
+          replyMarkup
         );
 
         await this.prisma.broadcastRecipient.update({

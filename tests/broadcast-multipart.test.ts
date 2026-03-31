@@ -59,7 +59,8 @@ describe("Broadcast multipart delivery", () => {
       text: "",
       followUpText: "Отдельный текст",
       mediaType: MediaType.VIDEO,
-      mediaFileId: "video-1"
+      mediaFileId: "video-1",
+      buttons: [{ type: "system", label: "Моя регистрация", systemKind: "partner_register" }]
     });
 
     expect(prisma.broadcast.create).toHaveBeenCalledWith({
@@ -70,7 +71,8 @@ describe("Broadcast multipart delivery", () => {
               text: "",
               followUpText: "Отдельный текст",
               mediaType: MediaType.VIDEO,
-              mediaFileId: "video-1"
+              mediaFileId: "video-1",
+              buttonsJson: [{ type: "system", label: "Моя регистрация", systemKind: "partner_register" }]
             })
           ]
         }

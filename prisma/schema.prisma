@@ -991,6 +991,7 @@ model BroadcastLocalization {
   mediaType    MediaType @default(NONE) @map("media_type")
   mediaFileId  String?   @map("media_file_id")
   externalUrl  String?   @map("external_url")
+  buttonsJson  Json?     @map("buttons_json")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
   broadcast    Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
