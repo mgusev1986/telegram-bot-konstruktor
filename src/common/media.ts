@@ -126,6 +126,23 @@ const sendSingleRichMessage = async (
           });
         }
         break;
+      case MediaType.AUDIO:
+        if (message.mediaFileId) {
+          if (text.length > CAPTION_LIMIT) {
+            return telegram.sendMessage(normalizedChatId, text || message.externalUrl || "Сообщение без контента", {
+              ...(mergedExtra as object),
+              ...(looksLikeHtml ? {} : { entities })
+            } as object);
+          }
+          if (text) {
+            if (!looksLikeHtml) mergedExtra.caption_entities = entities;
+          }
+          return telegram.sendAudio(normalizedChatId, message.mediaFileId, {
+            caption: text || undefined,
+            ...(mergedExtra as object)
+          });
+        }
+        break;
       case MediaType.DOCUMENT:
         if (message.mediaFileId) {
           if (text.length > CAPTION_LIMIT) {

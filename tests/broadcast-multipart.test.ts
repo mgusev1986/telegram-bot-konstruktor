@@ -161,6 +161,48 @@ describe("Broadcast multipart delivery", () => {
     expect(calls[1][1].reply_markup).toBeDefined();
   });
 
+  it("sends audio first and follow-up text second for a regular broadcast", async () => {
+    const prisma = buildPrisma({
+      languageCode: "ru",
+      text: "",
+      followUpText: "Текст после аудио",
+      mediaType: MediaType.AUDIO,
+      mediaFileId: "audio-1",
+      externalUrl: null
+    });
+    const segments = {
+      resolveAudience: vi.fn().mockResolvedValue([buildRecipient()])
+    } as any;
+    const calls: any[] = [];
+    const telegram: any = {
+      sendAudio: vi.fn().mockImplementation(async (...args: any[]) => {
+        calls.push(["sendAudio", ...args]);
+        return { message_id: 1 };
+      }),
+      sendMessage: vi.fn().mockImplementation(async (...args: any[]) => {
+        calls.push(["sendMessage", ...args]);
+        return { message_id: 2 };
+      }),
+      sendPhoto: vi.fn(),
+      sendVideo: vi.fn(),
+      sendDocument: vi.fn(),
+      sendVoice: vi.fn(),
+      sendVideoNote: vi.fn()
+    };
+
+    const service = new BroadcastService(prisma, segments, {} as any, createMockI18n(), {} as any);
+    service.setTelegram(telegram);
+
+    const stats = await service.dispatchBroadcast("b1");
+
+    expect(stats.successCount).toBe(1);
+    expect(calls[0][0]).toBe("sendAudio");
+    expect(calls[1][0]).toBe("sendMessage");
+    expect(calls[1][2]).toBe("Текст после аудио");
+    expect(calls[0][3].reply_markup).toBeUndefined();
+    expect(calls[1][3].reply_markup).toBeDefined();
+  });
+
   it("marks the recipient as failed when follow-up text fails after media succeeds", async () => {
     const prisma = buildPrisma({
       languageCode: "ru",

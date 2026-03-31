@@ -107,6 +107,28 @@ describe("sendRichMessage formatting", () => {
     expect(calls[0].reply_markup).toBeDefined();
   });
 
+  it("sends audio with caption as a single Telegram message", async () => {
+    const calls: any[] = [];
+    const telegram: any = {
+      sendAudio: async (_chatId: any, _fileId: any, extra: any) => {
+        calls.push(extra);
+        return { message_id: 1, extra };
+      },
+      sendMessage: async () => ({ message_id: 2 })
+    };
+
+    const sent = await sendRichMessage(
+      telegram,
+      1,
+      { mediaType: MediaType.AUDIO, mediaFileId: "audio-1", text: "Audio caption" },
+      { reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] } }
+    );
+
+    expect(sent.message_id).toBe(1);
+    expect(calls[0].reply_markup).toBeDefined();
+    expect(calls[0].caption).toBe("Audio caption");
+  });
+
   it("sends media first without reply_markup and follow-up text second with reply_markup", async () => {
     const calls: any[] = [];
     const telegram: any = {
@@ -138,6 +160,74 @@ describe("sendRichMessage formatting", () => {
     expect(calls).toEqual([
       ["sendPhoto", 777, "photo-1", { caption: undefined, disable_notification: true }],
       ["sendMessage", 777, "Follow-up text", { disable_notification: true, reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] }, entities: [] }]
+    ]);
+  });
+
+  it("sends audio first without reply_markup and follow-up text second with reply_markup", async () => {
+    const calls: any[] = [];
+    const telegram: any = {
+      sendAudio: async (chatId: any, fileId: any, extra: any) => {
+        calls.push(["sendAudio", chatId, fileId, extra]);
+        return { message_id: 1 };
+      },
+      sendMessage: async (chatId: any, text: any, extra: any) => {
+        calls.push(["sendMessage", chatId, text, extra]);
+        return { message_id: 2 };
+      }
+    };
+
+    await sendRichMessage(
+      telegram,
+      778,
+      {
+        mediaType: MediaType.AUDIO,
+        mediaFileId: "audio-2",
+        text: "",
+        followUpText: "Follow-up after audio"
+      },
+      {
+        disable_notification: true,
+        reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] }
+      }
+    );
+
+    expect(calls).toEqual([
+      ["sendAudio", 778, "audio-2", { caption: undefined, disable_notification: true }],
+      ["sendMessage", 778, "Follow-up after audio", { disable_notification: true, reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] }, entities: [] }]
+    ]);
+  });
+
+  it("sends voice first without reply_markup and follow-up text second with reply_markup", async () => {
+    const calls: any[] = [];
+    const telegram: any = {
+      sendVoice: async (chatId: any, fileId: any, extra: any) => {
+        calls.push(["sendVoice", chatId, fileId, extra]);
+        return { message_id: 1 };
+      },
+      sendMessage: async (chatId: any, text: any, extra: any) => {
+        calls.push(["sendMessage", chatId, text, extra]);
+        return { message_id: 2 };
+      }
+    };
+
+    await sendRichMessage(
+      telegram,
+      779,
+      {
+        mediaType: MediaType.VOICE,
+        mediaFileId: "voice-1",
+        text: "",
+        followUpText: "Follow-up after voice"
+      },
+      {
+        disable_notification: true,
+        reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] }
+      }
+    );
+
+    expect(calls).toEqual([
+      ["sendVoice", 779, "voice-1", { caption: undefined, disable_notification: true }],
+      ["sendMessage", 779, "Follow-up after voice", { disable_notification: true, reply_markup: { inline_keyboard: [[{ text: "A", callback_data: "a" }]] }, entities: [] }]
     ]);
   });
 

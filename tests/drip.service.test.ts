@@ -330,6 +330,83 @@ describe("DripService", () => {
     );
   });
 
+  it("processProgress sends audio first and follow-up text second for a drip step", async () => {
+    const prisma = {
+      userDripProgress: {
+        findUniqueOrThrow: vi.fn().mockResolvedValue({
+          id: "p-audio",
+          status: "ACTIVE",
+          currentStep: 1,
+          user: {
+            telegramUserId: 654321,
+            selectedLanguage: "ru",
+            first_name: "Ivan"
+          },
+          campaign: {
+            steps: [
+              {
+                stepOrder: 1,
+                delayValue: 1,
+                delayUnit: "MINUTES",
+                localizations: [{
+                  languageCode: "ru",
+                  text: "",
+                  followUpText: "Текст после аудио",
+                  mediaType: MediaType.AUDIO,
+                  mediaFileId: "audio-1",
+                  externalUrl: null,
+                  buttonsJson: [{ type: "url", label: "Open", url: "https://example.com" }]
+                }]
+              },
+              {
+                stepOrder: 2,
+                delayValue: 1,
+                delayUnit: "MINUTES",
+                localizations: [{ languageCode: "ru", text: "STEP 2", followUpText: "", mediaType: "NONE", mediaFileId: null, externalUrl: null }]
+              }
+            ]
+          }
+        }),
+        update: vi.fn()
+      }
+    } as any;
+
+    const scheduler = {
+      schedule: vi.fn().mockResolvedValue({ id: "sj-audio" })
+    } as any;
+
+    const i18n = {
+      pickLocalized: vi.fn().mockImplementation((locs: any[]) => locs[0] ?? null)
+    } as any;
+
+    const audit = { log: vi.fn() } as any;
+    const service = new DripService(prisma, scheduler, i18n, audit);
+
+    const calls: any[] = [];
+    const telegram = {
+      sendAudio: vi.fn().mockImplementation(async (_chatId: any, _fileId: any, extra: any) => {
+        calls.push(["sendAudio", extra]);
+        return { message_id: 1 };
+      }),
+      sendMessage: vi.fn().mockImplementation(async (_chatId: any, _text: any, extra: any) => {
+        calls.push(["sendMessage", extra]);
+        return { message_id: 2 };
+      })
+    } as any;
+    service.setTelegram(telegram);
+
+    await service.processProgress("p-audio");
+
+    expect(calls[0][0]).toBe("sendAudio");
+    expect(calls[0][1].reply_markup).toBeUndefined();
+    expect(calls[1][0]).toBe("sendMessage");
+    expect(calls[1][1].reply_markup).toBeDefined();
+    expect(prisma.userDripProgress.update).toHaveBeenCalledWith({
+      where: { id: "p-audio" },
+      data: expect.objectContaining({ currentStep: 2, nextRunAt: expect.any(Date) })
+    });
+  });
+
   it("does not advance drip progress when follow-up text fails after media succeeds", async () => {
     const prisma = {
       userDripProgress: {

@@ -77,6 +77,19 @@ export const extractMessageContent = (ctx: BotContext): MessageContent => {
     return content;
   }
 
+  if ("audio" in msg) {
+    const { text, entities } = getTextAndEntities(msg);
+    const content: MessageContent = {
+      text,
+      mediaType: "AUDIO",
+      mediaFileId: msg.audio.file_id
+    };
+    if (entities?.length) {
+      (content as MessageContent & { entities?: MessageEntity[] }).entities = entities;
+    }
+    return content;
+  }
+
   if ("document" in msg) {
     const { text, entities } = getTextAndEntities(msg);
     const content: MessageContent = {

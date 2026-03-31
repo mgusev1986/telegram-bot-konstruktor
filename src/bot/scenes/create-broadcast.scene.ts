@@ -131,7 +131,10 @@ const buildAudienceLanguageKeyboard = (locale: string, i18n: BotContext["service
 
 type BroadcastDeliveryMode = "single" | "follow_up";
 
-const FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
+const FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "AUDIO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
+const BROADCAST_CONTENT_PROMPT = "Отправьте текст, фото, видео, аудио, документ, голосовое или кружок для рассылки.";
+const BROADCAST_CONTENT_RETRY_PROMPT = "Отправьте текст, фото, видео, аудио, документ, голосовое или кружок заново для рассылки.";
+const BROADCAST_CONTENT_ERROR_PROMPT = "Не получилось распознать контент. Отправьте текст, фото, видео, аудио, документ, голосовое или кружок.";
 
 const canUseFollowUpDelivery = (content: MessageContent | undefined): boolean =>
   Boolean(content?.mediaType && FOLLOW_UP_MEDIA_TYPES.has(content.mediaType as any));
@@ -270,7 +273,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         ) {
           await ctx.answerCbQuery();
           draft.languageCode = parts[2] as any;
-          await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+          await ctx.reply(BROADCAST_CONTENT_PROMPT, buildCancelKeyboard(ctx.services.i18n, locale));
           return ctx.wizard.next();
         }
       }
@@ -414,7 +417,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         ) {
           await ctx.answerCbQuery();
           draft.languageCode = parts[2] as any;
-          await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+          await ctx.reply(BROADCAST_CONTENT_PROMPT, buildCancelKeyboard(ctx.services.i18n, locale));
           return ctx.wizard.next();
         }
       }
@@ -422,7 +425,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const langText = readTextMessage(ctx).trim().toLowerCase();
       if (["ru", "en"].includes(langText)) draft.languageCode = langText;
       if (["all", "all_languages", "все", "всеязыки"].includes(langText)) draft.languageCode = CONTENT_LANG_ALL;
-      await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+      await ctx.reply(BROADCAST_CONTENT_PROMPT, buildCancelKeyboard(ctx.services.i18n, locale));
       return ctx.wizard.next();
     },
     async (ctx) => {
@@ -449,14 +452,14 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           ) {
             await ctx.answerCbQuery();
             draft.languageCode = parts[2] as any;
-            await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+            await ctx.reply(BROADCAST_CONTENT_PROMPT, buildCancelKeyboard(ctx.services.i18n, locale));
             return ctx.wizard.next();
           }
         }
         const langText = readTextMessage(ctx).trim().toLowerCase();
         if (["ru", "en"].includes(langText)) draft.languageCode = langText;
         if (["all", "all_languages", "все", "всеязыки"].includes(langText)) draft.languageCode = CONTENT_LANG_ALL;
-        await ctx.reply("Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.", buildCancelKeyboard(ctx.services.i18n, locale));
+        await ctx.reply(BROADCAST_CONTENT_PROMPT, buildCancelKeyboard(ctx.services.i18n, locale));
         return ctx.wizard.next();
       }
 
@@ -490,7 +493,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           if (parts[2] === "replace") {
             clearPreparedBroadcastState(state);
             await ctx.reply(
-              "Отправьте текст, фото, видео, документ, голосовое или кружок для рассылки.",
+              BROADCAST_CONTENT_PROMPT,
               buildCancelKeyboard(ctx.services.i18n, locale)
             );
             return;
@@ -541,7 +544,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           }
           clearPreparedBroadcastState(state);
           await ctx.reply(
-            "Отправьте текст, фото, видео, документ, голосовое или кружок заново для рассылки.",
+            BROADCAST_CONTENT_RETRY_PROMPT,
             buildCancelKeyboard(ctx.services.i18n, locale)
           );
           return;
@@ -663,7 +666,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
 
       const content = extractMessageContent(ctx);
       if (!content.text && !content.mediaFileId && !content.externalUrl) {
-        await ctx.reply("Не получилось распознать контент. Отправьте текст, фото, видео, документ, голосовое или кружок.", buildCancelKeyboard(ctx.services.i18n, locale));
+        await ctx.reply(BROADCAST_CONTENT_ERROR_PROMPT, buildCancelKeyboard(ctx.services.i18n, locale));
         return;
       }
 
@@ -734,7 +737,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           if (parts[2] === "replace") {
             clearPreparedBroadcastState(state);
             await ctx.reply(
-              "Отправьте текст, фото, видео, документ, голосовое или кружок заново для рассылки.",
+              BROADCAST_CONTENT_RETRY_PROMPT,
               buildCancelKeyboard(ctx.services.i18n, locale)
             );
             return;
@@ -785,7 +788,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
           }
           clearPreparedBroadcastState(state);
           await ctx.reply(
-            "Отправьте текст, фото, видео, документ, голосовое или кружок заново для рассылки.",
+            BROADCAST_CONTENT_RETRY_PROMPT,
             buildCancelKeyboard(ctx.services.i18n, locale)
           );
           return;
@@ -1031,7 +1034,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
 
       const content = extractMessageContent(ctx);
       if (!content.text && !content.mediaFileId && !content.externalUrl) {
-        await ctx.reply("Не получилось распознать контент. Отправьте текст, фото, видео, документ, голосовое или кружок.", buildCancelKeyboard(ctx.services.i18n, locale));
+        await ctx.reply(BROADCAST_CONTENT_ERROR_PROMPT, buildCancelKeyboard(ctx.services.i18n, locale));
         return;
       }
 

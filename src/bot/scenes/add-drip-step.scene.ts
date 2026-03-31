@@ -24,7 +24,8 @@ const kb = (i18n: BotContext["services"]["i18n"], locale: string, rows: { text: 
     ...buildNavigationRow(i18n, locale, { toMain: true }).map((btn) => [btn])
   ]);
 
-const FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
+const FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "AUDIO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
+const DRIP_STEP_CONTENT_PROMPT = "Шаг 2. Отправьте текст, фото, видео, аудио, документ, голосовое или кружок для этого шага:";
 
 const canUseFollowUpDelivery = (content: import("../helpers/message-content").MessageContent | undefined): boolean =>
   Boolean(content?.mediaType && FOLLOW_UP_MEDIA_TYPES.has(content.mediaType as any));
@@ -70,7 +71,7 @@ export const addDripStepScene = new Scenes.WizardScene<any>(
           const unit = parts[3] as "MINUTES" | "HOURS" | "DAYS";
           state.pendingDelay = { value, unit };
           state.phase = "content";
-          await ctx.reply("Шаг 2. Отправьте текст, фото, видео, документ, голосовое или кружок для этого шага:", kb(i18n, locale, []));
+          await ctx.reply(DRIP_STEP_CONTENT_PROMPT, kb(i18n, locale, []));
           return ctx.wizard.next();
         }
         if (parts[1] === "delay_other") {
@@ -86,7 +87,7 @@ export const addDripStepScene = new Scenes.WizardScene<any>(
         const unit = parts[2] as "MINUTES" | "HOURS" | "DAYS";
         if (state.pendingDelay) state.pendingDelay.unit = unit;
         state.phase = "content";
-        await ctx.reply("Шаг 2. Отправьте текст, фото, видео, документ, голосовое или кружок для этого шага:", kb(i18n, locale, []));
+        await ctx.reply(DRIP_STEP_CONTENT_PROMPT, kb(i18n, locale, []));
         return ctx.wizard.next();
       }
     }
@@ -152,14 +153,14 @@ export const addDripStepScene = new Scenes.WizardScene<any>(
         const pendingContent = state.pendingContent as (import("../helpers/message-content").MessageContent & { entities?: any[] }) | undefined;
         if (!pendingContent) {
           state.phase = "content";
-          await ctx.reply("Шаг 2. Отправьте текст, фото, видео, документ, голосовое или кружок для этого шага:", kb(i18n, locale, []));
+          await ctx.reply(DRIP_STEP_CONTENT_PROMPT, kb(i18n, locale, []));
           return;
         }
 
         if (parts[2] === "replace") {
           state.pendingContent = undefined;
           state.phase = "content";
-          await ctx.reply("Шаг 2. Отправьте текст, фото, видео, документ, голосовое или кружок для этого шага:", kb(i18n, locale, []));
+          await ctx.reply(DRIP_STEP_CONTENT_PROMPT, kb(i18n, locale, []));
           return;
         }
 
@@ -223,7 +224,7 @@ export const addDripStepScene = new Scenes.WizardScene<any>(
       const pendingContent = state.pendingContent as (import("../helpers/message-content").MessageContent & { entities?: any[] }) | undefined;
       if (!pendingContent) {
         state.phase = "content";
-        await ctx.reply("Шаг 2. Отправьте текст, фото, видео, документ, голосовое или кружок для этого шага:", kb(i18n, locale, []));
+        await ctx.reply(DRIP_STEP_CONTENT_PROMPT, kb(i18n, locale, []));
         return;
       }
 

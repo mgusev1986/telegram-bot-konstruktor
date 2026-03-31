@@ -113,6 +113,10 @@ export const editPageContentScene = new Scenes.WizardScene<any>(
       await ctx.reply(ctx.services.i18n.t(uiLocale, "send_text_or_media"), buildCancelKeyboard(ctx.services.i18n, uiLocale));
       return;
     }
+    if (content.mediaType === "AUDIO" || content.mediaType === "VOICE" || content.mediaType === "VIDEO_NOTE") {
+      await ctx.reply(ctx.services.i18n.t(uiLocale, "send_text_or_media"), buildCancelKeyboard(ctx.services.i18n, uiLocale));
+      return;
+    }
     if (mode === "text_only" && !content.text) {
       await ctx.reply(ctx.services.i18n.t(uiLocale, "langv_replace_text_only_error"), buildCancelKeyboard(ctx.services.i18n, uiLocale));
       return;

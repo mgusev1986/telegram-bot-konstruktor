@@ -117,6 +117,7 @@ function getIncomingMessageType(ctx: BotContext): string {
   if ("text" in ctx.message) return "text";
   if ("photo" in ctx.message) return "photo";
   if ("video" in ctx.message) return "video";
+  if ("audio" in ctx.message) return "audio";
   if ("document" in ctx.message) return "document";
   if ("voice" in ctx.message) return "voice";
   if ("video_note" in ctx.message) return "video_note";
@@ -280,7 +281,7 @@ export const createSectionScene = new Scenes.WizardScene<any>(
       return;
     }
 
-    const unsupportedMedia = content.mediaType === "VOICE" || content.mediaType === "VIDEO_NOTE";
+    const unsupportedMedia = content.mediaType === "AUDIO" || content.mediaType === "VOICE" || content.mediaType === "VIDEO_NOTE";
     const type = inferContentType(content);
     if (unsupportedMedia || (type !== "TEXT" && type !== "PHOTO" && type !== "VIDEO" && type !== "DOCUMENT")) {
       logger.info(
@@ -406,7 +407,7 @@ export const createSectionScene = new Scenes.WizardScene<any>(
       return;
     }
 
-    const unsupportedMedia = content.mediaType === "VOICE" || content.mediaType === "VIDEO_NOTE";
+    const unsupportedMedia = content.mediaType === "AUDIO" || content.mediaType === "VOICE" || content.mediaType === "VIDEO_NOTE";
     const type = inferContentType(content);
     if (unsupportedMedia || (type !== "TEXT" && type !== "PHOTO" && type !== "VIDEO" && type !== "DOCUMENT")) {
       logger.info({ userId: ctx.currentUser?.id, mediaType: content.mediaType }, "Create section (step 2 fallback): content type not supported");

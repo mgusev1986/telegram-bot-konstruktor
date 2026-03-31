@@ -103,7 +103,7 @@ function textPreview(text: string | undefined, maxLen: number = 40): string {
   return t.length <= maxLen ? t : t.slice(0, maxLen) + "…";
 }
 
-const DRIP_FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
+const DRIP_FOLLOW_UP_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "AUDIO", "DOCUMENT", "VOICE", "VIDEO_NOTE"] as const);
 
 const canUseDripFollowUpDelivery = (content: import("../helpers/message-content").MessageContent | undefined): boolean =>
   Boolean(content?.mediaType && DRIP_FOLLOW_UP_MEDIA_TYPES.has(content.mediaType as any));

@@ -71,6 +71,7 @@ enum MediaType {
   NONE
   PHOTO
   VIDEO
+  AUDIO
   DOCUMENT
   LINK
   VOICE

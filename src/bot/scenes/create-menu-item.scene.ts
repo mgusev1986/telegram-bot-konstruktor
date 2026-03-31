@@ -26,6 +26,7 @@ type SceneState = BotContext["wizard"]["state"] & {
 };
 
 const MENU_TYPES = ["TEXT", "PHOTO", "VIDEO", "DOCUMENT", "LINK", "SUBMENU"] as const;
+const ALLOWED_MENU_CONTENT_MEDIA_TYPES = new Set(["PHOTO", "VIDEO", "DOCUMENT"] as const);
 
 function getLocale(ctx: BotContext): string {
   return ctx.services.i18n.resolveLanguage(ctx.currentUser?.selectedLanguage);
@@ -343,6 +344,19 @@ export const createMenuItemScene = new Scenes.WizardScene<any>(
         const header = formatWizardHeader(i18n, locale, draft, parentTitle, i18n.t(locale, "wizard_step_content"), draft.type === "SUBMENU");
         await ctx.reply(
           header + "\n\nОтправьте текст или медиа (фото, видео, документ) или нажмите Пропустить.",
+          buildWizardStepKeyboard(i18n, locale, {
+            backData: makeCallbackData(CREATE_MENU_PREFIX, "back", "2"),
+            skip: true,
+            fromPageId: state.fromPageId
+          })
+        );
+        return;
+      }
+      if (content.mediaType && !ALLOWED_MENU_CONTENT_MEDIA_TYPES.has(content.mediaType as any)) {
+        const parentTitle = await getParentTitle(ctx.services, locale, draft.parentId ?? null);
+        const header = formatWizardHeader(i18n, locale, draft, parentTitle, i18n.t(locale, "wizard_step_content"), draft.type === "SUBMENU");
+        await ctx.reply(
+          header + "\n\nПоддерживаются только текст, фото, видео и документ.",
           buildWizardStepKeyboard(i18n, locale, {
             backData: makeCallbackData(CREATE_MENU_PREFIX, "back", "2"),
             skip: true,

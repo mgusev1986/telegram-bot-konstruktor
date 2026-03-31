@@ -464,7 +464,7 @@ export const registerBot = (
       languageCode: string;
       updateMode: "full" | "text_only" | "photo_only" | "video_only" | "document_only";
       contentText?: string;
-      mediaType?: "NONE" | "PHOTO" | "VIDEO" | "DOCUMENT" | "LINK" | "VOICE" | "VIDEO_NOTE";
+      mediaType?: "NONE" | "PHOTO" | "VIDEO" | "AUDIO" | "DOCUMENT" | "LINK" | "VOICE" | "VIDEO_NOTE";
       mediaFileId?: string | null;
       externalUrl?: string | null;
       updatedAt: number;
