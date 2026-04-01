@@ -102,6 +102,54 @@ export class BroadcastService {
     this.telegram = telegram;
   }
 
+  public async buildReplyMarkupForRecipient(
+    recipient: User,
+    buttonsJson: unknown,
+    mentorUsernameOverride?: string | null
+  ): Promise<{ reply_markup: object }> {
+    const customButtons = await buildInlineButtonsReplyMarkup(
+      buttonsJson,
+      recipient,
+      this.prisma,
+      this.cabinet
+    );
+    if ("reply_markup" in customButtons) {
+      return customButtons as { reply_markup: object };
+    }
+
+    const mentorUsername =
+      mentorUsernameOverride !== undefined
+        ? mentorUsernameOverride
+        : recipient.mentorUserId
+          ? (
+              await this.prisma.user.findUnique({
+                where: { id: recipient.mentorUserId },
+                select: { username: true }
+              })
+            )?.username ?? null
+          : null;
+
+    const mentorBtn = mentorUsername?.trim()
+      ? Markup.button.url(
+          this.i18n.t(recipient.selectedLanguage, "mentor_contact"),
+          `https://t.me/${mentorUsername.trim()}`
+        )
+      : Markup.button.callback(
+          this.i18n.t(recipient.selectedLanguage, "mentor_contact"),
+          makeCallbackData("mentor", "open")
+        );
+
+    return Markup.inlineKeyboard([
+      [mentorBtn],
+      [
+        Markup.button.callback(
+          this.i18n.t(recipient.selectedLanguage, "to_main_menu"),
+          NAV_ROOT_DATA
+        )
+      ]
+    ]);
+  }
+
   public async createBroadcast(input: BroadcastInput): Promise<Broadcast> {
     const languageCodes = input.languageCodes && input.languageCodes.length > 0 ? input.languageCodes : [input.languageCode];
 
@@ -508,37 +556,12 @@ export class BroadcastService {
         this.i18n.pickLocalized(broadcast.localizations, recipient.selectedLanguage) ??
         broadcast.localizations[0];
 
-      const customButtons = await buildInlineButtonsReplyMarkup(
-        (localization as any)?.buttonsJson,
-        recipient as User,
-        this.prisma,
-        this.cabinet
-      );
-
-      // Always attach recipient system buttons to broadcast messages (UX requirement).
-      // If a broadcast has custom buttons configured, use them instead of the default fallback.
-      // If mentor username exists, use URL deep link to open chat directly.
       const mentorUsername = recipient.mentorUserId ? mentorUsernameById.get(recipient.mentorUserId) ?? null : null;
-      const mentorBtn = mentorUsername
-        ? Markup.button.url(
-            this.i18n.t(recipient.selectedLanguage, "mentor_contact"),
-            `https://t.me/${mentorUsername}`
-          )
-        : Markup.button.callback(
-            this.i18n.t(recipient.selectedLanguage, "mentor_contact"),
-            makeCallbackData("mentor", "open")
-          );
-
-      const systemButtons = Markup.inlineKeyboard([
-        [mentorBtn],
-        [
-          Markup.button.callback(
-            this.i18n.t(recipient.selectedLanguage, "to_main_menu"),
-            NAV_ROOT_DATA
-          )
-        ]
-      ]);
-      const replyMarkup = "reply_markup" in customButtons ? customButtons : systemButtons;
+      const replyMarkup = await this.buildReplyMarkupForRecipient(
+        recipient as User,
+        (localization as any)?.buttonsJson,
+        mentorUsername
+      );
 
       const recipientRow = await this.prisma.broadcastRecipient.upsert({
         where: {

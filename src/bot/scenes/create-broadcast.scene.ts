@@ -12,6 +12,8 @@ import {
 } from "../keyboards";
 import { makeCallbackData } from "../../common/callback-data";
 import { MESSAGE_SYSTEM_KINDS, type MessageActionButton, type MessageSystemKind } from "../../common/message-buttons";
+import { sendRichMessage } from "../../common/media";
+import { renderPageContent } from "../../common/page-content-render";
 import { env } from "../../config/env";
 import { addDaysToZonedDateParts, getZonedDateParts, isValidTimeZone, zonedTimeToUtcMs } from "../../common/timezone";
 import { logger } from "../../common/logger";
@@ -540,6 +542,38 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const confirmButtons = makeCallbackData(BROADCAST_PREFIX, "confirm", "buttons");
       const confirmEdit = makeCallbackData(BROADCAST_PREFIX, "confirm", "edit");
       const confirmCancel = makeCallbackData(BROADCAST_PREFIX, "confirm", "cancel");
+      const sendPreparedPreview = async () => {
+        if (!ctx.currentUser || !state.preparedContent) return;
+        const chatId = ctx.chat?.id ?? ctx.currentUser.telegramUserId;
+        if (chatId == null) return;
+
+        const previewText = renderPageContent(
+          extractFormattedContentText(state.preparedContent as MessageContent & { entities?: any[] }),
+          ctx.currentUser
+        );
+        const previewReplyMarkup = await ctx.services.broadcasts.buildReplyMarkupForRecipient(
+          ctx.currentUser as any,
+          state.preparedButtons ?? []
+        );
+
+        await sendRichMessage(
+          ctx.telegram,
+          chatId,
+          {
+            text: previewText,
+            followUpText: state.preparedFollowUpText
+              ? renderPageContent(state.preparedFollowUpText, ctx.currentUser)
+              : undefined,
+            mediaType: state.preparedContent.mediaType,
+            mediaFileId: state.preparedContent.mediaFileId,
+            externalUrl: state.preparedContent.externalUrl
+          },
+          {
+            ...previewReplyMarkup,
+            disable_notification: true
+          }
+        );
+      };
       const showButtonsEditor = async (preface?: string) => {
         const buttons = state.preparedButtons ?? [];
         const parts = [preface, `Кнопки рассылки:\n${formatBroadcastButtonsList(buttons)}`].filter(Boolean);
@@ -551,6 +585,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const showPreparedConfirmation = async () => {
         const formatLabel = formatBroadcastDeliveryModeLabel(state.preparedContent, state.preparedFollowUpText);
         const buttonsLabel = formatBroadcastButtonsList(state.preparedButtons ?? []);
+        await sendPreparedPreview();
         await ctx.reply(
           `Готово. Подтвердите отправку рассылки:\nФормат: ${formatLabel}\nКнопки:\n${buttonsLabel}`,
           Markup.inlineKeyboard([
@@ -947,6 +982,38 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
       const confirmButtons = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "buttons");
       const confirmEdit = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "edit");
       const confirmCancel = makeCallbackData(BROADCAST_PREFIX, "sched_confirm", "cancel");
+      const sendPreparedPreview = async () => {
+        if (!ctx.currentUser || !state.preparedContent) return;
+        const chatId = ctx.chat?.id ?? ctx.currentUser.telegramUserId;
+        if (chatId == null) return;
+
+        const previewText = renderPageContent(
+          extractFormattedContentText(state.preparedContent as MessageContent & { entities?: any[] }),
+          ctx.currentUser
+        );
+        const previewReplyMarkup = await ctx.services.broadcasts.buildReplyMarkupForRecipient(
+          ctx.currentUser as any,
+          state.preparedButtons ?? []
+        );
+
+        await sendRichMessage(
+          ctx.telegram,
+          chatId,
+          {
+            text: previewText,
+            followUpText: state.preparedFollowUpText
+              ? renderPageContent(state.preparedFollowUpText, ctx.currentUser)
+              : undefined,
+            mediaType: state.preparedContent.mediaType,
+            mediaFileId: state.preparedContent.mediaFileId,
+            externalUrl: state.preparedContent.externalUrl
+          },
+          {
+            ...previewReplyMarkup,
+            disable_notification: true
+          }
+        );
+      };
       const showButtonsEditor = async (preface?: string) => {
         const buttons = state.preparedButtons ?? [];
         const parts = [preface, `Кнопки рассылки:\n${formatBroadcastButtonsList(buttons)}`].filter(Boolean);
@@ -961,6 +1028,7 @@ const createBroadcastWizard = (mode: "instant" | "scheduled") =>
         const formatLabel = formatBroadcastDeliveryModeLabel(state.preparedContent, state.preparedFollowUpText);
         const buttonsLabel = formatBroadcastButtonsList(state.preparedButtons ?? []);
 
+        await sendPreparedPreview();
         await ctx.reply(
           `Подтвердите отложенную рассылку:\n` +
             `Аудитория: ${formatAudienceLabel(draft)}\n` +
