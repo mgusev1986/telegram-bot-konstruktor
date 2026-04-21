@@ -15,6 +15,7 @@ import type { CrmService } from "../crm/crm.service";
 import type { NotificationService } from "../notifications/notification.service";
 import type { SchedulerService } from "../jobs/scheduler.service";
 import type { SubscriptionChannelService } from "../subscription-channel/subscription-channel.service";
+import type { ReferralCommissionService } from "../referrals/referral-commission.service";
 import { env } from "../../config/env";
 import { logger } from "../../common/logger";
 import { NowPaymentsAdapter } from "./nowpayments.adapter";
@@ -145,7 +146,8 @@ export class BalanceService {
       creditedAmount: number;
       currency: string;
       productId?: string;
-    }) => Promise<void>
+    }) => Promise<void>,
+    private readonly referralCommissions?: ReferralCommissionService
   ) {}
 
   isNowPaymentsEnabled(): boolean {
@@ -993,6 +995,17 @@ export class BalanceService {
         where: { id: accountId },
         data: { balance: { decrement: price } }
       });
+
+      if (this.referralCommissions && user.botInstanceId) {
+        await this.referralCommissions.accrueForPurchase({
+          tx,
+          botInstanceId: user.botInstanceId,
+          productPurchaseId: purchase.id,
+          productId,
+          buyerUserId: user.id,
+          basisAmount: price
+        });
+      }
 
       const accessGrant = await grantOrExtendAccess(tx.userAccessRight, {
         userId: user.id,

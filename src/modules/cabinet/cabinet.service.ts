@@ -3,6 +3,7 @@ import type { I18nService } from "../i18n/i18n.service";
 import type { PaymentService } from "../payments/payment.service";
 import type { BalanceService } from "../payments/balance.service";
 import type { ReferralService } from "../referrals/referral.service";
+import type { ReferralCommissionService } from "../referrals/referral-commission.service";
 import { isAdminAreaUser } from "../permissions/capabilities";
 
 const LANG_LABELS: Record<string, string> = {
@@ -27,8 +28,16 @@ export class CabinetService {
     private readonly i18n: I18nService,
     private readonly botUsername: string,
     private readonly botInstanceId?: string,
-    private readonly paidAccessEnabled: boolean = true
+    private readonly paidAccessEnabled: boolean = true,
+    private readonly referralCommissions?: ReferralCommissionService
   ) {}
+
+  /** Is multi-level partner program enabled for this bot? */
+  public async isPartnerProgramEnabled(): Promise<boolean> {
+    if (!this.botInstanceId || !this.referralCommissions) return false;
+    const cfg = await this.referralCommissions.getConfigForBot(this.botInstanceId);
+    return !!cfg?.enabled;
+  }
 
   private botProductIdsCache: Set<string> | null = null;
 
@@ -234,6 +243,77 @@ export class CabinetService {
     }
 
     return blocks.join("\n");
+  }
+
+  /**
+   * Build the partner cabinet screen — balance, total earned, per-level breakdown, min withdrawal.
+   * Returns null when the program is disabled or not configured (caller should hide the button).
+   */
+  public async buildPartnerScreen(user: User): Promise<string | null> {
+    if (!this.botInstanceId || !this.referralCommissions) return null;
+    const cfg = await this.referralCommissions.getConfigForBot(this.botInstanceId);
+    if (!cfg || !cfg.enabled) return null;
+
+    const lang = this.i18n.resolveLanguage(user.selectedLanguage);
+    const balance = await this.balance.getBalance(user.id);
+    const summary = await this.referralCommissions.getEarningsSummary(user.id);
+
+    const programRow = await this.prisma.referralProgramConfig.findUnique({
+      where: { botInstanceId: this.botInstanceId },
+      select: { minWithdrawalAmount: true, description: true, payoutCurrency: true }
+    });
+    const minWithdrawal = Number(programRow?.minWithdrawalAmount ?? 0);
+
+    const lines: string[] = [""];
+    lines.push(this.i18n.t(lang, "partner_cabinet_title"));
+    if (programRow?.description) {
+      lines.push("");
+      lines.push(programRow.description);
+    }
+    lines.push("");
+    lines.push(`[b]💰 ${this.i18n.t(lang, "partner_cabinet_balance")}: ${balance.toFixed(2)} USDT[/b]`);
+    lines.push(`📈 ${this.i18n.t(lang, "partner_total_earned")}: ${summary.totalAmount.toFixed(2)} USDT`);
+    lines.push(`🧾 ${this.i18n.t(lang, "partner_accruals_count")}: ${summary.totalAccruals}`);
+    lines.push("");
+
+    if (cfg.levels.length > 0) {
+      lines.push(`${this.i18n.t(lang, "partner_levels_header")}:`);
+      for (const l of cfg.levels) {
+        const earned = summary.perLevel.find((p) => p.level === l.level);
+        const earnedAmt = earned ? earned.amount.toFixed(2) : "0.00";
+        lines.push(`  • ${this.i18n.t(lang, "level_label")} ${l.level}: ${l.percent}% · ${earnedAmt} USDT`);
+      }
+      lines.push("");
+    }
+
+    lines.push(`📥 ${this.i18n.t(lang, "partner_min_withdrawal")}: ${minWithdrawal.toFixed(2)} USDT`);
+
+    return lines.join("\n");
+  }
+
+  public async buildPartnerAccrualsScreen(user: User): Promise<string> {
+    const lang = this.i18n.resolveLanguage(user.selectedLanguage);
+    const lines: string[] = [""];
+    lines.push(this.i18n.t(lang, "partner_accruals_title"));
+    lines.push("");
+    if (!this.referralCommissions) {
+      lines.push(this.i18n.t(lang, "partner_accruals_empty"));
+      return lines.join("\n");
+    }
+    const rows = await this.referralCommissions.getRecentAccruals(user.id, 15);
+    if (rows.length === 0) {
+      lines.push(this.i18n.t(lang, "partner_accruals_empty"));
+      return lines.join("\n");
+    }
+    for (const r of rows) {
+      const date = r.createdAt.toISOString().slice(0, 10);
+      const title = r.productTitle ? ` · ${r.productTitle}` : "";
+      lines.push(
+        `• ${date} · ${this.i18n.t(lang, "level_label")} ${r.level} · +${r.amount.toFixed(4)} ${r.currency}${title}`
+      );
+      lines.push(`   ${r.sourceDisplayName}`);
+    }
+    return lines.join("\n");
   }
 
   public async shouldShowPayButton(user: User): Promise<boolean> {

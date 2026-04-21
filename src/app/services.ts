@@ -20,9 +20,11 @@ import { NavigationService } from "../modules/navigation/navigation.service";
 import { NotificationService } from "../modules/notifications/notification.service";
 import { PaymentService } from "../modules/payments/payment.service";
 import { BalanceService } from "../modules/payments/balance.service";
+import { UserWithdrawalService } from "../modules/payments/user-withdrawal.service";
 import { PermissionService } from "../modules/permissions/permission.service";
 import { RateLimitService } from "../modules/rate-limit/rate-limit.service";
 import { ReferralService } from "../modules/referrals/referral.service";
+import { ReferralCommissionService } from "../modules/referrals/referral-commission.service";
 import { SegmentService } from "../modules/segmentation/segment.service";
 import { UserService } from "../modules/users/user.service";
 import { MediaLibraryService } from "../modules/media-library/media-library.service";
@@ -39,12 +41,14 @@ export interface AppServices {
   permissions: PermissionService;
   notifications: NotificationService;
   referrals: ReferralService;
+  referralCommissions: ReferralCommissionService;
   analytics: AnalyticsService;
   abTests: AbTestService;
   accessRules: AccessRuleService;
   crm: CrmService;
   payments: PaymentService;
   balance: BalanceService;
+  userWithdrawals: UserWithdrawalService;
   menu: MenuService;
   navigation: NavigationService;
   cabinet: CabinetService;
@@ -92,6 +96,7 @@ export const buildServices = (
   const users = new UserService(prisma, botInstanceId, audit);
   const notifications = new NotificationService(prisma, i18n);
   const referrals = new ReferralService(prisma, notifications, botInstanceId);
+  const referralCommissions = new ReferralCommissionService(prisma);
   const analytics = new AnalyticsService(prisma);
   const abTests = new AbTestService(prisma);
   const accessRules = new AccessRuleService(prisma, referrals);
@@ -106,11 +111,13 @@ export const buildServices = (
     crm,
     scheduler,
     subscriptionChannel,
-    options?.onDepositCredited
+    options?.onDepositCredited,
+    referralCommissions
   );
+  const userWithdrawals = new UserWithdrawalService(prisma);
   const menu = new MenuService(prisma, i18n, accessRules, analytics, abTests, audit, botInstanceId, paidAccessEnabled);
   const navigation = new NavigationService(prisma);
-  const cabinet = new CabinetService(prisma, referrals, payments, balance, i18n, botUsername, botInstanceId, paidAccessEnabled);
+  const cabinet = new CabinetService(prisma, referrals, payments, balance, i18n, botUsername, botInstanceId, paidAccessEnabled, referralCommissions);
   const segments = new SegmentService(prisma, referrals, botInstanceId);
   const broadcasts = new BroadcastService(prisma, segments, scheduler, i18n, audit, botInstanceId, cabinet);
   const drips = new DripService(prisma, scheduler, i18n, audit, botInstanceId, cabinet);
@@ -130,12 +137,14 @@ export const buildServices = (
     permissions,
     notifications,
     referrals,
+    referralCommissions,
     analytics,
     abTests,
     accessRules,
     crm,
     payments,
     balance,
+    userWithdrawals,
     menu,
     navigation,
     cabinet,

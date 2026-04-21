@@ -635,6 +635,7 @@ export const buildCabinetKeyboard = (
     mentorUsername?: string | null;
     showLanguageButton?: boolean;
     showRefundButton?: boolean;
+    showPartnerButton?: boolean;
   }
 ) => {
   const short = (labels: { ru: string; en: string }): string => {
@@ -659,6 +660,9 @@ export const buildCabinetKeyboard = (
   rows.push([Markup.button.url(i18n.t(languageCode, "copy_link"), shareUrl)]);
   rows.push([Markup.button.callback(i18n.t(languageCode, "cabinet_set_external_ref_link"), makeCallbackData("cabinet", "set_external_ref_link"))]);
   rows.push([Markup.button.callback(i18n.t(languageCode, "my_structure"), makeCallbackData("cabinet", "structure"))]);
+  if (opts?.showPartnerButton) {
+    rows.push([Markup.button.callback(i18n.t(languageCode, "partner_cabinet_btn"), makeCallbackData("cabinet", "partner"))]);
+  }
   rows.push([Markup.button.callback(i18n.t(languageCode, "structure_export"), makeCallbackData("export", "structure"))]);
   if (opts?.showLanguageButton ?? true) {
     rows.push([Markup.button.callback(i18n.t(languageCode, "change_language"), makeCallbackData("lang", "picker"))]);
@@ -686,6 +690,30 @@ export const buildStructureKeyboard = (languageCode: string, i18n: I18nService) 
     [Markup.button.callback(i18n.t(languageCode, "structure_export"), makeCallbackData("export", "structure"))],
     buildNavigationRow(i18n, languageCode, { back: true, toMain: true })
   ];
+  return Markup.inlineKeyboard(rows);
+};
+
+export const buildPartnerKeyboard = (
+  languageCode: string,
+  i18n: I18nService,
+  opts?: { showWithdrawButton?: boolean }
+) => {
+  const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
+  if (opts?.showWithdrawButton !== false) {
+    rows.push([Markup.button.callback(i18n.t(languageCode, "partner_withdraw_btn"), makeCallbackData("cabinet", "partner_withdraw"))]);
+  }
+  rows.push([Markup.button.callback(i18n.t(languageCode, "partner_accruals_btn"), makeCallbackData("cabinet", "partner_accruals"))]);
+  for (const btn of buildNavigationRow(i18n, languageCode, { back: true, toMain: true })) {
+    rows.push([btn]);
+  }
+  return Markup.inlineKeyboard(rows);
+};
+
+export const buildPartnerAccrualsKeyboard = (languageCode: string, i18n: I18nService) => {
+  const rows: Array<Array<ReturnType<typeof Markup.button.callback>>> = [];
+  for (const btn of buildNavigationRow(i18n, languageCode, { back: true, toMain: true })) {
+    rows.push([btn]);
+  }
   return Markup.inlineKeyboard(rows);
 };
 
