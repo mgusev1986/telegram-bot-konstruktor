@@ -28,6 +28,8 @@ import {
   buildCabinetKeyboard,
   buildContentScreenKeyboard,
   buildStructureKeyboard,
+  buildPartnerKeyboard,
+  buildPartnerAccrualsKeyboard,
   buildLanguageKeyboard,
   buildMenuKeyboard,
   buildNavigationRow,
@@ -77,6 +79,7 @@ import { createSectionScene, CREATE_SECTION_SCENE } from "./scenes/create-sectio
 import { editPageContentScene, EDIT_PAGE_CONTENT_SCENE } from "./scenes/edit-page-content.scene";
 import { renameButtonScene, RENAME_BUTTON_SCENE } from "./scenes/rename-button.scene";
 import { setExternalReferralLinkScene, SET_EXTERNAL_REFERRAL_LINK_SCENE } from "./scenes/set-external-referral-link.scene";
+import { partnerWithdrawScene, PARTNER_WITHDRAW_SCENE } from "./scenes/partner-withdraw.scene";
 import {
   INACTIVITY_REMINDER_ADMIN_SCENE,
   inactivityReminderAdminScene
@@ -117,6 +120,7 @@ export const registerBot = (
     editPageContentScene,
     renameButtonScene,
     setExternalReferralLinkScene,
+    partnerWithdrawScene,
     inactivityReminderAdminScene
   ]);
 
@@ -612,7 +616,8 @@ export const registerBot = (
         mentorUsername,
         showLanguageButton: await shouldShowCabinetLanguageButton(user),
         showRefundButton:
-          services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
+          services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0,
+        showPartnerButton: await services.cabinet.isPartnerProgramEnabled()
       })
     );
   };
@@ -1858,7 +1863,8 @@ export const registerBot = (
               mentorUsername,
               showLanguageButton: await shouldShowCabinetLanguageButton(user),
               showRefundButton:
-                services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
+                services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0,
+              showPartnerButton: await services.cabinet.isPartnerProgramEnabled()
             })
           );
           return;
@@ -2964,7 +2970,8 @@ export const registerBot = (
                 mentorUsername,
                 showLanguageButton: await shouldShowCabinetLanguageButton(user),
                 showRefundButton:
-                  services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
+                  services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0,
+                showPartnerButton: await services.cabinet.isPartnerProgramEnabled()
               })
             );
             return;
@@ -3317,7 +3324,8 @@ export const registerBot = (
           mentorUsername,
           showLanguageButton: await shouldShowCabinetLanguageButton(user),
           showRefundButton:
-            services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
+            services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0,
+          showPartnerButton: await services.cabinet.isPartnerProgramEnabled()
         })
       );
       return;
@@ -3363,7 +3371,8 @@ export const registerBot = (
           showAdminLink: isAdminRole(resolveEffectiveRole(ctx)),
           mentorUsername,
           showLanguageButton: await shouldShowCabinetLanguageButton(user),
-          showRefundButton: false
+          showRefundButton: false,
+          showPartnerButton: await services.cabinet.isPartnerProgramEnabled()
         })
       );
       return;
@@ -3380,6 +3389,45 @@ export const registerBot = (
         { text: structureText },
         buildStructureKeyboard(user.selectedLanguage, services.i18n)
       );
+      return;
+    }
+
+    if (scope === "cabinet" && action === "partner") {
+      const partnerText = await services.cabinet.buildPartnerScreen(user);
+      if (!partnerText) {
+        await ctx.answerCbQuery(services.i18n.t(user.selectedLanguage, "partner_cabinet_disabled"), { show_alert: true });
+        return;
+      }
+      setNavBeforeShow(ctx, "cabinet:partner");
+      setNavCurrent(ctx, "cabinet:partner");
+      const balance = await services.balance.getBalance(user.id);
+      await services.navigation.replaceScreen(
+        user,
+        ctx.telegram,
+        ctx.chat?.id ?? user.telegramUserId,
+        { text: partnerText },
+        buildPartnerKeyboard(user.selectedLanguage, services.i18n, { showWithdrawButton: balance > 0 })
+      );
+      return;
+    }
+
+    if (scope === "cabinet" && action === "partner_accruals") {
+      setNavBeforeShow(ctx, "cabinet:partner_accruals");
+      const accrualsText = await services.cabinet.buildPartnerAccrualsScreen(user);
+      setNavCurrent(ctx, "cabinet:partner_accruals");
+      await services.navigation.replaceScreen(
+        user,
+        ctx.telegram,
+        ctx.chat?.id ?? user.telegramUserId,
+        { text: accrualsText },
+        buildPartnerAccrualsKeyboard(user.selectedLanguage, services.i18n)
+      );
+      return;
+    }
+
+    if (scope === "cabinet" && action === "partner_withdraw") {
+      setNavBeforeShow(ctx, "cabinet:partner_withdraw");
+      await ctx.scene.enter(PARTNER_WITHDRAW_SCENE);
       return;
     }
 
@@ -3404,7 +3452,8 @@ export const registerBot = (
           mentorUsername,
           showLanguageButton: await shouldShowCabinetLanguageButton(user),
           showRefundButton:
-            services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0
+            services.balance.isNowPaymentsEnabled() && (await services.balance.getBalance(user.id)) > 0,
+          showPartnerButton: await services.cabinet.isPartnerProgramEnabled()
         })
       );
       return;

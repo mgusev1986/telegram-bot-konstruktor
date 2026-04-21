@@ -229,9 +229,11 @@ enum ProductPurchaseStatus {
 enum WithdrawalRequestStatus {
   PENDING
   APPROVED
-  REJECTED
+  SENT
   COMPLETED
+  REJECTED
   CANCELED
+  FAILED
 }
 
 enum BalanceLedgerEntryType {
@@ -241,6 +243,9 @@ enum BalanceLedgerEntryType {
   REFUND_RESERVE
   REFUND_RELEASE
   REFUND_DEBIT
+  REFERRAL_COMMISSION
+  WITHDRAWAL_DEBIT
+  WITHDRAWAL_REVERSAL
 }
 
 // Owner settlement (NOWPayments v1): accrual per confirmed user top-up
@@ -347,26 +352,49 @@ model ProductPurchase {
   user           User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   product        Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
   account        UserBalanceAccount    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  referralCommissions ReferralCommissionAccrual[]
 
   @@index([userId, productId])
   @@map("product_purchases")
 }
 
 model WithdrawalRequest {
-  id          String                  @id @default(uuid())
-  userId      String                  @map("user_id")
-  accountId   String                  @map("account_id")
-  amount      Decimal                 @db.Decimal(18, 8)
-  status      WithdrawalRequestStatus @default(PENDING)
-  requestedAt DateTime                @default(now()) @map("requested_at")
-  processedAt DateTime?               @map("processed_at")
-  metadata    Json?                   @default("{}")
-  createdAt   DateTime                @default(now()) @map("created_at")
-  updatedAt   DateTime                @updatedAt @map("updated_at")
-  user        User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  account     UserBalanceAccount      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id                  String                  @id @default(uuid())
+  userId              String                  @map("user_id")
+  accountId           String                  @map("account_id")
+  botInstanceId       String?                 @map("bot_instance_id")
+  amount              Decimal                 @db.Decimal(18, 8)
+  currency            String                  @default("USDT")
+  status              WithdrawalRequestStatus @default(PENDING)
+  /// External wallet address where funds should be sent.
+  payoutAddress       String?                 @map("payout_address")
+  /// Normalized provider currency code (e.g. usdtbsc, usdttrc20).
+  payoutCurrency      String?                 @map("payout_currency")
+  /// Ledger entry that locks the funds at request time (DEBIT), kept in sync with status.
+  debitLedgerEntryId  String?                 @map("debit_ledger_entry_id")
+  /// NOWPayments batch id after the payout is submitted.
+  providerBatchId     String?                 @map("provider_batch_id")
+  /// Individual withdrawal id inside the batch (when API returns it).
+  providerPayoutId    String?                 @map("provider_payout_id")
+  providerStatus      String?                 @map("provider_status")
+  providerResponse    Json?                   @map("provider_response")
+  errorMessage        String?                 @map("error_message")
+  approvedAt          DateTime?               @map("approved_at")
+  sentAt              DateTime?               @map("sent_at")
+  completedAt         DateTime?               @map("completed_at")
+  failedAt            DateTime?               @map("failed_at")
+  requestedAt         DateTime                @default(now()) @map("requested_at")
+  processedAt         DateTime?               @map("processed_at")
+  metadata            Json?                   @default("{}")
+  createdAt           DateTime                @default(now()) @map("created_at")
+  updatedAt           DateTime                @updatedAt @map("updated_at")
+  user                User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account             UserBalanceAccount      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  botInstance         BotInstance?            @relation(fields: [botInstanceId], references: [id], onDelete: SetNull)
 
   @@index([userId, status])
+  @@index([botInstanceId, status])
+  @@index([providerBatchId])
   @@map("withdrawal_requests")
 }
 
@@ -523,6 +551,93 @@ model OwnerPayoutBatchRecipient {
   @@map("owner_payout_batch_recipients")
 }
 
+// --- Multi-level referral / partner commission program ---
+
+/// Per-bot configuration of the multi-level partner program.
+/// When enabled: after ProductPurchase.COMPLETED, commissions are credited up the
+/// `users.invited_by_user_id` chain according to ReferralCommissionLevel rows.
+model ReferralProgramConfig {
+  id                      String                     @id @default(uuid())
+  botInstanceId           String                     @unique @map("bot_instance_id")
+  enabled                 Boolean                    @default(false)
+  /// Currency symbol for display only; commissions are credited in USDT on the internal balance.
+  currency                String                     @default("USDT")
+  /// Minimum withdrawal amount for end-users in USDT.
+  minWithdrawalAmount     Decimal                    @default(5) @map("min_withdrawal_amount") @db.Decimal(18, 8)
+  /// Minimum balance kept on account after withdrawal (e.g. for provider network fee reserves).
+  minBalanceReserve       Decimal                    @default(0) @map("min_balance_reserve") @db.Decimal(18, 8)
+  /// Auto-approve APPROVED withdrawals and push them to NOWPayments Mass Payout without manual review.
+  autoApproveWithdrawals  Boolean                    @default(false) @map("auto_approve_withdrawals")
+  /// Default payout currency code for NOWPayments (e.g. usdtbsc, usdttrc20). Falls back to BotPaymentProviderConfig.settlementCurrency.
+  payoutCurrency          String?                    @map("payout_currency")
+  /// Optional human description shown in partner cabinet.
+  description             String?
+  createdAt               DateTime                   @default(now()) @map("created_at")
+  updatedAt               DateTime                   @updatedAt @map("updated_at")
+  botInstance             BotInstance                @relation(fields: [botInstanceId], references: [id], onDelete: Cascade)
+  levels                  ReferralCommissionLevel[]
+  accruals                ReferralCommissionAccrual[]
+
+  @@map("referral_program_configs")
+}
+
+/// Single level inside a bot's referral program (level N → percent of the gross product price).
+model ReferralCommissionLevel {
+  id        String                @id @default(uuid())
+  configId  String                @map("config_id")
+  /// 1 = direct inviter (first line), 2 = second line, etc.
+  level     Int
+  /// Percent of the product price credited to partner on this level. 0..100, up to 4 decimals.
+  percent   Decimal               @db.Decimal(7, 4)
+  createdAt DateTime              @default(now()) @map("created_at")
+  updatedAt DateTime              @updatedAt @map("updated_at")
+  config    ReferralProgramConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@unique([configId, level])
+  @@index([configId])
+  @@map("referral_commission_levels")
+}
+
+enum ReferralCommissionAccrualStatus {
+  CREDITED
+  REVERSED
+}
+
+/// Immutable record of a single commission credit to a partner for a specific purchase.
+/// One ProductPurchase can generate up to N rows (one per upline level).
+model ReferralCommissionAccrual {
+  id                  String                          @id @default(uuid())
+  botInstanceId       String                          @map("bot_instance_id")
+  configId            String?                         @map("config_id")
+  /// Upline partner who received the commission.
+  partnerUserId       String                          @map("partner_user_id")
+  /// Buyer whose purchase triggered the accrual.
+  sourceUserId        String                          @map("source_user_id")
+  productPurchaseId   String                          @map("product_purchase_id")
+  productId           String                          @map("product_id")
+  level               Int
+  percent             Decimal                         @db.Decimal(7, 4)
+  basisAmount         Decimal                         @map("basis_amount") @db.Decimal(18, 8)
+  amount              Decimal                         @db.Decimal(18, 8)
+  currency            String                          @default("USDT")
+  ledgerEntryId       String?                         @map("ledger_entry_id")
+  status              ReferralCommissionAccrualStatus @default(CREDITED)
+  metadata            Json?                           @default("{}")
+  createdAt           DateTime                        @default(now()) @map("created_at")
+  updatedAt           DateTime                        @updatedAt @map("updated_at")
+  botInstance         BotInstance                     @relation(fields: [botInstanceId], references: [id], onDelete: Cascade)
+  config              ReferralProgramConfig?          @relation(fields: [configId], references: [id], onDelete: SetNull, map: "ref_comm_accrual_config_fk")
+  partner             User                            @relation("ReferralCommissionPartner", fields: [partnerUserId], references: [id], onDelete: Cascade)
+  source              User                            @relation("ReferralCommissionSource", fields: [sourceUserId], references: [id], onDelete: Cascade)
+  productPurchase     ProductPurchase                 @relation(fields: [productPurchaseId], references: [id], onDelete: Cascade)
+
+  @@unique([productPurchaseId, partnerUserId, level])
+  @@index([partnerUserId, createdAt])
+  @@index([botInstanceId, createdAt])
+  @@index([sourceUserId])
+  @@map("referral_commission_accruals")
+}
+
 enum AccessType {
   LIFETIME
   TEMPORARY
@@ -650,6 +765,8 @@ model User {
   botOwnerPayoutWallets            BotOwnerPayoutWallet[]
   attributedOwnerSettlements       OwnerSettlementEntry[]       @relation("OwnerSettlementAttributedOwner")
   ownerPayoutBatchRecipientEntries OwnerPayoutBatchRecipient[]  @relation("OwnerPayoutBatchRecipientUser")
+  referralCommissionsReceived      ReferralCommissionAccrual[]  @relation("ReferralCommissionPartner")
+  referralCommissionsTriggered     ReferralCommissionAccrual[]  @relation("ReferralCommissionSource")
 
   @@unique([telegramUserId, botInstanceId])
   @@index([invitedByUserId])
@@ -696,13 +813,16 @@ model BotInstance {
   payments              Payment[]
   contentProgresses     ContentProgress[]
 
-  roleAssignments         BotRoleAssignment[]       @relation("BotRoleAssignmentBotInstance")
-  inactivityReminderRules InactivityReminderRule[]
-  depositTransactions     DepositTransaction[]
-  paymentProviderConfig   BotPaymentProviderConfig?
-  ownerSettlementEntries  OwnerSettlementEntry[]
-  ownerPayoutBatches      OwnerPayoutBatch[]
-  botOwnerPayoutWallets   BotOwnerPayoutWallet[]
+  roleAssignments            BotRoleAssignment[]       @relation("BotRoleAssignmentBotInstance")
+  inactivityReminderRules    InactivityReminderRule[]
+  depositTransactions        DepositTransaction[]
+  paymentProviderConfig      BotPaymentProviderConfig?
+  ownerSettlementEntries     OwnerSettlementEntry[]
+  ownerPayoutBatches         OwnerPayoutBatch[]
+  botOwnerPayoutWallets      BotOwnerPayoutWallet[]
+  referralProgramConfig      ReferralProgramConfig?
+  referralCommissionAccruals ReferralCommissionAccrual[]
+  withdrawalRequests         WithdrawalRequest[]
 
   @@index([ownerBackofficeUserId, status])
   @@map("bot_instances")

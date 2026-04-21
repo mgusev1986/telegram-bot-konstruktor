@@ -20,6 +20,8 @@ import { BotRoleAssignmentService } from "../../modules/bot-roles/bot-role-assig
 import { UserDirectoryService } from "../../modules/users/user-directory.service";
 import { SubscriptionChannelService } from "../../modules/subscription-channel/subscription-channel.service";
 import { OwnerNetResetService } from "../../modules/payments/owner-net-reset.service";
+import { UserWithdrawalService } from "../../modules/payments/user-withdrawal.service";
+import { ReferralCommissionService } from "../../modules/referrals/referral-commission.service";
 import { logger } from "../../common/logger";
 import { readStructuredLinkedChatsFromBody } from "../../common/backoffice-linked-chat-form";
 import { parseLinkedChatsFromForm } from "../../common/linked-chat-parser";
@@ -3393,6 +3395,7 @@ export async function registerBackofficeRoutes(
           body: `<div class="bo-actions" style="justify-content:flex-start">
               ${canManageRoles ? renderActionLink(i18n.t(lang, "bo_roles_btn"), `/backoffice/bots/${escapeHtml(bot.id)}/roles`, "primary") : ""}
               ${renderActionLink("Оплаты и доступ", `/backoffice/bots/${escapeHtml(bot.id)}/paid`, "secondary")}
+              ${renderActionLink("Партнёрская программа", `/backoffice/bots/${escapeHtml(bot.id)}/referral`, "secondary")}
               ${renderActionLink("К списку ботов", "/backoffice", "ghost")}
             </div>
             <div class="small" style="margin-top:10px">${canManageRoles ? escapeHtml(i18n.t(lang, "bo_roles_manage_hint")) : escapeHtml(i18n.t(lang, "bo_roles_manage_denied"))}</div>`,
@@ -5371,6 +5374,7 @@ export async function registerBackofficeRoutes(
         })}
         <div class="bo-actions" style="justify-content:flex-start">
           ${renderActionLink("Назад к настройкам", `/backoffice/bots/${escapeHtml(bot.id)}/settings`, "secondary")}
+          ${renderActionLink("Партнёрская программа", `/backoffice/bots/${escapeHtml(bot.id)}/referral`, "primary")}
         </div>`
       )
     );
@@ -6824,5 +6828,361 @@ export async function registerBackofficeRoutes(
       ? "Deposit уже подтвержден ранее"
       : `Deposit подтвержден вручную, credited=${Number(result.creditedAmount ?? 0).toFixed(2)}`;
     return reply.redirect(`/backoffice/bots/${encodeURIComponent(bot.id)}/paid?ok=${encodeURIComponent(msg)}`);
+  });
+
+  // --- Multi-level referral / partner program ---
+
+  server.get("/backoffice/bots/:botId/referral", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const okMsg = String((req.query as any)?.ok ?? "").trim();
+    const errMsg = String((req.query as any)?.error ?? "").trim();
+
+    const refService = new ReferralCommissionService(prisma);
+    const config = await refService.getConfigForBot(bot.id);
+    const withdrawals = await prisma.withdrawalRequest.findMany({
+      where: { botInstanceId: bot.id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: {
+        user: { select: { telegramUserId: true, username: true, fullName: true, firstName: true } }
+      }
+    });
+    const recentAccruals = await prisma.referralCommissionAccrual.findMany({
+      where: { botInstanceId: bot.id },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: {
+        partner: { select: { telegramUserId: true, username: true, fullName: true } },
+        source: { select: { telegramUserId: true, username: true, fullName: true } },
+        productPurchase: {
+          include: {
+            product: { include: { localizations: { take: 1 } } }
+          }
+        }
+      }
+    });
+
+    const totals = await prisma.referralCommissionAccrual.aggregate({
+      where: { botInstanceId: bot.id, status: "CREDITED" },
+      _sum: { amount: true },
+      _count: { _all: true }
+    });
+
+    const currentLevels = config?.levels ?? [];
+    const levelsInputs: string[] = [];
+    const maxLevelRows = Math.max(currentLevels.length, 5);
+    for (let i = 0; i < maxLevelRows; i++) {
+      const existing = currentLevels[i];
+      const level = existing?.level ?? i + 1;
+      const percent = existing?.percent ?? 0;
+      levelsInputs.push(`
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <input type="number" name="levels[${i}][level]" value="${level}" min="1" max="50" style="width:80px" />
+          <span style="opacity:.7">уровень →</span>
+          <input type="number" name="levels[${i}][percent]" value="${percent}" min="0" max="100" step="0.01" style="width:100px" />
+          <span style="opacity:.7">%</span>
+        </div>
+      `);
+    }
+
+    const withdrawalRows = withdrawals
+      .map((w) => {
+        const u = w.user;
+        const name = u?.username ? `@${u.username}` : (u?.fullName || u?.firstName || String(u?.telegramUserId ?? ""));
+        const amount = Number(w.amount).toFixed(2);
+        const showApprove = w.status === "PENDING";
+        const showReject = w.status === "PENDING" || w.status === "APPROVED";
+        const showProcess = w.status === "APPROVED" || w.status === "FAILED";
+        const btnApprove = showApprove
+          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/approve" style="display:inline"><button class="primary" type="submit">Approve</button></form>`
+          : "";
+        const btnReject = showReject
+          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/reject" style="display:inline;margin-left:4px"><button class="secondary" type="submit" onclick="return confirm('Отклонить и вернуть средства на баланс?')">Reject</button></form>`
+          : "";
+        const btnProcess = showProcess
+          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/process" style="display:inline;margin-left:4px"><button class="primary" type="submit">Отправить в NowPayments</button></form>`
+          : "";
+        const err = w.errorMessage ? `<div style="color:#ff8878;font-size:12px">${escapeHtml(w.errorMessage)}</div>` : "";
+        const addr = w.payoutAddress ? `<code>${escapeHtml(w.payoutAddress)}</code>` : "<em>—</em>";
+        return `<tr>
+          <td>${escapeHtml(w.createdAt.toISOString().slice(0, 16).replace("T", " "))}</td>
+          <td>${escapeHtml(name)}</td>
+          <td style="text-align:right">${amount} ${escapeHtml(w.currency)}</td>
+          <td>${addr}<div style="opacity:.6;font-size:12px">${escapeHtml(w.payoutCurrency ?? "")}</div></td>
+          <td><strong>${escapeHtml(w.status)}</strong>${err}</td>
+          <td>${btnApprove}${btnReject}${btnProcess}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const accrualRows = recentAccruals
+      .map((a) => {
+        const partner = a.partner;
+        const source = a.source;
+        const pName = partner?.username ? `@${partner.username}` : (partner?.fullName || String(partner?.telegramUserId ?? ""));
+        const sName = source?.username ? `@${source.username}` : (source?.fullName || String(source?.telegramUserId ?? ""));
+        const title = a.productPurchase?.product?.localizations?.[0]?.title ?? a.productId;
+        return `<tr>
+          <td>${escapeHtml(a.createdAt.toISOString().slice(0, 16).replace("T", " "))}</td>
+          <td>${escapeHtml(pName)}</td>
+          <td>ур.${a.level}</td>
+          <td style="text-align:right">${Number(a.amount).toFixed(4)} ${escapeHtml(a.currency)}</td>
+          <td style="opacity:.7">${Number(a.percent).toFixed(2)}%</td>
+          <td>${escapeHtml(title)}</td>
+          <td style="opacity:.7">от ${escapeHtml(sName)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const totalAccrualsSum = Number(totals._sum.amount ?? 0);
+    const totalAccrualsCount = Number(totals._count?._all ?? 0);
+
+    const body = `
+      <h1>Партнёрская программа · ${escapeHtml(bot.name)}</h1>
+      <p style="opacity:.7">Начисление комиссий по уровням при покупке платных разделов. Выплаты — через NOWPayments Mass Payout с вашего кошелька платформы.</p>
+      ${okMsg ? `<div class="success">${escapeHtml(okMsg)}</div>` : ""}
+      ${errMsg ? `<div class="error">${escapeHtml(errMsg)}</div>` : ""}
+
+      <section style="margin-top:18px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:12px">
+        <h2 style="margin-top:0">Настройки</h2>
+        <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/save">
+          <label style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+            <input type="checkbox" name="enabled" value="1" ${config?.enabled ? "checked" : ""} />
+            <span><strong>Партнёрская программа включена</strong> — без этого флажка комиссии не начисляются.</span>
+          </label>
+          <label style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+            <input type="checkbox" name="autoApproveWithdrawals" value="1" ${(config as any)?.autoApproveWithdrawals ? "checked" : ""} />
+            <span>Авто-одобрение выводов (минуя ручную модерацию) и автоматическая отправка в NowPayments.</span>
+          </label>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin:14px 0">
+            <label>Мин. сумма вывода (USDT)
+              <input type="number" name="minWithdrawalAmount" value="${escapeHtml(String((config as any)?.minWithdrawalAmount ?? 5))}" min="0" step="0.01" />
+            </label>
+            <label>Резерв баланса (USDT)
+              <input type="number" name="minBalanceReserve" value="${escapeHtml(String((config as any)?.minBalanceReserve ?? 0))}" min="0" step="0.01" />
+            </label>
+            <label>Сеть выплаты
+              <select name="payoutCurrency">
+                ${["usdtbsc", "usdttrc20", "ton"]
+                  .map((code) => `<option value="${code}" ${((config as any)?.payoutCurrency ?? "usdtbsc") === code ? "selected" : ""}>${code.toUpperCase()}</option>`)
+                  .join("")}
+              </select>
+            </label>
+          </div>
+
+          <label style="display:block;margin-bottom:14px">Описание программы (для кабинета бота)
+            <textarea name="description" rows="2" style="width:100%">${escapeHtml((config as any)?.description ?? "")}</textarea>
+          </label>
+
+          <h3 style="margin-top:18px">Уровни и проценты</h3>
+          <p style="opacity:.7;font-size:13px;margin-top:0">Уровень 1 — прямой пригласивший покупателя. Оставьте процент 0, чтобы не платить на этом уровне. Лишние строки игнорируются.</p>
+          ${levelsInputs.join("")}
+
+          <div style="margin-top:16px">
+            <button type="submit" class="primary">Сохранить</button>
+            <a href="/backoffice/bots/${escapeHtml(bot.id)}/paid" style="margin-left:10px;opacity:.7">← К «Оплаты и доступ»</a>
+          </div>
+        </form>
+      </section>
+
+      <section style="margin-top:24px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:12px">
+        <h2 style="margin-top:0">Заявки на вывод</h2>
+        <p style="opacity:.7;font-size:13px">Всего начислено партнёрам: <strong>${totalAccrualsSum.toFixed(2)} USDT</strong> · записей: ${totalAccrualsCount}</p>
+        ${withdrawals.length === 0
+          ? `<em>Нет заявок.</em>`
+          : `<table style="width:100%;border-collapse:collapse">
+              <thead><tr><th align="left">Дата</th><th align="left">Партнёр</th><th align="right">Сумма</th><th align="left">Адрес</th><th align="left">Статус</th><th></th></tr></thead>
+              <tbody>${withdrawalRows}</tbody>
+            </table>`}
+      </section>
+
+      <section style="margin-top:24px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:12px">
+        <h2 style="margin-top:0">Последние начисления</h2>
+        ${recentAccruals.length === 0
+          ? `<em>Пока нет начислений — программа не включена или партнёры не приводили покупателей.</em>`
+          : `<table style="width:100%;border-collapse:collapse">
+              <thead><tr><th align="left">Дата</th><th align="left">Партнёр</th><th>Уровень</th><th align="right">Сумма</th><th>%</th><th align="left">Продукт</th><th align="left">Источник</th></tr></thead>
+              <tbody>${accrualRows}</tbody>
+            </table>`}
+      </section>
+    `;
+
+    return reply.type("text/html").send(renderPage("Партнёрская программа · Платный доступ", body, { section: "payments" }));
+  });
+
+  server.post("/backoffice/api/bots/:botId/referral/save", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const body = (req.body as any) ?? {};
+    const enabled = body.enabled === "1" || body.enabled === true;
+    const autoApproveWithdrawals = body.autoApproveWithdrawals === "1" || body.autoApproveWithdrawals === true;
+    const minWithdrawalAmount = Math.max(0, Number(body.minWithdrawalAmount) || 0);
+    const minBalanceReserve = Math.max(0, Number(body.minBalanceReserve) || 0);
+    const payoutCurrency = String(body.payoutCurrency ?? "usdtbsc").toLowerCase();
+    const description = (String(body.description ?? "").trim() || null) as string | null;
+
+    const levelsRaw = body.levels ?? {};
+    const levels: Array<{ level: number; percent: number }> = [];
+    if (Array.isArray(levelsRaw)) {
+      for (const row of levelsRaw) {
+        if (!row) continue;
+        const lvl = Number(row.level);
+        const pct = Number(row.percent);
+        if (Number.isFinite(lvl) && lvl >= 1 && Number.isFinite(pct) && pct > 0) {
+          levels.push({ level: Math.floor(lvl), percent: pct });
+        }
+      }
+    } else if (levelsRaw && typeof levelsRaw === "object") {
+      for (const row of Object.values(levelsRaw as Record<string, any>)) {
+        if (!row) continue;
+        const lvl = Number(row.level);
+        const pct = Number(row.percent);
+        if (Number.isFinite(lvl) && lvl >= 1 && Number.isFinite(pct) && pct > 0) {
+          levels.push({ level: Math.floor(lvl), percent: pct });
+        }
+      }
+    }
+
+    const refService = new ReferralCommissionService(prisma);
+    await refService.upsertProgram({
+      botInstanceId: bot.id,
+      enabled,
+      minWithdrawalAmount,
+      minBalanceReserve,
+      autoApproveWithdrawals,
+      payoutCurrency,
+      description,
+      levels
+    });
+
+    return reply.redirect(
+      `/backoffice/bots/${encodeURIComponent(bot.id)}/referral?ok=${encodeURIComponent("Настройки сохранены")}`
+    );
+  });
+
+  server.post("/backoffice/api/bots/:botId/referral/withdrawals/:wid/approve", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const wid = String((req.params as any)?.wid ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const wsvc = new UserWithdrawalService(prisma);
+    const ok = await wsvc.approveWithdrawal(wid, { actor: "admin", approvedBy: backofficeUserId });
+
+    return reply.redirect(
+      `/backoffice/bots/${encodeURIComponent(bot.id)}/referral?${ok ? "ok=" + encodeURIComponent("Заявка одобрена") : "error=" + encodeURIComponent("Невозможно одобрить (неверный статус)")}`
+    );
+  });
+
+  server.post("/backoffice/api/bots/:botId/referral/withdrawals/:wid/reject", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const wid = String((req.params as any)?.wid ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const body = (req.body as any) ?? {};
+    const reason = String(body.reason ?? "rejected by admin").trim() || "rejected by admin";
+
+    const wsvc = new UserWithdrawalService(prisma);
+    const ok = await wsvc.rejectWithdrawal(wid, reason);
+
+    return reply.redirect(
+      `/backoffice/bots/${encodeURIComponent(bot.id)}/referral?${ok ? "ok=" + encodeURIComponent("Заявка отклонена, средства возвращены на баланс") : "error=" + encodeURIComponent("Невозможно отклонить")}`
+    );
+  });
+
+  server.post("/backoffice/api/bots/:botId/referral/withdrawals/:wid/process", async (req, reply) => {
+    const cookie = readCookie(req, COOKIE_NAME);
+    const backofficeUserId = cookie ? verifyBackofficeSessionToken(cookie) : null;
+    if (!requireAuth(backofficeUserId, reply)) return;
+
+    const roleRow = await prisma.backofficeUser.findUnique({
+      where: { id: backofficeUserId ?? undefined },
+      select: { role: true }
+    });
+    const role = roleRow?.role ?? "ADMIN";
+    if (!canPerform(role, "paid_access:manage")) return reply.code(403).send("Forbidden");
+
+    const botId = String((req.params as any)?.botId ?? "");
+    const wid = String((req.params as any)?.wid ?? "");
+    const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
+    if (!bot) return reply.code(404).send("Bot not found");
+    if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) {
+      return reply.code(403).send("Forbidden");
+    }
+
+    const wsvc = new UserWithdrawalService(prisma);
+    const res = await wsvc.processWithdrawal(wid);
+
+    if (res.status === "sent") {
+      return reply.redirect(
+        `/backoffice/bots/${encodeURIComponent(bot.id)}/referral?ok=${encodeURIComponent(`Отправлено в NowPayments, batch=${res.providerBatchId}`)}`
+      );
+    }
+    return reply.redirect(
+      `/backoffice/bots/${encodeURIComponent(bot.id)}/referral?error=${encodeURIComponent(res.error ?? `статус ${res.status}`)}`
+    );
   });
 }
