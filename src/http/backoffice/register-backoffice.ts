@@ -1720,6 +1720,41 @@ function renderPage(title: string, body: string, opts?: { minimal?: boolean; sec
         transition: background 0.15s ease, transform 0.1s ease;
       }
       .bo-level-row__del:hover { background: rgba(251,113,133,0.18); transform: scale(1.06); }
+
+      /* Bot switcher (inline in page header context) */
+      .bo-bot-switcher {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 10px 4px 12px;
+        border-radius: 999px;
+        background: var(--accent-soft);
+        border: 1px solid var(--border-strong);
+        transition: background 0.15s ease, border-color 0.15s ease;
+      }
+      .bo-bot-switcher:hover { background: rgba(0,229,255,0.22); border-color: var(--accent); }
+      .bo-bot-switcher__label {
+        color: var(--muted-strong);
+        font-size: 11.5px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        font-weight: 600;
+      }
+      .bo-bot-switcher__select {
+        background: transparent;
+        border: none;
+        color: var(--text);
+        font-weight: 600;
+        font-size: 13.5px;
+        cursor: pointer;
+        padding: 2px 4px;
+        outline: none;
+        max-width: 260px;
+      }
+      .bo-bot-switcher__select option {
+        background: var(--bg-deep);
+        color: var(--text);
+      }
     </style>
   </head>
   <body>
@@ -7185,6 +7220,15 @@ export async function registerBackofficeRoutes(
       return reply.code(403).send("Forbidden");
     }
 
+    // Load list of bots this backoffice user can access — used for the "switch bot" dropdown.
+    const allBots = await prisma.botInstance.findMany({
+      where: backofficeUserId
+        ? { OR: [{ ownerBackofficeUserId: backofficeUserId }, { ownerBackofficeUserId: null }] }
+        : {},
+      select: { id: true, name: true, telegramBotUsername: true, isArchived: true },
+      orderBy: { createdAt: "desc" }
+    });
+
     const okMsg = String((req.query as any)?.ok ?? "").trim();
     const errMsg = String((req.query as any)?.error ?? "").trim();
 
@@ -7324,6 +7368,30 @@ export async function registerBackofficeRoutes(
     const botUsernameChip = bot.telegramBotUsername
       ? `<a href="https://t.me/${escapeHtml(bot.telegramBotUsername)}" target="_blank" rel="noopener" style="text-decoration:none">${renderChip("@" + bot.telegramBotUsername, "accent", "Открыть бота в Telegram")}</a>`
       : renderChip("username не задан", "muted", "Username бота не настроен в профиле Telegram");
+    const switcherOptions = allBots
+      .map((b) => {
+        const label = b.telegramBotUsername ? `${b.name} (@${b.telegramBotUsername})` : b.name;
+        const archived = b.isArchived ? " · архив" : "";
+        return `<option value="${escapeHtml(b.id)}"${b.id === bot.id ? " selected" : ""}>${escapeHtml(label + archived)}</option>`;
+      })
+      .join("");
+    const botSwitcher = allBots.length > 1
+      ? `<label class="bo-bot-switcher" title="Переключиться на другой бот — все настройки этого раздела применяются только к выбранному">
+           <span class="bo-bot-switcher__label">Бот:</span>
+           <select id="bo-bot-switcher-referral" class="bo-bot-switcher__select">${switcherOptions}</select>
+         </label>
+         <script>
+         (function(){
+           var sel = document.getElementById('bo-bot-switcher-referral');
+           if (!sel) return;
+           sel.addEventListener('change', function(){
+             var id = sel.value;
+             if (!id) return;
+             location.href = '/backoffice/bots/' + encodeURIComponent(id) + '/referral';
+           });
+         })();
+         </script>`
+      : `<span>Бот: <strong>${escapeHtml(bot.name)}</strong> ${botUsernameChip}</span>`;
     const body = `${renderBreadcrumbs([
         { label: "Панель управления", href: "/backoffice" },
         { label: bot.name, href: `/backoffice/bots/${bot.id}/settings` },
@@ -7334,7 +7402,8 @@ export async function registerBackofficeRoutes(
         subtitle:
           `Многоуровневые комиссии партнёрам за продажи платных разделов в этом боте. Выплаты с кошелька платформы через NOWPayments Mass Payout. Все настройки ниже применяются <strong>только к боту ${escapeHtml(bot.name)}</strong> и не влияют на другие боты.`,
         context: [
-          `<span>Бот: <strong>${escapeHtml(bot.name)}</strong> ${botUsernameChip}</span>`,
+          botSwitcher,
+          `<span>${botUsernameChip}</span>`,
           `<span>${programEnabledChip}</span>`,
           `<span>${payoutAutoChip}</span>`,
           `<span>Всего начислено: <strong>${totalAccrualsSum.toFixed(2)} USDT</strong></span>`,
