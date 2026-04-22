@@ -17,9 +17,8 @@ export function createHealthServer(): FastifyInstance {
     ok: true,
     timestamp: new Date().toISOString()
   }));
-  server.get("/", async (_req, reply) => {
-    return reply.redirect("/health", 302);
-  });
+  // "/" is intentionally not registered here — `registerLandingRoutes` owns it
+  // (Host-aware: landing for apex, redirect to /backoffice/login for admin.*).
   return server;
 }
 

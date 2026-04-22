@@ -9,6 +9,7 @@ import { encryptTelegramBotToken, hashTelegramBotToken } from "./common/telegram
 import { randomBytes } from "node:crypto";
 import { BotRuntimeManager } from "./bot/bot-runtime-manager";
 import { registerBackofficeRoutes } from "./http/backoffice/register-backoffice";
+import { registerLandingRoutes } from "./http/landing";
 import { INACTIVITY_REMINDER_TEMPLATES_RU } from "./modules/inactivity-reminders/inactivity-reminder.templates";
 
 const bootstrap = async (): Promise<void> => {
@@ -304,6 +305,9 @@ const bootstrap = async (): Promise<void> => {
 
   await registerBackofficeRoutes(httpServer, prisma, runtimeManager);
   logger.info("Backoffice routes registered");
+
+  registerLandingRoutes(httpServer);
+  logger.info("Landing route registered (apex Host → premium landing, admin.* Host → /backoffice/login)");
 
   await startHttpServer(httpServer);
 
