@@ -1677,6 +1677,49 @@ function renderPage(title: string, body: string, opts?: { minimal?: boolean; sec
       .bo-table tbody tr:last-child td { border-bottom: none; }
       .bo-table tbody tr:hover td { background: rgba(255,255,255,0.025); }
       .bo-table code { font-size: 11.5px; background: rgba(255,255,255,0.04); padding: 2px 6px; border-radius: 4px; color: var(--text); }
+
+      /* Referral levels editor */
+      .bo-level-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        border: 1px solid var(--border-soft);
+        border-radius: var(--radius-xs);
+        background: rgba(255,255,255,0.02);
+      }
+      .bo-level-row__no {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-weight: 700;
+        font-size: 12px;
+        flex-shrink: 0;
+      }
+      .bo-level-row__level { width: 76px; }
+      .bo-level-row__pct   { width: 96px; }
+      .bo-level-row__del {
+        margin-left: auto;
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border-radius: 8px;
+        border: 1px solid rgba(251,113,133,0.28);
+        background: rgba(251,113,133,0.08);
+        color: var(--danger);
+        font-size: 16px;
+        line-height: 1;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background 0.15s ease, transform 0.1s ease;
+      }
+      .bo-level-row__del:hover { background: rgba(251,113,133,0.18); transform: scale(1.06); }
     </style>
   </head>
   <body>
@@ -7178,17 +7221,20 @@ export async function registerBackofficeRoutes(
 
     const currentLevels = config?.levels ?? [];
     const levelsInputs: string[] = [];
-    const maxLevelRows = Math.max(currentLevels.length, 5);
-    for (let i = 0; i < maxLevelRows; i++) {
+    // Default: 3 rows for new programs, or as many as already saved.
+    const initialRows = currentLevels.length > 0 ? currentLevels.length : 3;
+    for (let i = 0; i < initialRows; i++) {
       const existing = currentLevels[i];
       const level = existing?.level ?? i + 1;
       const percent = existing?.percent ?? 0;
       levelsInputs.push(`
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-          <input type="number" name="levels[${i}][level]" value="${level}" min="1" max="50" style="width:80px" />
-          <span style="opacity:.7">уровень →</span>
-          <input type="number" name="levels[${i}][percent]" value="${percent}" min="0" max="100" step="0.01" style="width:100px" />
-          <span style="opacity:.7">%</span>
+        <div class="bo-level-row" data-level-row>
+          <span class="bo-level-row__no">${i + 1}</span>
+          <input type="number" name="levels[${i}][level]" value="${level}" min="1" max="50" class="bo-level-row__level" title="Номер уровня (1 = прямой пригласивший, 2 = его пригласивший, и т.д.)" />
+          <span class="small">уровень →</span>
+          <input type="number" name="levels[${i}][percent]" value="${percent}" min="0" max="100" step="0.01" class="bo-level-row__pct" title="Процент от цены покупки, зачисляется партнёру этого уровня" />
+          <span class="small">%</span>
+          <button type="button" class="bo-level-row__del" title="Удалить этот уровень" aria-label="Удалить уровень">×</button>
         </div>
       `);
     }
@@ -7275,16 +7321,20 @@ export async function registerBackofficeRoutes(
     const approvedCount = withdrawals.filter((w) => w.status === "APPROVED").length;
     const sentCount = withdrawals.filter((w) => w.status === "SENT").length;
 
+    const botUsernameChip = bot.telegramBotUsername
+      ? `<a href="https://t.me/${escapeHtml(bot.telegramBotUsername)}" target="_blank" rel="noopener" style="text-decoration:none">${renderChip("@" + bot.telegramBotUsername, "accent", "Открыть бота в Telegram")}</a>`
+      : renderChip("username не задан", "muted", "Username бота не настроен в профиле Telegram");
     const body = `${renderBreadcrumbs([
         { label: "Панель управления", href: "/backoffice" },
         { label: bot.name, href: `/backoffice/bots/${bot.id}/settings` },
         { label: "Партнёрская программа" }
       ])}${renderPageHeader({
-        eyebrow: "Монетизация и реферальная сеть",
-        title: "Партнёрская программа",
+        eyebrow: `Партнёрская программа бота «${bot.name}»`,
+        title: `Партнёрка · ${bot.name}`,
         subtitle:
-          "Многоуровневые комиссии партнёрам за продажи платных разделов бота. Выплаты с кошелька платформы через NOWPayments Mass Payout.",
+          `Многоуровневые комиссии партнёрам за продажи платных разделов в этом боте. Выплаты с кошелька платформы через NOWPayments Mass Payout. Все настройки ниже применяются <strong>только к боту ${escapeHtml(bot.name)}</strong> и не влияют на другие боты.`,
         context: [
+          `<span>Бот: <strong>${escapeHtml(bot.name)}</strong> ${botUsernameChip}</span>`,
           `<span>${programEnabledChip}</span>`,
           `<span>${payoutAutoChip}</span>`,
           `<span>Всего начислено: <strong>${totalAccrualsSum.toFixed(2)} USDT</strong></span>`,
@@ -7354,11 +7404,21 @@ export async function registerBackofficeRoutes(
             <div class="bo-subsection bo-subsection--raised">
               <div class="bo-subsection-head">
                 <div>
-                  <h3 class="bo-subsection-title">Уровни и проценты ${renderHelpTip("Глубина дерева партнёров и процент комиссии с продажи на каждом уровне")}</h3>
+                  <h3 class="bo-subsection-title">Уровни и проценты ${renderHelpTip("Задайте любое количество уровней: 3, 5, 10 — кнопкой «+ Добавить уровень». Удалить уровень — крестиком справа от строки.")}</h3>
                   <div class="bo-subsection-copy">Уровень 1 — прямой пригласивший покупателя. Пример: 20% / 10% / 5% — 3 уровня.</div>
                 </div>
+                <div class="bo-actions" style="justify-content:flex-end;gap:6px">
+                  <span class="small" style="opacity:.7">Пресеты:</span>
+                  <button type="button" class="ghost bo-level-preset" data-preset="3" title="3 уровня: 20 / 10 / 5 %">3 уровня</button>
+                  <button type="button" class="ghost bo-level-preset" data-preset="5" title="5 уровней: 20 / 10 / 5 / 3 / 2 %">5 уровней</button>
+                  <button type="button" class="ghost bo-level-preset" data-preset="10" title="10 уровней: 20 / 10 / 5 / 3 / 2 / 1 / 1 / 0.5 / 0.5 / 0.5 %">10 уровней</button>
+                </div>
               </div>
-              ${levelsInputs.join("")}
+              <div id="bo-levels-container">${levelsInputs.join("")}</div>
+              <div class="bo-actions" style="justify-content:flex-start;gap:10px;margin-top:10px">
+                <button type="button" id="bo-add-level-btn" class="secondary" title="Добавить ещё один уровень в партнёрскую структуру">➕ Добавить уровень</button>
+                <span class="small" id="bo-levels-counter" style="opacity:.75">Всего уровней: ${initialRows}</span>
+              </div>
               <div class="small" style="margin-top:10px;opacity:.65">Оставьте процент 0, чтобы не платить на этом уровне. Лишние строки игнорируются.</div>
             </div>
 
@@ -7421,6 +7481,87 @@ export async function registerBackofficeRoutes(
               <tbody>${accrualRows}</tbody>
             </table></div>`
       })}
+      <script>
+      (function(){
+        var container = document.getElementById('bo-levels-container');
+        var addBtn = document.getElementById('bo-add-level-btn');
+        var counter = document.getElementById('bo-levels-counter');
+        if (!container || !addBtn) return;
+
+        var PRESETS = {
+          "3":  [20, 10, 5],
+          "5":  [20, 10, 5, 3, 2],
+          "10": [20, 10, 5, 3, 2, 1, 1, 0.5, 0.5, 0.5]
+        };
+
+        function reindex() {
+          var rows = container.querySelectorAll('[data-level-row]');
+          rows.forEach(function(row, i) {
+            var lvl = row.querySelector('.bo-level-row__level');
+            var pct = row.querySelector('.bo-level-row__pct');
+            var no  = row.querySelector('.bo-level-row__no');
+            if (lvl) lvl.name = 'levels[' + i + '][level]';
+            if (pct) pct.name = 'levels[' + i + '][percent]';
+            if (no) no.textContent = String(i + 1);
+          });
+          if (counter) counter.textContent = 'Всего уровней: ' + rows.length;
+        }
+
+        function bindRemove(row) {
+          var btn = row.querySelector('.bo-level-row__del');
+          if (!btn) return;
+          btn.addEventListener('click', function() {
+            var rows = container.querySelectorAll('[data-level-row]');
+            if (rows.length <= 1) {
+              alert('Должен быть хотя бы один уровень. Если партнёрка не нужна — снимите галочку «Партнёрская программа включена».');
+              return;
+            }
+            row.remove();
+            reindex();
+          });
+        }
+
+        function buildRow(idx, level, percent) {
+          var wrap = document.createElement('div');
+          wrap.className = 'bo-level-row';
+          wrap.setAttribute('data-level-row', '');
+          wrap.innerHTML =
+            '<span class="bo-level-row__no">' + (idx + 1) + '</span>' +
+            '<input type="number" name="levels[' + idx + '][level]" value="' + level + '" min="1" max="50" class="bo-level-row__level" title="Номер уровня" />' +
+            '<span class="small">уровень →</span>' +
+            '<input type="number" name="levels[' + idx + '][percent]" value="' + percent + '" min="0" max="100" step="0.01" class="bo-level-row__pct" title="Процент с продажи" />' +
+            '<span class="small">%</span>' +
+            '<button type="button" class="bo-level-row__del" title="Удалить этот уровень" aria-label="Удалить уровень">×</button>';
+          return wrap;
+        }
+
+        function addRow(level, percent) {
+          var idx = container.querySelectorAll('[data-level-row]').length;
+          var row = buildRow(idx, level != null ? level : (idx + 1), percent != null ? percent : 0);
+          container.appendChild(row);
+          bindRemove(row);
+          reindex();
+        }
+
+        function applyPreset(count) {
+          var preset = PRESETS[String(count)];
+          if (!preset) return;
+          if (!confirm('Заменить текущие уровни на пресет из ' + count + ' уровней? Ваши проценты будут перезаписаны.')) return;
+          container.innerHTML = '';
+          preset.forEach(function(pct, i) { addRow(i + 1, pct); });
+        }
+
+        // initial bind
+        container.querySelectorAll('[data-level-row]').forEach(bindRemove);
+        reindex();
+
+        addBtn.addEventListener('click', function() { addRow(); });
+
+        document.querySelectorAll('.bo-level-preset').forEach(function(btn) {
+          btn.addEventListener('click', function() { applyPreset(btn.getAttribute('data-preset')); });
+        });
+      })();
+      </script>
     `;
 
     return reply.type("text/html").send(renderPage("Партнёрская программа · Платный доступ", body, { section: "referral" }));
