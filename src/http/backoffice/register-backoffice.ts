@@ -112,14 +112,16 @@ function verifyBackofficeSessionToken(token: string): string | null {
   return payload.sub;
 }
 
-type BackofficeSection = "dashboard" | "audience" | "database" | "bots" | "payments" | "auth";
+type BackofficeSection = "dashboard" | "audience" | "database" | "bots" | "payments" | "referral" | "roles" | "auth";
 
 function detectBackofficeSection(title: string): BackofficeSection {
   if (title.includes("Вход")) return "auth";
   if (title.includes("Аудитория") || title === "Пользователь") return "audience";
   if (title.includes("База данных")) return "database";
+  if (title.includes("Партнёрская программа") || title.includes("Партнерская программа")) return "referral";
   if (title.includes("Платный доступ") || title.includes("Платежи (ручное подтверждение)")) return "payments";
-  if (title.includes("Настройки бота") || title.includes("Клонирование бота") || title.includes("Клон создан") || title.includes("Роли")) return "bots";
+  if (title.includes("Роли")) return "roles";
+  if (title.includes("Настройки бота") || title.includes("Клонирование бота") || title.includes("Клон создан")) return "bots";
   return "dashboard";
 }
 
@@ -128,7 +130,9 @@ function extractBotIdFromMarkup(body: string): string | null {
   return match ? decodeURIComponent(match[1] ?? "") : null;
 }
 
-function renderShellIcon(kind: "dashboard" | "audience" | "database" | "settings" | "payments"): string {
+function renderShellIcon(
+  kind: "dashboard" | "audience" | "database" | "settings" | "payments" | "referral" | "roles"
+): string {
   const common = `viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"`;
   if (kind === "dashboard") {
     return `<svg ${common}><path d="M4 13.5h4.5V20H4z"/><path d="M9.75 4h4.5v16h-4.5z"/><path d="M15.5 9h4.5v11h-4.5z"/></svg>`;
@@ -141,6 +145,12 @@ function renderShellIcon(kind: "dashboard" | "audience" | "database" | "settings
   }
   if (kind === "payments") {
     return `<svg ${common}><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/><path d="M7 15h3"/></svg>`;
+  }
+  if (kind === "referral") {
+    return `<svg ${common}><circle cx="12" cy="7" r="3"/><path d="M5 21v-1a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v1"/><path d="M16 14l2 2 3-3"/></svg>`;
+  }
+  if (kind === "roles") {
+    return `<svg ${common}><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7l8-4z"/><path d="M9 12l2 2 4-4"/></svg>`;
   }
   return `<svg ${common}><path d="M12 3.5l1.9 1.1 2.2-.3.8 2 2 1-.3 2.2L20.5 12l-1.1 1.9.3 2.2-2 .8-1 2-2.2-.3L12 20.5l-1.9-1.1-2.2.3-.8-2-2-1 .3-2.2L3.5 12l1.1-1.9-.3-2.2 2-.8 1-2 2.2.3z"/><circle cx="12" cy="12" r="2.6"/></svg>`;
 }
@@ -156,11 +166,15 @@ function renderPage(title: string, body: string, opts?: { minimal?: boolean; sec
         ? "База данных"
         : section === "payments"
           ? "Оплаты и доступ"
-          : section === "bots"
-            ? "Боты и настройки"
-            : section === "auth"
-              ? "Вход"
-              : "Панель управления";
+          : section === "referral"
+            ? "Партнёрская программа"
+            : section === "roles"
+              ? "Роли и доступ"
+              : section === "bots"
+                ? "Боты и настройки"
+                : section === "auth"
+                  ? "Вход"
+                  : "Панель управления";
   const navItems = !minimal
     ? [
         { href: "/backoffice", label: "Экземпляры ботов", key: "dashboard" as const, icon: "dashboard" as const, active: section === "dashboard" || section === "bots" },
@@ -1477,6 +1491,192 @@ function renderPage(title: string, body: string, opts?: { minimal?: boolean; sec
           width: 100%;
         }
       }
+
+      /* --- UX helpers (breadcrumbs, tooltip, status chips, empty states, callouts) --- */
+      .bo-breadcrumbs {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        font-size: 12.5px;
+        color: var(--muted);
+        margin-bottom: 14px;
+        letter-spacing: 0.02em;
+      }
+      .bo-breadcrumbs a {
+        color: var(--muted-strong);
+        border-bottom: 1px dashed transparent;
+        padding: 2px 4px;
+        border-radius: 4px;
+        transition: color 0.15s ease, background 0.15s ease;
+      }
+      .bo-breadcrumbs a:hover {
+        color: var(--accent);
+        background: rgba(0,229,255,0.08);
+      }
+      .bo-breadcrumbs .bo-breadcrumbs__sep {
+        color: rgba(144,163,189,0.5);
+        font-size: 11px;
+      }
+      .bo-breadcrumbs .bo-breadcrumbs__current {
+        color: var(--text);
+        font-weight: 500;
+        padding: 2px 4px;
+      }
+
+      .bo-help-tip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 16px;
+        height: 16px;
+        margin-left: 6px;
+        border-radius: 50%;
+        background: rgba(118,152,186,0.18);
+        color: var(--muted-strong);
+        font-size: 10px;
+        font-weight: 700;
+        cursor: help;
+        border: 1px solid rgba(118,152,186,0.28);
+        vertical-align: middle;
+        transition: background 0.15s ease, color 0.15s ease;
+      }
+      .bo-help-tip:hover {
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-color: var(--accent);
+      }
+
+      .bo-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        border: 1px solid transparent;
+      }
+      .bo-chip::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        opacity: 0.9;
+      }
+      .bo-chip--success { color: var(--success); background: rgba(52,211,153,0.08); border-color: rgba(52,211,153,0.22); }
+      .bo-chip--warning { color: var(--warning); background: rgba(251,191,36,0.08); border-color: rgba(251,191,36,0.22); }
+      .bo-chip--danger  { color: var(--danger);  background: rgba(251,113,133,0.08); border-color: rgba(251,113,133,0.22); }
+      .bo-chip--info    { color: var(--info);    background: rgba(125,211,252,0.08); border-color: rgba(125,211,252,0.22); }
+      .bo-chip--muted   { color: var(--muted-strong); background: rgba(255,255,255,0.04); border-color: var(--border-soft); }
+      .bo-chip--accent  { color: var(--accent);  background: var(--accent-soft);      border-color: var(--border-strong); }
+
+      .bo-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: 38px 24px;
+        margin: 8px 0;
+        border: 1px dashed var(--border-soft);
+        border-radius: var(--radius-md);
+        background: rgba(9,15,26,0.45);
+      }
+      .bo-empty__icon {
+        font-size: 34px;
+        line-height: 1;
+        margin-bottom: 12px;
+        opacity: 0.65;
+      }
+      .bo-empty__title {
+        margin: 0 0 4px;
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .bo-empty__hint {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 13px;
+        max-width: 440px;
+      }
+
+      .bo-callout {
+        display: flex;
+        gap: 12px;
+        padding: 14px 16px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-soft);
+        background: rgba(9,15,26,0.5);
+        margin: 12px 0;
+        font-size: 13px;
+        line-height: 1.45;
+        color: var(--text-soft);
+      }
+      .bo-callout__badge {
+        flex-shrink: 0;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        font-weight: 700;
+        background: rgba(255,255,255,0.06);
+      }
+      .bo-callout--info    { border-color: rgba(125,211,252,0.3); background: rgba(125,211,252,0.06); }
+      .bo-callout--info    .bo-callout__badge { background: rgba(125,211,252,0.18); color: var(--info); }
+      .bo-callout--success { border-color: rgba(52,211,153,0.3);  background: rgba(52,211,153,0.06); }
+      .bo-callout--success .bo-callout__badge { background: rgba(52,211,153,0.18); color: var(--success); }
+      .bo-callout--warning { border-color: rgba(251,191,36,0.3);  background: rgba(251,191,36,0.06); }
+      .bo-callout--warning .bo-callout__badge { background: rgba(251,191,36,0.18); color: var(--warning); }
+      .bo-callout--danger  { border-color: rgba(251,113,133,0.3); background: rgba(251,113,133,0.06); }
+      .bo-callout--danger  .bo-callout__badge { background: rgba(251,113,133,0.18); color: var(--danger); }
+
+      .bo-side-link__title .bo-chip { margin-left: 6px; font-size: 9.5px; padding: 2px 6px; }
+
+      /* Row-level status indicator bar (thin colored left edge) */
+      tr[data-tone="success"] td:first-child { box-shadow: inset 3px 0 0 var(--success); }
+      tr[data-tone="warning"] td:first-child { box-shadow: inset 3px 0 0 var(--warning); }
+      tr[data-tone="danger"]  td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+      tr[data-tone="info"]    td:first-child { box-shadow: inset 3px 0 0 var(--info); }
+
+      .bo-table-wrap {
+        overflow-x: auto;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border-soft);
+        background: rgba(9,15,26,0.4);
+      }
+      .bo-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13.5px;
+      }
+      .bo-table thead th {
+        padding: 10px 14px;
+        background: rgba(14,22,37,0.78);
+        border-bottom: 1px solid var(--border-soft);
+        color: var(--muted-strong);
+        font-size: 11.5px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        position: sticky;
+        top: 0;
+      }
+      .bo-table tbody td {
+        padding: 11px 14px;
+        border-bottom: 1px solid var(--border-soft);
+        color: var(--text-soft);
+        vertical-align: middle;
+      }
+      .bo-table tbody tr:last-child td { border-bottom: none; }
+      .bo-table tbody tr:hover td { background: rgba(255,255,255,0.025); }
+      .bo-table code { font-size: 11.5px; background: rgba(255,255,255,0.04); padding: 2px 6px; border-radius: 4px; color: var(--text); }
     </style>
   </head>
   <body>
@@ -1513,18 +1713,32 @@ function renderPage(title: string, body: string, opts?: { minimal?: boolean; sec
                   .join("")}
                 ${
                   botId
-                    ? `<a href="/backoffice/bots/${encodeURIComponent(botId)}/settings" class="bo-side-link${section === "bots" ? " is-active" : ""}">
+                    ? `<a href="/backoffice/bots/${encodeURIComponent(botId)}/settings" class="bo-side-link${section === "bots" ? " is-active" : ""}" title="Название, токен, язык, пауза и архив бота">
                         <span class="bo-side-link__icon">${renderShellIcon("settings")}</span>
                         <span class="bo-side-link__label">
                           <span class="bo-side-link__title">Настройки бота</span>
-                          <span class="bo-side-link__copy">Конфиг, lifecycle и роли</span>
+                          <span class="bo-side-link__copy">Конфиг, lifecycle, токен</span>
                         </span>
                       </a>
-                      <a href="/backoffice/bots/${encodeURIComponent(botId)}/paid" class="bo-side-link${section === "payments" ? " is-active" : ""}">
+                      <a href="/backoffice/bots/${encodeURIComponent(botId)}/paid" class="bo-side-link${section === "payments" ? " is-active" : ""}" title="Продукты, доступ, NOWPayments, ручное подтверждение">
                         <span class="bo-side-link__icon">${renderShellIcon("payments")}</span>
                         <span class="bo-side-link__label">
                           <span class="bo-side-link__title">Оплаты и доступ</span>
-                          <span class="bo-side-link__copy">LIVE, TEST, финансы и аудит</span>
+                          <span class="bo-side-link__copy">Продукты, NOWPayments, вывод</span>
+                        </span>
+                      </a>
+                      <a href="/backoffice/bots/${encodeURIComponent(botId)}/referral" class="bo-side-link${section === "referral" ? " is-active" : ""}" title="Многоуровневая партнёрская программа и выплаты партнёрам">
+                        <span class="bo-side-link__icon">${renderShellIcon("referral")}</span>
+                        <span class="bo-side-link__label">
+                          <span class="bo-side-link__title">Партнёрская программа</span>
+                          <span class="bo-side-link__copy">Уровни, комиссии, выводы</span>
+                        </span>
+                      </a>
+                      <a href="/backoffice/bots/${encodeURIComponent(botId)}/roles" class="bo-side-link${section === "roles" ? " is-active" : ""}" title="Управление ролями OWNER / ADMIN внутри бота">
+                        <span class="bo-side-link__icon">${renderShellIcon("roles")}</span>
+                        <span class="bo-side-link__label">
+                          <span class="bo-side-link__title">Роли и доступ</span>
+                          <span class="bo-side-link__copy">OWNER, ADMIN, активация</span>
                         </span>
                       </a>`
                     : ""
@@ -1751,6 +1965,49 @@ function formatProductDuration(product: { billingType?: string | null; durationD
 
 function renderStatusBadge(label: string, tone: "live" | "test" | "active" | "pending" | "expiring" | "expired" | "failed" | "muted" = "muted"): string {
   return `<span class="status-badge status-${tone}">${escapeHtml(label)}</span>`;
+}
+
+type ChipTone = "success" | "warning" | "danger" | "info" | "muted" | "accent";
+
+/** Inline color-coded status chip. Use for health, lifecycle, config state. */
+function renderChip(label: string, tone: ChipTone = "muted", title?: string): string {
+  const t = title ? ` title="${escapeHtml(title)}"` : "";
+  return `<span class="bo-chip bo-chip--${tone}"${t}>${escapeHtml(label)}</span>`;
+}
+
+/** Tiny "?" with hover tooltip — for labelling fields or sections. */
+function renderHelpTip(text: string): string {
+  return `<span class="bo-help-tip" title="${escapeHtml(text)}" aria-label="${escapeHtml(text)}">?</span>`;
+}
+
+/** Breadcrumbs. Last item is rendered as text (current page). */
+function renderBreadcrumbs(crumbs: Array<{ label: string; href?: string }>): string {
+  if (!crumbs.length) return "";
+  const parts = crumbs.map((c, i) => {
+    const isLast = i === crumbs.length - 1;
+    if (isLast || !c.href) {
+      return `<span class="bo-breadcrumbs__current">${escapeHtml(c.label)}</span>`;
+    }
+    return `<a href="${escapeHtml(c.href)}">${escapeHtml(c.label)}</a><span class="bo-breadcrumbs__sep">›</span>`;
+  });
+  return `<nav class="bo-breadcrumbs" aria-label="Хлебные крошки">${parts.join("")}</nav>`;
+}
+
+/** Empty-state placeholder. */
+function renderEmpty(params: { icon?: string; title: string; hint?: string; action?: string }): string {
+  const icon = params.icon ?? "📭";
+  return `<div class="bo-empty">
+    <div class="bo-empty__icon">${icon}</div>
+    <p class="bo-empty__title">${escapeHtml(params.title)}</p>
+    ${params.hint ? `<p class="bo-empty__hint">${escapeHtml(params.hint)}</p>` : ""}
+    ${params.action ? `<div>${params.action}</div>` : ""}
+  </div>`;
+}
+
+/** Info/warning/success/danger banner. */
+function renderCallout(tone: "info" | "success" | "warning" | "danger", body: string): string {
+  const badge = tone === "success" ? "✓" : tone === "warning" ? "!" : tone === "danger" ? "×" : "i";
+  return `<div class="bo-callout bo-callout--${tone}"><span class="bo-callout__badge">${badge}</span><div>${body}</div></div>`;
 }
 
 function renderProductModeBadge(product: { durationMinutes?: number | null }): string {
@@ -2010,6 +2267,9 @@ export function renderDashboardBody(params: DashboardParams): string {
       const paidBtn = canPerform(role, "paid_access:manage", email)
         ? renderActionLink("Оплаты и доступ", `/backoffice/bots/${b.id}/paid`, "secondary")
         : ``;
+      const referralBtn = canPerform(role, "paid_access:manage", email)
+        ? renderActionLink("Партнёрская программа", `/backoffice/bots/${b.id}/referral`, "secondary")
+        : ``;
       const audienceBtn = canViewAudience
         ? renderActionLink("Аудитория", `/backoffice/audience?bot=${encodeURIComponent(b.id)}`, "secondary")
         : ``;
@@ -2020,14 +2280,24 @@ export function renderDashboardBody(params: DashboardParams): string {
         b.telegramBotUsername ? `target="_blank" rel="noopener noreferrer"` : `aria-disabled="true"`
       );
       const primaryActions = [settingsBtn, paidBtn, audienceBtn].filter(Boolean);
-      const secondaryActions = [rolesBtn, cloneBtn, openBtn].filter(Boolean);
+      const secondaryActions = [referralBtn, rolesBtn, cloneBtn, openBtn].filter(Boolean);
       const createdClass = b.id === createdBotId ? " created" : "";
       const cardId = b.id === createdBotId ? ` id="bot-${b.id}"` : "";
       return `<div class="bot-card${createdClass}"${cardId}>
           <div class="bo-panel-header">
             <div style="min-width:220px">
               <div class="bo-stateline">
-                <span class="pill">${escapeHtml(b.status === "ACTIVE" ? "Активен" : b.status === "DISABLED" ? "Отключён" : b.status)}</span>
+                ${
+                  b.status === "ACTIVE"
+                    ? renderChip("Активен", "success", "Бот запущен и обрабатывает сообщения")
+                    : b.status === "DISABLED"
+                      ? renderChip("Отключён", "danger", "Бот остановлен — обновите токен или возобновите в настройках")
+                      : b.status === "INVALID_TOKEN"
+                        ? renderChip("Невалидный токен", "warning", "Telegram отклонил токен — обновите его в настройках")
+                        : b.status === "DRAFT"
+                          ? renderChip("Черновик", "info", "Бот создан, но ещё не запущен")
+                          : renderChip(b.status, "muted")
+                }
                 <span class="small">Создан ${formatIsoDate(b.createdAt).slice(0, 10)}</span>
               </div>
               <div class="bot-title" style="margin-top:10px">${escapeHtml(b.name)}</div>
@@ -3262,7 +3532,11 @@ export async function registerBackofficeRoutes(
     const canArchiveDelete = canPerform(role, "bot_lifecycle:archive_delete");
     const lang = getBackofficeLang(req);
     const statusTone = bot.isArchived ? "failed" : bot.status === "ACTIVE" ? "active" : bot.status === "DISABLED" ? "pending" : "muted";
-    const settingsBody = `${renderPageHeader({
+    const settingsBody = `${renderBreadcrumbs([
+      { label: "Панель управления", href: "/backoffice" },
+      { label: bot.name, href: `/backoffice/bots/${bot.id}/settings` },
+      { label: "Настройки" }
+    ])}${renderPageHeader({
       eyebrow: "Экземпляр бота",
       title: "Настройки бота",
       subtitle:
@@ -3664,7 +3938,11 @@ export async function registerBackofficeRoutes(
     return reply.type("text/html").send(
       renderPage(
         "Клонирование бота",
-        `${renderPageHeader({
+        `${renderBreadcrumbs([
+          { label: "Панель управления", href: "/backoffice" },
+          { label: sourceBot.name, href: `/backoffice/bots/${sourceBot.id}/settings` },
+          { label: "Клонирование шаблона" }
+        ])}${renderPageHeader({
           eyebrow: "Клонирование",
           title: "Клонировать шаблон",
           subtitle:
@@ -5013,7 +5291,11 @@ export async function registerBackofficeRoutes(
     return reply.type("text/html").send(
       renderPage(
         "Платный доступ",
-        `${renderPageHeader({
+        `${renderBreadcrumbs([
+          { label: "Панель управления", href: "/backoffice" },
+          { label: bot.name, href: `/backoffice/bots/${bot.id}/settings` },
+          { label: "Оплаты и доступ" }
+        ])}${renderPageHeader({
           eyebrow: "Платный доступ",
           title: "Оплаты и доступ",
           subtitle:
@@ -6312,7 +6594,11 @@ export async function registerBackofficeRoutes(
     return reply.type("text/html").send(
       renderPage(
         t("bo_roles_title"),
-        `${renderPageHeader({
+        `${renderBreadcrumbs([
+          { label: "Панель управления", href: "/backoffice" },
+          { label: bot.name, href: `/backoffice/bots/${bot.id}/settings` },
+          { label: "Роли и доступ" }
+        ])}${renderPageHeader({
           eyebrow: "Роли и доступ",
           title: t("bo_roles_title"),
           subtitle:
@@ -6713,7 +6999,12 @@ export async function registerBackofficeRoutes(
     return reply.type("text/html").send(
       renderPage(
         "Платежи (ручное подтверждение)",
-        `${renderPageHeader({
+        `${renderBreadcrumbs([
+          { label: "Панель управления", href: "/backoffice" },
+          { label: bot.name, href: `/backoffice/bots/${bot.id}/settings` },
+          { label: "Оплаты и доступ", href: `/backoffice/bots/${bot.id}/paid` },
+          { label: "Ручное подтверждение" }
+        ])}${renderPageHeader({
           eyebrow: "Финансовое сопровождение",
           title: "Платежи (ручное подтверждение)",
           subtitle:
@@ -6902,6 +7193,19 @@ export async function registerBackofficeRoutes(
       `);
     }
 
+    const withdrawalStatusChip = (status: string): string => {
+      switch (status) {
+        case "PENDING":   return renderChip("Ожидает", "warning", "Заявка создана партнёром, ждёт ручного одобрения");
+        case "APPROVED":  return renderChip("Одобрена", "info", "Одобрена, готова к отправке в NowPayments");
+        case "SENT":      return renderChip("Отправлена", "info", "Передана в NowPayments Mass Payout, ждём подтверждения сети");
+        case "COMPLETED": return renderChip("Выплачена", "success", "Деньги успешно ушли на кошелёк партнёра");
+        case "REJECTED":  return renderChip("Отклонена", "danger", "Средства возвращены на баланс партнёра");
+        case "FAILED":    return renderChip("Ошибка", "danger", "Провайдер отклонил выплату — средства возвращены на баланс");
+        case "CANCELED":  return renderChip("Отменена", "muted");
+        default:          return renderChip(status, "muted");
+      }
+    };
+
     const withdrawalRows = withdrawals
       .map((w) => {
         const u = w.user;
@@ -6911,22 +7215,27 @@ export async function registerBackofficeRoutes(
         const showReject = w.status === "PENDING" || w.status === "APPROVED";
         const showProcess = w.status === "APPROVED" || w.status === "FAILED";
         const btnApprove = showApprove
-          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/approve" style="display:inline"><button class="primary" type="submit">Approve</button></form>`
+          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/approve" style="display:inline"><button class="primary" type="submit" title="Одобрить заявку (без автоматической отправки)">✓ Одобрить</button></form>`
           : "";
         const btnReject = showReject
-          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/reject" style="display:inline;margin-left:4px"><button class="secondary" type="submit" onclick="return confirm('Отклонить и вернуть средства на баланс?')">Reject</button></form>`
+          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/reject" style="display:inline;margin-left:4px"><button class="secondary" type="submit" title="Отклонить заявку — средства вернутся на баланс партнёра" onclick="return confirm('Отклонить и вернуть средства на баланс партнёра?')">× Отклонить</button></form>`
           : "";
         const btnProcess = showProcess
-          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/process" style="display:inline;margin-left:4px"><button class="primary" type="submit">Отправить в NowPayments</button></form>`
+          ? `<form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/withdrawals/${escapeHtml(w.id)}/process" style="display:inline;margin-left:4px"><button class="primary" type="submit" title="Отправить batch-выплату через NOWPayments Mass Payout API">→ NowPayments</button></form>`
           : "";
-        const err = w.errorMessage ? `<div style="color:#ff8878;font-size:12px">${escapeHtml(w.errorMessage)}</div>` : "";
-        const addr = w.payoutAddress ? `<code>${escapeHtml(w.payoutAddress)}</code>` : "<em>—</em>";
-        return `<tr>
+        const err = w.errorMessage ? `<div style="color:var(--danger);font-size:12px;margin-top:4px">${escapeHtml(w.errorMessage)}</div>` : "";
+        const addr = w.payoutAddress ? `<code style="font-size:11px">${escapeHtml(w.payoutAddress)}</code>` : "<em class=\"small\">не указан</em>";
+        const toneAttr =
+          w.status === "COMPLETED" ? ' data-tone="success"' :
+          w.status === "FAILED" || w.status === "REJECTED" ? ' data-tone="danger"' :
+          w.status === "PENDING" ? ' data-tone="warning"' :
+          w.status === "APPROVED" || w.status === "SENT" ? ' data-tone="info"' : "";
+        return `<tr${toneAttr}>
           <td>${escapeHtml(w.createdAt.toISOString().slice(0, 16).replace("T", " "))}</td>
           <td>${escapeHtml(name)}</td>
-          <td style="text-align:right">${amount} ${escapeHtml(w.currency)}</td>
-          <td>${addr}<div style="opacity:.6;font-size:12px">${escapeHtml(w.payoutCurrency ?? "")}</div></td>
-          <td><strong>${escapeHtml(w.status)}</strong>${err}</td>
+          <td style="text-align:right"><strong>${amount}</strong> ${escapeHtml(w.currency)}</td>
+          <td>${addr}<div style="opacity:.6;font-size:11px">${escapeHtml(w.payoutCurrency ?? "—")}</div></td>
+          <td>${withdrawalStatusChip(w.status)}${err}</td>
           <td>${btnApprove}${btnReject}${btnProcess}</td>
         </tr>`;
       })
@@ -6942,11 +7251,11 @@ export async function registerBackofficeRoutes(
         return `<tr>
           <td>${escapeHtml(a.createdAt.toISOString().slice(0, 16).replace("T", " "))}</td>
           <td>${escapeHtml(pName)}</td>
-          <td>ур.${a.level}</td>
-          <td style="text-align:right">${Number(a.amount).toFixed(4)} ${escapeHtml(a.currency)}</td>
+          <td>${renderChip(`Уровень ${a.level}`, "accent")}</td>
+          <td style="text-align:right"><strong>+${Number(a.amount).toFixed(4)}</strong> ${escapeHtml(a.currency)}</td>
           <td style="opacity:.7">${Number(a.percent).toFixed(2)}%</td>
           <td>${escapeHtml(title)}</td>
-          <td style="opacity:.7">от ${escapeHtml(sName)}</td>
+          <td style="opacity:.7">${escapeHtml(sName)}</td>
         </tr>`;
       })
       .join("");
@@ -6954,78 +7263,167 @@ export async function registerBackofficeRoutes(
     const totalAccrualsSum = Number(totals._sum.amount ?? 0);
     const totalAccrualsCount = Number(totals._count?._all ?? 0);
 
-    const body = `
-      <h1>Партнёрская программа · ${escapeHtml(bot.name)}</h1>
-      <p style="opacity:.7">Начисление комиссий по уровням при покупке платных разделов. Выплаты — через NOWPayments Mass Payout с вашего кошелька платформы.</p>
-      ${okMsg ? `<div class="success">${escapeHtml(okMsg)}</div>` : ""}
-      ${errMsg ? `<div class="error">${escapeHtml(errMsg)}</div>` : ""}
+    const programEnabledChip = config?.enabled
+      ? renderChip("Программа включена", "success", "Комиссии начисляются автоматически после покупок")
+      : renderChip("Программа отключена", "warning", "Пока программа выключена, комиссии не начисляются");
 
-      <section style="margin-top:18px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:12px">
-        <h2 style="margin-top:0">Настройки</h2>
-        <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/save">
-          <label style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-            <input type="checkbox" name="enabled" value="1" ${config?.enabled ? "checked" : ""} />
-            <span><strong>Партнёрская программа включена</strong> — без этого флажка комиссии не начисляются.</span>
-          </label>
-          <label style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-            <input type="checkbox" name="autoApproveWithdrawals" value="1" ${(config as any)?.autoApproveWithdrawals ? "checked" : ""} />
-            <span>Авто-одобрение выводов (минуя ручную модерацию) и автоматическая отправка в NowPayments.</span>
-          </label>
+    const payoutAutoChip = (config as any)?.autoApproveWithdrawals
+      ? renderChip("Авто-выплата", "info", "Заявки партнёров одобряются и отправляются в NowPayments автоматически")
+      : renderChip("Ручная модерация", "muted", "Каждая заявка требует вашего ручного одобрения");
 
-          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin:14px 0">
-            <label>Мин. сумма вывода (USDT)
-              <input type="number" name="minWithdrawalAmount" value="${escapeHtml(String((config as any)?.minWithdrawalAmount ?? 5))}" min="0" step="0.01" />
-            </label>
-            <label>Резерв баланса (USDT)
-              <input type="number" name="minBalanceReserve" value="${escapeHtml(String((config as any)?.minBalanceReserve ?? 0))}" min="0" step="0.01" />
-            </label>
-            <label>Сеть выплаты
-              <select name="payoutCurrency">
-                ${["usdtbsc", "usdttrc20", "ton"]
-                  .map((code) => `<option value="${code}" ${((config as any)?.payoutCurrency ?? "usdtbsc") === code ? "selected" : ""}>${code.toUpperCase()}</option>`)
-                  .join("")}
-              </select>
-            </label>
-          </div>
+    const pendingCount = withdrawals.filter((w) => w.status === "PENDING").length;
+    const approvedCount = withdrawals.filter((w) => w.status === "APPROVED").length;
+    const sentCount = withdrawals.filter((w) => w.status === "SENT").length;
 
-          <label style="display:block;margin-bottom:14px">Описание программы (для кабинета бота)
-            <textarea name="description" rows="2" style="width:100%">${escapeHtml((config as any)?.description ?? "")}</textarea>
-          </label>
+    const body = `${renderBreadcrumbs([
+        { label: "Панель управления", href: "/backoffice" },
+        { label: bot.name, href: `/backoffice/bots/${bot.id}/settings` },
+        { label: "Партнёрская программа" }
+      ])}${renderPageHeader({
+        eyebrow: "Монетизация и реферальная сеть",
+        title: "Партнёрская программа",
+        subtitle:
+          "Многоуровневые комиссии партнёрам за продажи платных разделов бота. Выплаты с кошелька платформы через NOWPayments Mass Payout.",
+        context: [
+          `<span>${programEnabledChip}</span>`,
+          `<span>${payoutAutoChip}</span>`,
+          `<span>Всего начислено: <strong>${totalAccrualsSum.toFixed(2)} USDT</strong></span>`,
+          `<span>Записей: <strong>${totalAccrualsCount}</strong></span>`
+        ],
+        actions: [
+          renderActionLink("Оплаты и доступ", `/backoffice/bots/${escapeHtml(bot.id)}/paid`, "secondary"),
+          renderActionLink("Настройки бота", `/backoffice/bots/${escapeHtml(bot.id)}/settings`, "ghost")
+        ].join("")
+      })}
+      ${okMsg ? renderCallout("success", escapeHtml(okMsg)) : ""}
+      ${errMsg ? renderCallout("danger", escapeHtml(errMsg)) : ""}
+      ${!config?.enabled ? renderCallout(
+        "info",
+        "Как это работает: при оплате платного раздела партнёр, приведший покупателя, получает % на внутренний баланс. Размер и глубину уровней вы задаёте ниже. Выплаты партнёрам уходят с вашего кошелька NOWPayments."
+      ) : ""}
 
-          <h3 style="margin-top:18px">Уровни и проценты</h3>
-          <p style="opacity:.7;font-size:13px;margin-top:0">Уровень 1 — прямой пригласивший покупателя. Оставьте процент 0, чтобы не платить на этом уровне. Лишние строки игнорируются.</p>
-          ${levelsInputs.join("")}
+      ${renderStageBlock({
+        eyebrow: "Настройки программы",
+        title: "Комиссии и правила выплат",
+        subtitle: "Включите программу, задайте проценты по уровням и условия вывода. Настройки применяются мгновенно к новым покупкам.",
+        tone: "primary",
+        body: `
+          <form method="POST" action="/backoffice/api/bots/${escapeHtml(bot.id)}/referral/save">
+            <div class="bo-subsection bo-subsection--raised" style="margin-bottom:16px">
+              <div class="bo-subsection-head">
+                <div>
+                  <h3 class="bo-subsection-title">Общие флаги ${renderHelpTip("Переключатели базовой работы программы и режима выплат")}</h3>
+                </div>
+              </div>
+              <label style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;cursor:pointer">
+                <input type="checkbox" name="enabled" value="1" ${config?.enabled ? "checked" : ""} style="margin-top:3px" />
+                <span><strong>Партнёрская программа включена</strong><br><span class="small">Без этого флажка комиссии не начисляются при покупках.</span></span>
+              </label>
+              <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+                <input type="checkbox" name="autoApproveWithdrawals" value="1" ${(config as any)?.autoApproveWithdrawals ? "checked" : ""} style="margin-top:3px" />
+                <span><strong>Авто-одобрение выводов</strong><br><span class="small">Заявки партнёров одобряются автоматически и сразу отправляются в NowPayments Mass Payout (минуя ручную модерацию).</span></span>
+              </label>
+            </div>
 
-          <div style="margin-top:16px">
-            <button type="submit" class="primary">Сохранить</button>
-            <a href="/backoffice/bots/${escapeHtml(bot.id)}/paid" style="margin-left:10px;opacity:.7">← К «Оплаты и доступ»</a>
-          </div>
-        </form>
-      </section>
+            <div class="bo-subsection bo-subsection--raised" style="margin-bottom:16px">
+              <div class="bo-subsection-head">
+                <div>
+                  <h3 class="bo-subsection-title">Параметры вывода ${renderHelpTip("Минимальная сумма заявки, резерв баланса, сеть выплаты")}</h3>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:14px">
+                <label>Мин. сумма вывода (USDT) ${renderHelpTip("Партнёр не сможет создать заявку на сумму меньше указанной")}
+                  <input type="number" name="minWithdrawalAmount" value="${escapeHtml(String((config as any)?.minWithdrawalAmount ?? 5))}" min="0" step="0.01" />
+                </label>
+                <label>Резерв баланса (USDT) ${renderHelpTip("Сумма, которая всегда остаётся на балансе партнёра после вывода")}
+                  <input type="number" name="minBalanceReserve" value="${escapeHtml(String((config as any)?.minBalanceReserve ?? 0))}" min="0" step="0.01" />
+                </label>
+                <label>Сеть выплаты ${renderHelpTip("Blockchain-сеть, в которой платформа отправляет USDT партнёрам")}
+                  <select name="payoutCurrency">
+                    ${["usdtbsc", "usdttrc20", "ton"]
+                      .map((code) => `<option value="${code}" ${((config as any)?.payoutCurrency ?? "usdtbsc") === code ? "selected" : ""}>${code.toUpperCase()}</option>`)
+                      .join("")}
+                  </select>
+                </label>
+              </div>
+              <label style="display:block;margin-top:14px">Описание программы для кабинета бота ${renderHelpTip("Этот текст увидят партнёры внутри Telegram-бота в разделе «Партнёрская программа»")}
+                <textarea name="description" rows="2" style="width:100%" placeholder="Например: «Зарабатывайте 20% с каждой продажи вашего пригласителя...»">${escapeHtml((config as any)?.description ?? "")}</textarea>
+              </label>
+            </div>
 
-      <section style="margin-top:24px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:12px">
-        <h2 style="margin-top:0">Заявки на вывод</h2>
-        <p style="opacity:.7;font-size:13px">Всего начислено партнёрам: <strong>${totalAccrualsSum.toFixed(2)} USDT</strong> · записей: ${totalAccrualsCount}</p>
-        ${withdrawals.length === 0
-          ? `<em>Нет заявок.</em>`
-          : `<table style="width:100%;border-collapse:collapse">
-              <thead><tr><th align="left">Дата</th><th align="left">Партнёр</th><th align="right">Сумма</th><th align="left">Адрес</th><th align="left">Статус</th><th></th></tr></thead>
+            <div class="bo-subsection bo-subsection--raised">
+              <div class="bo-subsection-head">
+                <div>
+                  <h3 class="bo-subsection-title">Уровни и проценты ${renderHelpTip("Глубина дерева партнёров и процент комиссии с продажи на каждом уровне")}</h3>
+                  <div class="bo-subsection-copy">Уровень 1 — прямой пригласивший покупателя. Пример: 20% / 10% / 5% — 3 уровня.</div>
+                </div>
+              </div>
+              ${levelsInputs.join("")}
+              <div class="small" style="margin-top:10px;opacity:.65">Оставьте процент 0, чтобы не платить на этом уровне. Лишние строки игнорируются.</div>
+            </div>
+
+            <div class="bo-actions" style="justify-content:flex-start;margin-top:18px">
+              <button type="submit" class="primary">💾 Сохранить настройки</button>
+              ${renderActionLink("Отмена", `/backoffice/bots/${escapeHtml(bot.id)}/paid`, "ghost")}
+            </div>
+          </form>`
+      })}
+
+      ${renderStageBlock({
+        eyebrow: "Модерация выплат",
+        title: `Заявки на вывод${withdrawals.length ? ` · ${withdrawals.length}` : ""}`,
+        subtitle: pendingCount
+          ? `Ожидают одобрения: ${pendingCount}${approvedCount ? ` · Готовы к отправке: ${approvedCount}` : ""}${sentCount ? ` · В процессе: ${sentCount}` : ""}`
+          : "Новые заявки появятся здесь автоматически, когда партнёры нажмут «Вывести» в боте.",
+        tone: "utility",
+        body: withdrawals.length === 0
+          ? renderEmpty({
+              icon: "💸",
+              title: "Заявок на вывод пока нет",
+              hint: config?.enabled
+                ? "Как только партнёры наберут минимальную сумму и нажмут «Вывести» в боте, заявки появятся здесь."
+                : "Включите партнёрскую программу выше, чтобы партнёры могли выводить заработанное."
+            })
+          : `<div class="bo-table-wrap"><table class="bo-table">
+              <thead><tr>
+                <th align="left">Дата</th>
+                <th align="left">Партнёр</th>
+                <th align="right">Сумма</th>
+                <th align="left">Адрес кошелька</th>
+                <th align="left">Статус</th>
+                <th align="left">Действия</th>
+              </tr></thead>
               <tbody>${withdrawalRows}</tbody>
-            </table>`}
-      </section>
+            </table></div>`
+      })}
 
-      <section style="margin-top:24px;padding:16px;border:1px solid rgba(255,255,255,.1);border-radius:12px">
-        <h2 style="margin-top:0">Последние начисления</h2>
-        ${recentAccruals.length === 0
-          ? `<em>Пока нет начислений — программа не включена или партнёры не приводили покупателей.</em>`
-          : `<table style="width:100%;border-collapse:collapse">
-              <thead><tr><th align="left">Дата</th><th align="left">Партнёр</th><th>Уровень</th><th align="right">Сумма</th><th>%</th><th align="left">Продукт</th><th align="left">Источник</th></tr></thead>
+      ${renderStageBlock({
+        eyebrow: "История начислений",
+        title: `Последние ${Math.min(recentAccruals.length, 20)} начислений`,
+        subtitle: "Каждая запись — комиссия конкретному партнёру за конкретную покупку. Начисления неизменяемы.",
+        tone: "diagnostic",
+        body: recentAccruals.length === 0
+          ? renderEmpty({
+              icon: "📈",
+              title: "Пока нет начислений",
+              hint: "Когда покупатели начнут оплачивать платные разделы, и у них будет привязан пригласивший — тут появятся комиссии по уровням."
+            })
+          : `<div class="bo-table-wrap"><table class="bo-table">
+              <thead><tr>
+                <th align="left">Дата</th>
+                <th align="left">Партнёр</th>
+                <th align="left">Уровень</th>
+                <th align="right">Сумма</th>
+                <th align="left">%</th>
+                <th align="left">Продукт</th>
+                <th align="left">Источник (покупатель)</th>
+              </tr></thead>
               <tbody>${accrualRows}</tbody>
-            </table>`}
-      </section>
+            </table></div>`
+      })}
     `;
 
-    return reply.type("text/html").send(renderPage("Партнёрская программа · Платный доступ", body, { section: "payments" }));
+    return reply.type("text/html").send(renderPage("Партнёрская программа · Платный доступ", body, { section: "referral" }));
   });
 
   server.post("/backoffice/api/bots/:botId/referral/save", async (req, reply) => {
