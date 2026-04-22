@@ -2088,6 +2088,49 @@ function renderCallout(tone: "info" | "success" | "warning" | "danger", body: st
   return `<div class="bo-callout bo-callout--${tone}"><span class="bo-callout__badge">${badge}</span><div>${body}</div></div>`;
 }
 
+/**
+ * Inline bot switcher for page headers.
+ * If the backoffice user has access to more than one bot, renders a dropdown that
+ * routes to the same section (e.g. /referral) of the newly selected bot.
+ * Falls back to a static chip when only one bot is available.
+ */
+function renderBotSwitcher(
+  allBots: Array<{ id: string; name: string; telegramBotUsername: string | null; isArchived?: boolean }>,
+  currentBotId: string,
+  routeSuffix: "settings" | "paid" | "referral" | "roles" | "payments"
+): string {
+  const uniqueId = `bo-bot-switcher-${routeSuffix}`;
+  if (allBots.length <= 1) {
+    const current = allBots[0] ?? null;
+    const label = current
+      ? (current.telegramBotUsername ? `${current.name} (@${current.telegramBotUsername})` : current.name)
+      : currentBotId;
+    return `<span>Бот: <strong>${escapeHtml(label)}</strong></span>`;
+  }
+  const options = allBots
+    .map((b) => {
+      const label = b.telegramBotUsername ? `${b.name} (@${b.telegramBotUsername})` : b.name;
+      const archived = b.isArchived ? " · архив" : "";
+      return `<option value="${escapeHtml(b.id)}"${b.id === currentBotId ? " selected" : ""}>${escapeHtml(label + archived)}</option>`;
+    })
+    .join("");
+  return `<label class="bo-bot-switcher" title="Переключиться на другой бот — все настройки этого раздела относятся только к выбранному">
+      <span class="bo-bot-switcher__label">Бот:</span>
+      <select id="${uniqueId}" class="bo-bot-switcher__select">${options}</select>
+    </label>
+    <script>
+    (function(){
+      var sel = document.getElementById('${uniqueId}');
+      if (!sel) return;
+      sel.addEventListener('change', function(){
+        var id = sel.value;
+        if (!id) return;
+        location.href = '/backoffice/bots/' + encodeURIComponent(id) + '/${routeSuffix}';
+      });
+    })();
+    </script>`;
+}
+
 function renderProductModeBadge(product: { durationMinutes?: number | null }): string {
   return getProductModeLabel(product) === "TEST"
     ? renderStatusBadge("ТЕСТ", "test")
@@ -3599,6 +3642,14 @@ export async function registerBackofficeRoutes(
       return reply.code(403).send("Forbidden");
     }
 
+    const allBotsForSwitcher = await prisma.botInstance.findMany({
+      where: backofficeUserId
+        ? { OR: [{ ownerBackofficeUserId: backofficeUserId }, { ownerBackofficeUserId: null }] }
+        : {},
+      select: { id: true, name: true, telegramBotUsername: true, isArchived: true },
+      orderBy: { createdAt: "desc" }
+    });
+
     const activeTemplate = await prisma.presentationTemplate.findFirst({
       where: { botInstanceId: bot.id, isActive: true },
       select: { id: true, title: true, baseLanguageCode: true, isActive: true }
@@ -3620,6 +3671,7 @@ export async function registerBackofficeRoutes(
       subtitle:
         "Реальный production-контур управления экземпляром: базовые параметры, токен, lifecycle, роли и переход в платный доступ сохранены без изменения логики.",
       context: [
+        renderBotSwitcher(allBotsForSwitcher, bot.id, "settings"),
         `<span>Bot ID: <code>${escapeHtml(bot.id)}</code></span>`,
         `<span>Статус: ${renderStatusBadge(bot.status, statusTone)}</span>`,
         `<span>Платный доступ: <strong>${bot.paidAccessEnabled ? "включён" : "выключен"}</strong></span>`
@@ -4204,6 +4256,14 @@ export async function registerBackofficeRoutes(
     const bot = await prisma.botInstance.findUnique({ where: { id: botId } });
     if (!bot) return reply.code(404).send("Bot not found");
     if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
+
+    const allBotsForSwitcher = await prisma.botInstance.findMany({
+      where: backofficeUserId
+        ? { OR: [{ ownerBackofficeUserId: backofficeUserId }, { ownerBackofficeUserId: null }] }
+        : {},
+      select: { id: true, name: true, telegramBotUsername: true, isArchived: true },
+      orderBy: { createdAt: "desc" }
+    });
 
     const simulateOk = (req.query as any)?.simulateOk === "1";
     const simulateError = String((req.query as any)?.simulateError ?? "").trim();
@@ -5379,7 +5439,7 @@ export async function registerBackofficeRoutes(
           subtitle:
             "Операционное рабочее пространство для управления оплатой и доступом без изменения доменной логики. Production и TEST разделены визуально, финансы и аудит вынесены в самостоятельные модули, а все существующие формы и статусы сохранены.",
           context: [
-            `<span>Бот: <code>${escapeHtml(bot.id)}</code></span>`,
+            renderBotSwitcher(allBotsForSwitcher, bot.id, "paid"),
             `<span>Режим оплаты: ${balanceFlowEnabled ? "баланс + покупка" : "прямой счёт / ручной запрос"}</span>`,
             `<span>Live: <strong>${liveProducts.length}</strong> · Test: <strong>${testProducts.length}</strong></span>`
           ],
@@ -6580,6 +6640,14 @@ export async function registerBackofficeRoutes(
     if (!bot) return reply.code(404).send("Bot not found");
     if (bot.ownerBackofficeUserId && bot.ownerBackofficeUserId !== backofficeUserId) return reply.code(403).send("Forbidden");
 
+    const allBotsForSwitcher = await prisma.botInstance.findMany({
+      where: backofficeUserId
+        ? { OR: [{ ownerBackofficeUserId: backofficeUserId }, { ownerBackofficeUserId: null }] }
+        : {},
+      select: { id: true, name: true, telegramBotUsername: true, isArchived: true },
+      orderBy: { createdAt: "desc" }
+    });
+
     const q = String((req.query as any)?.q ?? "").trim();
     const status = String((req.query as any)?.status ?? "").trim();
     const role = String((req.query as any)?.role ?? "").trim();
@@ -6681,7 +6749,7 @@ export async function registerBackofficeRoutes(
           title: t("bo_roles_title"),
           subtitle:
             "Панель назначения и сопровождения OWNER / ADMIN для конкретного бота. Все activation и revoke-маршруты сохранены, но перегруппированы в более читаемое рабочее пространство.",
-          context: [`<span>Бот: <code>${escapeHtml(bot.id)}</code></span>`, `<span>Назначений: <strong>${assignments.length}</strong></span>`],
+          context: [renderBotSwitcher(allBotsForSwitcher, bot.id, "roles"), `<span>Назначений: <strong>${assignments.length}</strong></span>`],
           actions: renderActionLink(t("bo_roles_back"), `/backoffice/bots/${escapeHtml(bot.id)}/settings`, "secondary")
         })}
         ${errorMsg ? `<div class="error" role="alert">${escapeHtml(errorMsg)}</div>` : ""}
@@ -7368,30 +7436,7 @@ export async function registerBackofficeRoutes(
     const botUsernameChip = bot.telegramBotUsername
       ? `<a href="https://t.me/${escapeHtml(bot.telegramBotUsername)}" target="_blank" rel="noopener" style="text-decoration:none">${renderChip("@" + bot.telegramBotUsername, "accent", "Открыть бота в Telegram")}</a>`
       : renderChip("username не задан", "muted", "Username бота не настроен в профиле Telegram");
-    const switcherOptions = allBots
-      .map((b) => {
-        const label = b.telegramBotUsername ? `${b.name} (@${b.telegramBotUsername})` : b.name;
-        const archived = b.isArchived ? " · архив" : "";
-        return `<option value="${escapeHtml(b.id)}"${b.id === bot.id ? " selected" : ""}>${escapeHtml(label + archived)}</option>`;
-      })
-      .join("");
-    const botSwitcher = allBots.length > 1
-      ? `<label class="bo-bot-switcher" title="Переключиться на другой бот — все настройки этого раздела применяются только к выбранному">
-           <span class="bo-bot-switcher__label">Бот:</span>
-           <select id="bo-bot-switcher-referral" class="bo-bot-switcher__select">${switcherOptions}</select>
-         </label>
-         <script>
-         (function(){
-           var sel = document.getElementById('bo-bot-switcher-referral');
-           if (!sel) return;
-           sel.addEventListener('change', function(){
-             var id = sel.value;
-             if (!id) return;
-             location.href = '/backoffice/bots/' + encodeURIComponent(id) + '/referral';
-           });
-         })();
-         </script>`
-      : `<span>Бот: <strong>${escapeHtml(bot.name)}</strong> ${botUsernameChip}</span>`;
+    const botSwitcher = renderBotSwitcher(allBots, bot.id, "referral");
     const body = `${renderBreadcrumbs([
         { label: "Панель управления", href: "/backoffice" },
         { label: bot.name, href: `/backoffice/bots/${bot.id}/settings` },
